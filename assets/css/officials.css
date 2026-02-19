@@ -1,0 +1,315 @@
+/* Simple Barangay Officials Page - Two Column Layout */
+
+.officials-page {
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+.page-header {
+    text-align: center;
+    margin-bottom: 3rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 2px solid #e0e0e0;
+}
+
+.page-header h1 {
+    font-size: 2rem;
+    color: #333;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+}
+
+.page-header p {
+    color: #666;
+    font-size: 1rem;
+}
+
+/* Two Column Layout */
+.two-column-layout {
+    display: grid;
+    grid-template-columns: 1fr 2px 1fr;
+    gap: 3rem;
+    margin-bottom: 3rem;
+}
+
+.officials-section {
+    min-height: 400px;
+}
+
+.vertical-divider {
+    background: #e0e0e0;
+    width: 2px;
+    min-height: 100%;
+}
+
+.section-title {
+    text-align: center;
+    font-size: 1.5rem;
+    color: #333;
+    margin-bottom: 2rem;
+    font-weight: 600;
+    padding-bottom: 0.75rem;
+    border-bottom: 2px solid #e0e0e0;
+}
+
+/* Organization Chart */
+.org-chart {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+}
+
+.org-level {
+    display: flex;
+    gap: 2rem;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 0;
+}
+
+/* Connector Lines */
+.connector {
+    width: 2px;
+    height: 40px;
+    background: #ccc;
+    margin: 0 auto;
+}
+
+/* Official Box */
+.official-box {
+    background: white;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    padding: 1.5rem;
+    text-align: center;
+    width: 220px;
+    transition: all 0.3s ease;
+}
+
+.official-box:hover {
+    border-color: #999;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Captain & SK Captain Styles */
+.official-box.captain,
+.official-box.sk-captain {
+    width: 260px;
+    border-width: 3px;
+    border-color: #666;
+}
+
+/* Photo */
+.photo {
+    width: 120px;
+    height: 120px;
+    margin: 0 auto 1rem;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 3px solid #e0e0e0;
+}
+
+.official-box.captain .photo,
+.official-box.sk-captain .photo {
+    width: 140px;
+    height: 140px;
+    border-color: #666;
+}
+
+.photo img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.initials {
+    width: 100%;
+    height: 100%;
+    background: #f5f5f5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.5rem;
+    font-weight: 600;
+    color: #666;
+}
+
+.official-box.captain .initials,
+.official-box.sk-captain .initials {
+    font-size: 3rem;
+    background: #e8e8e8;
+}
+
+/* Text Styles */
+.official-box h3 {
+    font-size: 1.1rem;
+    color: #333;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.official-box.captain h3,
+.official-box.sk-captain h3 {
+    font-size: 1.25rem;
+}
+
+.position {
+    font-size: 0.9rem;
+    color: #666;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+}
+
+.term {
+    font-size: 0.85rem;
+    color: #999;
+    margin: 0;
+}
+
+/* Grid Adjustments */
+.org-level.council {
+    max-width: 100%;
+}
+
+.org-level.sk-members {
+    max-width: 100%;
+}
+
+.org-level.admin {
+    max-width: 600px;
+}
+
+/* Other Officials Section */
+.other-officials-section {
+    margin-top: 3rem;
+    padding-top: 2rem;
+    border-top: 2px solid #e0e0e0;
+}
+
+.org-level.others {
+    display: flex;
+    gap: 2rem;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
+    .two-column-layout {
+        grid-template-columns: 1fr;
+        gap: 3rem;
+    }
+    
+    .vertical-divider {
+        display: none;
+    }
+    
+    .officials-section {
+        padding-bottom: 2rem;
+        border-bottom: 2px solid #e0e0e0;
+    }
+    
+    .officials-section:last-child {
+        border-bottom: none;
+    }
+}
+
+@media (max-width: 768px) {
+    .officials-page {
+        padding: 1rem;
+    }
+    
+    .page-header h1 {
+        font-size: 1.5rem;
+    }
+    
+    .section-title {
+        font-size: 1.25rem;
+    }
+    
+    .two-column-layout {
+        gap: 2rem;
+    }
+    
+    .org-level {
+        gap: 1.5rem;
+    }
+    
+    .official-box {
+        width: 180px;
+        padding: 1rem;
+    }
+    
+    .official-box.captain,
+    .official-box.sk-captain {
+        width: 200px;
+    }
+    
+    .photo {
+        width: 100px;
+        height: 100px;
+    }
+    
+    .official-box.captain .photo,
+    .official-box.sk-captain .photo {
+        width: 120px;
+        height: 120px;
+    }
+    
+    .initials {
+        font-size: 2rem;
+    }
+    
+    .official-box.captain .initials,
+    .official-box.sk-captain .initials {
+        font-size: 2.5rem;
+    }
+    
+    .official-box h3 {
+        font-size: 1rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .org-level {
+        flex-direction: column;
+        align-items: center;
+        gap: 1.5rem;
+    }
+    
+    .official-box,
+    .official-box.captain,
+    .official-box.sk-captain {
+        width: 100%;
+        max-width: 280px;
+    }
+    
+    .connector {
+        height: 30px;
+    }
+}
+
+/* Print Styles */
+@media print {
+    .two-column-layout {
+        grid-template-columns: 1fr 1fr;
+        gap: 2rem;
+    }
+    
+    .vertical-divider {
+        display: block;
+    }
+    
+    .official-box {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+    
+    .official-box:hover {
+        border-color: #ddd;
+        box-shadow: none;
+    }
+}

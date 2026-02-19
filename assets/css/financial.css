@@ -1,0 +1,495 @@
+/* Financial Management Styles */
+
+.financial-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.page-title {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #1f2937;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.page-title i {
+    color: #3b82f6;
+}
+
+.page-subtitle {
+    color: #6b7280;
+    margin: 0.5rem 0 0 0;
+    font-size: 0.95rem;
+}
+
+.header-actions {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+.year-selector {
+    padding: 0.625rem 1rem;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    background: white;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.year-selector:hover {
+    border-color: #3b82f6;
+}
+
+/* Stats Grid */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.stat-card {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    display: flex;
+    gap: 1rem;
+    border-left: 4px solid #e5e7eb;
+    transition: all 0.3s;
+}
+
+.stat-card:hover {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    transform: translateY(-2px);
+}
+
+.stat-card.balance {
+    border-left-color: #3b82f6;
+}
+
+.stat-card.revenue {
+    border-left-color: #10b981;
+}
+
+.stat-card.expense {
+    border-left-color: #ef4444;
+}
+
+.stat-card.pending {
+    border-left-color: #f59e0b;
+}
+
+.stat-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.75rem;
+    flex-shrink: 0;
+}
+
+.stat-card.balance .stat-icon {
+    background: #dbeafe;
+    color: #3b82f6;
+}
+
+.stat-card.revenue .stat-icon {
+    background: #d1fae5;
+    color: #10b981;
+}
+
+.stat-card.expense .stat-icon {
+    background: #fee2e2;
+    color: #ef4444;
+}
+
+.stat-card.pending .stat-icon {
+    background: #fef3c7;
+    color: #f59e0b;
+}
+
+.stat-details {
+    flex: 1;
+    min-width: 0;
+}
+
+.stat-label {
+    font-size: 0.875rem;
+    color: #6b7280;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+}
+
+.stat-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #1f2937;
+    margin-bottom: 0.5rem;
+}
+
+.stat-meta {
+    font-size: 0.8rem;
+    color: #9ca3af;
+}
+
+.stat-link {
+    color: #3b82f6;
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.2s;
+}
+
+.stat-link:hover {
+    color: #2563eb;
+}
+
+/* Quick Actions Bar */
+.quick-actions-bar {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+}
+
+.action-btn {
+    padding: 0.875rem 1.5rem;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.95rem;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    border: 2px solid transparent;
+}
+
+.action-btn.revenue {
+    background: #10b981;
+    color: white;
+}
+
+.action-btn.revenue:hover {
+    background: #059669;
+    transform: translateY(-1px);
+}
+
+.action-btn.expense {
+    background: #ef4444;
+    color: white;
+}
+
+.action-btn.expense:hover {
+    background: #dc2626;
+    transform: translateY(-1px);
+}
+
+.action-btn.budget {
+    background: #3b82f6;
+    color: white;
+}
+
+.action-btn.budget:hover {
+    background: #2563eb;
+    transform: translateY(-1px);
+}
+
+.action-btn.report {
+    background: white;
+    color: #374151;
+    border-color: #d1d5db;
+}
+
+.action-btn.report:hover {
+    background: #f9fafb;
+    border-color: #9ca3af;
+    transform: translateY(-1px);
+}
+
+/* Charts Row */
+.charts-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.chart-card {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 2px solid #f3f4f6;
+}
+
+.chart-header h3 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #1f2937;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.view-all-link {
+    color: #3b82f6;
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: color 0.2s;
+}
+
+.view-all-link:hover {
+    color: #2563eb;
+}
+
+.chart-container {
+    position: relative;
+    height: 300px;
+}
+
+/* Budget Summary */
+.budget-summary {
+    padding: 1rem 0;
+}
+
+.budget-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid #f3f4f6;
+}
+
+.budget-label {
+    color: #6b7280;
+    font-weight: 500;
+}
+
+.budget-amount {
+    font-weight: 700;
+    color: #1f2937;
+}
+
+.revenue-color {
+    color: #10b981 !important;
+}
+
+.expense-color {
+    color: #ef4444 !important;
+}
+
+.progress-bar {
+    height: 12px;
+    background: #f3f4f6;
+    border-radius: 6px;
+    overflow: hidden;
+    margin: 1rem 0 0.5rem 0;
+}
+
+.progress-fill {
+    height: 100%;
+    background: #3b82f6;
+    transition: width 0.3s;
+}
+
+.progress-fill.warning {
+    background: #f59e0b;
+}
+
+.progress-fill.danger {
+    background: #ef4444;
+}
+
+.budget-percentage {
+    text-align: center;
+    font-weight: 600;
+    color: #6b7280;
+    font-size: 0.9rem;
+}
+
+/* Category List */
+.category-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.category-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.category-info {
+    display: flex;
+    justify-content: space-between;
+    width: 200px;
+    flex-shrink: 0;
+}
+
+.category-name {
+    font-weight: 500;
+    color: #374151;
+    font-size: 0.9rem;
+}
+
+.category-amount {
+    font-weight: 700;
+    color: #1f2937;
+    font-size: 0.9rem;
+}
+
+.category-bar {
+    flex: 1;
+    height: 8px;
+    background: #f3f4f6;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.category-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.3s;
+}
+
+.revenue-bg {
+    background: linear-gradient(90deg, #10b981, #059669);
+}
+
+.expense-bg {
+    background: linear-gradient(90deg, #ef4444, #dc2626);
+}
+
+.category-pct {
+    width: 50px;
+    text-align: right;
+    font-weight: 600;
+    color: #6b7280;
+    font-size: 0.85rem;
+}
+
+/* Data Table */
+.table-responsive {
+    overflow-x: auto;
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.data-table thead {
+    background: #f9fafb;
+}
+
+.data-table th {
+    padding: 0.875rem 1rem;
+    text-align: left;
+    font-weight: 600;
+    color: #374151;
+    font-size: 0.875rem;
+    border-bottom: 2px solid #e5e7eb;
+}
+
+.data-table td {
+    padding: 0.875rem 1rem;
+    border-bottom: 1px solid #f3f4f6;
+    color: #4b5563;
+    font-size: 0.9rem;
+}
+
+.data-table tbody tr:hover {
+    background: #f9fafb;
+}
+
+.transaction-type {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.8rem;
+}
+
+.transaction-type.revenue {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.transaction-type.expense {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.text-center {
+    text-align: center;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 2rem;
+    color: #9ca3af;
+}
+
+.empty-state i {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    color: #d1d5db;
+}
+
+.empty-state p {
+    margin: 0;
+    font-size: 0.95rem;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .charts-row {
+        grid-template-columns: 1fr;
+    }
+    
+    .financial-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .quick-actions-bar {
+        flex-direction: column;
+    }
+    
+    .action-btn {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    .category-info {
+        width: 150px;
+    }
+    
+    .category-pct {
+        width: 40px;
+    }
+}
