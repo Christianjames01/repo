@@ -1,315 +1,465 @@
-/* Simple Barangay Officials Page - Two Column Layout */
+/* ============================================================
+   BARANGAY MANAGEMENT SYSTEM — Officials Public View
+   Matches dashboard-index.css v3 design system exactly
+   Theme: Editorial Slate · Copper Accents · Playfair + DM Sans
+   ============================================================ */
 
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@300;400;500&display=swap');
+
+:root {
+    --of-navy: #1a2236;
+    --of-navy-mid: #243250;
+    --of-navy-light: #2d4070;
+    --of-copper: #c8793a;
+    --of-copper-light: #f5e6d8;
+    --of-copper-dark: #9a5520;
+    --of-gold: #e8b84b;
+    --of-gold-light: #fdf3d9;
+    --of-teal: #2a8c7e;
+    --of-teal-light: #d4f0eb;
+    --of-bg: #f0ede8;
+    --of-surf: #faf9f7;
+    --of-surf2: #f5f2ee;
+    --of-border: #e4ddd5;
+    --of-text: #1a1a2e;
+    --of-muted: #7a7060;
+    --of-radius: 14px;
+    --of-radius-sm: 8px;
+    --of-radius-lg: 20px;
+    --of-shadow: 0 2px 8px rgba(26, 34, 54, .06), 0 6px 24px rgba(26, 34, 54, .08);
+    --of-shadow-lg: 0 10px 48px rgba(26, 34, 54, .14), 0 2px 12px rgba(26, 34, 54, .07);
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--of-bg);
+    color: var(--of-text);
+    font-size: 13.5px;
+    line-height: 1.65;
+}
+
+/* ═══════════════════════════════════════════
+   PAGE WRAPPER
+═══════════════════════════════════════════ */
 .officials-page {
-    max-width: 1600px;
-    margin: 0 auto;
-    padding: 2rem;
+    padding-bottom: 40px;
 }
 
+/* ═══════════════════════════════════════════
+   PAGE HEADER HERO
+═══════════════════════════════════════════ */
 .page-header {
-    text-align: center;
-    margin-bottom: 3rem;
-    padding-bottom: 1.5rem;
-    border-bottom: 2px solid #e0e0e0;
+    background: var(--of-navy);
+    padding: 0;
+    margin-bottom: 32px;
+    border-radius: 0 0 var(--of-radius-lg) var(--of-radius-lg);
+    position: relative;
+    overflow: hidden;
 }
 
-.page-header h1 {
-    font-size: 2rem;
-    color: #333;
-    margin-bottom: 0.5rem;
-    font-weight: 600;
+.page-header::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+        radial-gradient(ellipse 70% 80% at 80% 50%, rgba(200, 121, 58, .16) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 60% at 5% 90%, rgba(42, 140, 126, .1) 0%, transparent 55%);
+    pointer-events: none;
 }
 
-.page-header p {
-    color: #666;
-    font-size: 1rem;
+.page-header::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(-55deg, transparent, transparent 60px,
+            rgba(255, 255, 255, .013) 60px, rgba(255, 255, 255, .013) 61px);
+    pointer-events: none;
 }
 
-/* Two Column Layout */
+/* Override the inline styles in the PHP for page-header-with-logos */
+.page-header-with-logos {
+    position: relative;
+    z-index: 1;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 0 !important;
+    margin-bottom: 0 !important;
+    padding: 30px 36px;
+    flex-direction: column;
+}
+
+.page-header-with-logos .logo {
+    width: 80px !important;
+    height: 80px !important;
+    object-fit: contain !important;
+    opacity: .85;
+    margin-bottom: 14px;
+}
+
+.page-header-content {
+    text-align: center !important;
+}
+
+.page-header-content h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: 26px !important;
+    font-weight: 700 !important;
+    color: #fff !important;
+    letter-spacing: -.4px !important;
+    margin: 0 0 6px !important;
+}
+
+.page-header-content p {
+    font-size: 13px !important;
+    color: rgba(255, 255, 255, .45) !important;
+    font-weight: 300 !important;
+    margin: 0 !important;
+}
+
+/* ═══════════════════════════════════════════
+   TWO-COLUMN LAYOUT
+═══════════════════════════════════════════ */
 .two-column-layout {
-    display: grid;
-    grid-template-columns: 1fr 2px 1fr;
-    gap: 3rem;
-    margin-bottom: 3rem;
+    display: flex !important;
+    gap: 0 !important;
+    position: relative;
+    align-items: flex-start !important;
+    background: var(--of-surf);
+    border-radius: var(--of-radius-lg);
+    border: 1px solid var(--of-border);
+    box-shadow: var(--of-shadow);
+    overflow: hidden;
+    margin-bottom: 20px;
 }
 
 .officials-section {
-    min-height: 400px;
+    flex: 1 !important;
+    padding: 28px 24px;
 }
 
+/* Vertical divider */
 .vertical-divider {
-    background: #e0e0e0;
-    width: 2px;
-    min-height: 100%;
+    width: 1px;
+    background: var(--of-border);
+    align-self: stretch;
+    flex-shrink: 0;
 }
 
+/* ═══════════════════════════════════════════
+   SECTION TITLE
+═══════════════════════════════════════════ */
 .section-title {
-    text-align: center;
-    font-size: 1.5rem;
-    color: #333;
-    margin-bottom: 2rem;
-    font-weight: 600;
-    padding-bottom: 0.75rem;
-    border-bottom: 2px solid #e0e0e0;
+    font-family: 'Playfair Display', serif !important;
+    font-size: 17px !important;
+    font-weight: 700 !important;
+    color: var(--of-navy) !important;
+    text-align: center !important;
+    margin-bottom: 28px !important;
+    padding-bottom: 14px !important;
+    border-bottom: 2px solid var(--of-border) !important;
+    position: relative !important;
+    letter-spacing: -.2px;
 }
 
-/* Organization Chart */
+/* Override the ::before logo background in inline styles */
+.section-title::before {
+    width: 52px !important;
+    height: 52px !important;
+    margin: 0 auto 12px !important;
+    border-radius: 12px;
+    background-color: var(--of-surf2) !important;
+    background-size: 72% !important;
+    border: 1px solid var(--of-border);
+}
+
+/* Copper underline accent */
+.section-title::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 40px;
+    height: 2px;
+    background: var(--of-copper);
+    border-radius: 2px;
+}
+
+/* ═══════════════════════════════════════════
+   ORG CHART
+═══════════════════════════════════════════ */
 .org-chart {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    gap: 20px !important;
 }
 
 .org-level {
-    display: flex;
-    gap: 2rem;
-    justify-content: center;
-    flex-wrap: wrap;
-    margin-bottom: 0;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    justify-content: center !important;
+    gap: 14px !important;
+    width: 100% !important;
 }
 
-/* Connector Lines */
+/* Connector line */
 .connector {
-    width: 2px;
-    height: 40px;
-    background: #ccc;
-    margin: 0 auto;
+    width: 1px !important;
+    height: 24px !important;
+    background: linear-gradient(to bottom, var(--of-copper), transparent) !important;
+    margin: 0 auto !important;
+    opacity: .6;
 }
 
-/* Official Box */
+/* ═══════════════════════════════════════════
+   OFFICIAL BOX CARD
+═══════════════════════════════════════════ */
 .official-box {
-    background: white;
-    border: 2px solid #ddd;
-    border-radius: 8px;
-    padding: 1.5rem;
-    text-align: center;
-    width: 220px;
-    transition: all 0.3s ease;
+    background: var(--of-surf) !important;
+    border-radius: var(--of-radius) !important;
+    padding: 20px 16px !important;
+    box-shadow: var(--of-shadow) !important;
+    text-align: center !important;
+    transition: transform .25s ease, box-shadow .25s ease !important;
+    min-width: 160px !important;
+    max-width: 200px !important;
+    border: 1px solid var(--of-border) !important;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Top bar accent */
+.official-box::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--of-border);
+    transition: background .25s;
+}
+
+.official-box:hover::before {
+    background: var(--of-copper);
 }
 
 .official-box:hover {
-    border-color: #999;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    transform: translateY(-5px) !important;
+    box-shadow: var(--of-shadow-lg) !important;
 }
 
-/* Captain & SK Captain Styles */
-.official-box.captain,
+/* Captain highlight */
+.official-box.captain {
+    border-color: rgba(200, 121, 58, .3) !important;
+}
+
+.official-box.captain::before {
+    background: var(--of-copper) !important;
+}
+
+/* SK Chair highlight */
 .official-box.sk-captain {
-    width: 260px;
-    border-width: 3px;
-    border-color: #666;
+    border-color: rgba(42, 140, 126, .3) !important;
 }
 
-/* Photo */
-.photo {
-    width: 120px;
-    height: 120px;
-    margin: 0 auto 1rem;
-    border-radius: 50%;
-    overflow: hidden;
-    border: 3px solid #e0e0e0;
+.official-box.sk-captain::before {
+    background: var(--of-teal) !important;
 }
 
+/* Photo circle */
+.official-box .photo {
+    width: 80px !important;
+    height: 80px !important;
+    margin: 0 auto 14px !important;
+    border-radius: 50% !important;
+    overflow: hidden !important;
+    border: 2px solid var(--of-border) !important;
+    transition: border-color .25s;
+}
+
+.official-box:hover .photo {
+    border-color: var(--of-copper);
+}
+
+.official-box .photo img {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+    display: block;
+}
+
+.official-box .initials {
+    width: 100% !important;
+    height: 100% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    background: linear-gradient(135deg, var(--of-navy), var(--of-navy-light)) !important;
+    color: rgba(255, 255, 255, .9) !important;
+    font-family: 'Playfair Display', serif !important;
+    font-size: 24px !important;
+    font-weight: 700 !important;
+    letter-spacing: -1px;
+}
+
+/* Captain & SK chair — larger photo */
 .official-box.captain .photo,
 .official-box.sk-captain .photo {
-    width: 140px;
-    height: 140px;
-    border-color: #666;
-}
-
-.photo img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-
-.initials {
-    width: 100%;
-    height: 100%;
-    background: #f5f5f5;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 2.5rem;
-    font-weight: 600;
-    color: #666;
+    width: 96px !important;
+    height: 96px !important;
 }
 
 .official-box.captain .initials,
 .official-box.sk-captain .initials {
-    font-size: 3rem;
-    background: #e8e8e8;
+    font-size: 28px !important;
 }
 
-/* Text Styles */
+/* Name */
 .official-box h3 {
-    font-size: 1.1rem;
-    color: #333;
-    margin-bottom: 0.5rem;
-    font-weight: 600;
+    font-family: 'Playfair Display', serif !important;
+    margin: 0 0 6px !important;
+    font-size: 13.5px !important;
+    font-weight: 600 !important;
+    color: var(--of-text) !important;
     line-height: 1.3;
 }
 
-.official-box.captain h3,
-.official-box.sk-captain h3 {
-    font-size: 1.25rem;
+/* Position label */
+.official-box .position {
+    margin: 0 0 7px !important;
+    font-size: 10.5px !important;
+    font-family: 'DM Mono', monospace !important;
+    color: var(--of-copper) !important;
+    font-weight: 500 !important;
+    letter-spacing: .3px;
+    text-transform: uppercase;
 }
 
-.position {
-    font-size: 0.9rem;
-    color: #666;
-    margin-bottom: 0.5rem;
-    font-weight: 500;
+.official-box.sk-captain .position {
+    color: var(--of-teal) !important;
 }
 
-.term {
-    font-size: 0.85rem;
-    color: #999;
-    margin: 0;
+/* Term label */
+.official-box .term {
+    margin: 0 !important;
+    font-family: 'DM Mono', monospace !important;
+    font-size: 10px !important;
+    color: var(--of-muted) !important;
+    background: var(--of-surf2);
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--of-border);
 }
 
-/* Grid Adjustments */
-.org-level.council {
-    max-width: 100%;
-}
-
-.org-level.sk-members {
-    max-width: 100%;
-}
-
-.org-level.admin {
-    max-width: 600px;
-}
-
-/* Other Officials Section */
+/* ═══════════════════════════════════════════
+   OTHER OFFICIALS SECTION
+═══════════════════════════════════════════ */
 .other-officials-section {
-    margin-top: 3rem;
-    padding-top: 2rem;
-    border-top: 2px solid #e0e0e0;
+    background: var(--of-surf);
+    border-radius: var(--of-radius-lg);
+    border: 1px solid var(--of-border);
+    box-shadow: var(--of-shadow);
+    padding: 28px 24px;
+    margin-top: 20px;
+    animation: ofFadeUp .35s ease both;
+}
+
+.other-officials-section .section-title {
+    margin-top: 0;
 }
 
 .org-level.others {
-    display: flex;
-    gap: 2rem;
-    justify-content: center;
-    flex-wrap: wrap;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    justify-content: center !important;
+    gap: 14px !important;
+    margin-top: 20px;
 }
 
-/* Responsive Design */
-@media (max-width: 1200px) {
+@keyframes ofFadeUp {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ═══════════════════════════════════════════
+   SCROLLBAR
+═══════════════════════════════════════════ */
+::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--of-surf2);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--of-border);
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--of-muted);
+}
+
+/* ═══════════════════════════════════════════
+   RESPONSIVE
+═══════════════════════════════════════════ */
+@media (max-width: 1024px) {
     .two-column-layout {
-        grid-template-columns: 1fr;
-        gap: 3rem;
+        flex-direction: column !important;
     }
-    
+
     .vertical-divider {
-        display: none;
+        width: auto !important;
+        height: 1px !important;
+        align-self: stretch;
     }
-    
+
     .officials-section {
-        padding-bottom: 2rem;
-        border-bottom: 2px solid #e0e0e0;
+        border-bottom: 1px solid var(--of-border);
     }
-    
+
     .officials-section:last-child {
         border-bottom: none;
     }
 }
 
-@media (max-width: 768px) {
-    .officials-page {
-        padding: 1rem;
+@media (max-width: 600px) {
+    .page-header-content h1 {
+        font-size: 20px !important;
     }
-    
-    .page-header h1 {
-        font-size: 1.5rem;
+
+    .officials-section {
+        padding: 20px 16px;
     }
-    
-    .section-title {
-        font-size: 1.25rem;
-    }
-    
-    .two-column-layout {
-        gap: 2rem;
-    }
-    
-    .org-level {
-        gap: 1.5rem;
-    }
-    
+
     .official-box {
-        width: 180px;
-        padding: 1rem;
+        min-width: 140px !important;
+        max-width: 160px !important;
+        padding: 14px 10px !important;
     }
-    
-    .official-box.captain,
-    .official-box.sk-captain {
-        width: 200px;
-    }
-    
-    .photo {
-        width: 100px;
-        height: 100px;
-    }
-    
-    .official-box.captain .photo,
-    .official-box.sk-captain .photo {
-        width: 120px;
-        height: 120px;
-    }
-    
-    .initials {
-        font-size: 2rem;
-    }
-    
-    .official-box.captain .initials,
-    .official-box.sk-captain .initials {
-        font-size: 2.5rem;
-    }
-    
+
     .official-box h3 {
-        font-size: 1rem;
-    }
-}
-
-@media (max-width: 480px) {
-    .org-level {
-        flex-direction: column;
-        align-items: center;
-        gap: 1.5rem;
-    }
-    
-    .official-box,
-    .official-box.captain,
-    .official-box.sk-captain {
-        width: 100%;
-        max-width: 280px;
-    }
-    
-    .connector {
-        height: 30px;
-    }
-}
-
-/* Print Styles */
-@media print {
-    .two-column-layout {
-        grid-template-columns: 1fr 1fr;
-        gap: 2rem;
-    }
-    
-    .vertical-divider {
-        display: block;
-    }
-    
-    .official-box {
-        break-inside: avoid;
-        page-break-inside: avoid;
-    }
-    
-    .official-box:hover {
-        border-color: #ddd;
-        box-shadow: none;
+        font-size: 12px !important;
     }
 }
