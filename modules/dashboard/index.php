@@ -471,12 +471,12 @@ $role_badge = $role_badge_colors[$user_role] ?? 'badge-resident';
     </div>
     <?php endif; ?>
     <!-- Quick links for residents -->
-    <a href="../incidents/report.php" class="db-quicklink-card">
+    <a href="../incidents/report-incident.php" class="db-quicklink-card">
         <i class="fas fa-plus-circle"></i>
         <span>Report Incident</span>
         <i class="fas fa-arrow-right db-quicklink-card__arrow"></i>
     </a>
-    <a href="../complaints/file.php" class="db-quicklink-card db-quicklink-card--amber">
+    <a href="../complaints/file-complaint.php" class="db-quicklink-card db-quicklink-card--amber">
         <i class="fas fa-comment-dots"></i>
         <span>File Complaint</span>
         <i class="fas fa-arrow-right db-quicklink-card__arrow"></i>
