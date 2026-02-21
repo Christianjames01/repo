@@ -353,12 +353,12 @@ if ($user_role !== 'Resident' && tableExists($conn, 'tbl_incidents')) {
     $incidents_stmt->close();
 }
 
-$extra_css = '<link rel="stylesheet" href="../../assets/css/dashboard-index.css">';
+$extra_css = '<link rel="stylesheet" href="../../assets/css/dashboard-index.css?v=' . time() . '">';
 include '../../includes/header.php';
 
 // Role label map
 $role_greetings = [
-    'Super Admin' => 'Super Administrator',
+    'Super Admin' => 'Super Admin',
     'Admin'       => 'Administrator',
     'Staff'       => 'Staff Member',
     'Resident'    => 'Resident',
