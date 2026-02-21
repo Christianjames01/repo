@@ -26,6 +26,7 @@ $selected_date     = isset($_GET['date'])   ? $_GET['date']   : date('Y-m-d');
 $selected_role     = isset($_GET['role'])   ? $_GET['role']   : 'all';
 $selected_status   = isset($_GET['status']) ? $_GET['status'] : 'all';
 
+
 // ── Handle manual attendance marking ────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mark_attendance'])) {
     $user_id         = intval($_POST['user_id']);
@@ -33,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mark_attendance'])) {
     $status          = sanitizeInput($_POST['status']);
     $time_in         = !empty($_POST['time_in'])  ? sanitizeInput($_POST['time_in'])  : null;
     $time_out        = !empty($_POST['time_out']) ? sanitizeInput($_POST['time_out']) : null;
-    $notes           = sanitizeInput($_POST['notes']);
+    $notes           = !empty($_POST['notes']) ? sanitizeInput($_POST['notes']) : '';
 
     if ($user_id <= 0) {
         $_SESSION['error_message'] = 'Invalid staff member selected.';
@@ -41,26 +42,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mark_attendance'])) {
         exit();
     }
 
-    $existing = fetchOne($conn,
-        "SELECT attendance_id FROM tbl_attendance WHERE user_id = ? AND attendance_date = ?",
-        [$user_id, $attendance_date], 'is'
-    );
+    // Check if record exists
+    $stmt = $conn->prepare("SELECT attendance_id FROM tbl_attendance WHERE user_id = ? AND attendance_date = ?");
+    $stmt->bind_param("is", $user_id, $attendance_date);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $existing = $res->fetch_assoc();
+    $stmt->close();
 
     $columns_check  = $conn->query("SHOW COLUMNS FROM tbl_attendance LIKE 'updated_by'");
     $has_updated_by = $columns_check && $columns_check->num_rows > 0;
 
     if ($existing) {
         if ($has_updated_by) {
-            $sql = "UPDATE tbl_attendance SET status=?,time_in=?,time_out=?,notes=?,updated_by=? WHERE attendance_id=?";
-            $success = executeQuery($conn, $sql, [$status,$time_in,$time_out,$notes,$current_user_id,$existing['attendance_id']],'ssssii');
+            $stmt = $conn->prepare("UPDATE tbl_attendance SET status=?,time_in=?,time_out=?,notes=?,updated_by=? WHERE attendance_id=?");
+            $stmt->bind_param("ssssii", $status,$time_in,$time_out,$notes,$current_user_id,$existing['attendance_id']);
+            $success = $stmt->execute();
+            $stmt->close();
         } else {
-            $sql = "UPDATE tbl_attendance SET status=?,time_in=?,time_out=?,notes=? WHERE attendance_id=?";
-            $success = executeQuery($conn, $sql, [$status,$time_in,$time_out,$notes,$existing['attendance_id']],'ssssi');
+            $stmt = $conn->prepare("UPDATE tbl_attendance SET status=?,time_in=?,time_out=?,notes=? WHERE attendance_id=?");
+            $stmt->bind_param("ssssi", $status,$time_in,$time_out,$notes,$existing['attendance_id']);
+            $success = $stmt->execute();
+            $stmt->close();
         }
         $message = 'Attendance updated successfully';
     } else {
-        $sql = "INSERT INTO tbl_attendance (user_id,attendance_date,status,time_in,time_out,notes,created_by) VALUES (?,?,?,?,?,?,?)";
-        $success = executeQuery($conn, $sql, [$user_id,$attendance_date,$status,$time_in,$time_out,$notes,$current_user_id],'isssssi');
+        $stmt = $conn->prepare("INSERT INTO tbl_attendance (user_id,attendance_date,status,time_in,time_out,notes,created_by) VALUES (?,?,?,?,?,?,?)");
+        $stmt->bind_param("isssssi", $user_id,$attendance_date,$status,$time_in,$time_out,$notes,$current_user_id);
+        $success = $stmt->execute();
+        $stmt->close();
         $message = 'Attendance marked successfully';
     }
 
@@ -68,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mark_attendance'])) {
         logActivity($conn, $current_user_id, "Marked attendance for user #{$user_id}: {$status} on {$attendance_date}", 'tbl_attendance', $user_id);
         $_SESSION['success_message'] = $message;
     } else {
-        $_SESSION['error_message'] = 'Failed to mark attendance';
+        $_SESSION['error_message'] = 'Failed to mark attendance: ' . $conn->error;
     }
     header("Location: index.php?date=$attendance_date");
     exit();
@@ -78,35 +88,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mark_attendance'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_mark'])) {
     $attendance_date    = sanitizeInput($_POST['bulk_date']);
     $bulk_status        = sanitizeInput($_POST['bulk_status']);
-    $selected_users     = $_POST['selected_users'] ?? [];
+    $selected_users     = isset($_POST['selected_users']) ? $_POST['selected_users'] : [];
     $bulk_time_in       = !empty($_POST['bulk_time_in'])  ? sanitizeInput($_POST['bulk_time_in'])  : null;
     $bulk_time_out      = !empty($_POST['bulk_time_out']) ? sanitizeInput($_POST['bulk_time_out']) : null;
     $overwrite_existing = isset($_POST['overwrite_existing']);
     $success_count = $updated_count = $skipped_count = 0;
 
+    if (empty($selected_users)) {
+        $_SESSION['error_message'] = 'No staff members selected.';
+        header("Location: index.php?date=$attendance_date");
+        exit();
+    }
+
     $columns_check  = $conn->query("SHOW COLUMNS FROM tbl_attendance LIKE 'updated_by'");
     $has_updated_by = $columns_check && $columns_check->num_rows > 0;
 
-    foreach ($selected_users as $user_id) {
-        $user_id = intval($user_id);
-        if ($user_id <= 0) continue;
-        $existing = fetchOne($conn,
-            "SELECT attendance_id FROM tbl_attendance WHERE user_id=? AND attendance_date=?",
-            [$user_id, $attendance_date], 'is'
-        );
+    foreach ($selected_users as $uid) {
+        $uid = intval($uid);
+        if ($uid <= 0) continue;
+
+        $stmt = $conn->prepare("SELECT attendance_id FROM tbl_attendance WHERE user_id=? AND attendance_date=?");
+        $stmt->bind_param("is", $uid, $attendance_date);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $existing = $res->fetch_assoc();
+        $stmt->close();
+
         if ($existing) {
             if ($overwrite_existing) {
                 if ($has_updated_by) {
-                    $sql = "UPDATE tbl_attendance SET status=?,time_in=?,time_out=?,updated_by=? WHERE attendance_id=?";
-                    if (executeQuery($conn, $sql, [$bulk_status,$bulk_time_in,$bulk_time_out,$current_user_id,$existing['attendance_id']],'sssii')) $updated_count++;
+                    $stmt = $conn->prepare("UPDATE tbl_attendance SET status=?,time_in=?,time_out=?,updated_by=? WHERE attendance_id=?");
+                    $stmt->bind_param("sssii", $bulk_status,$bulk_time_in,$bulk_time_out,$current_user_id,$existing['attendance_id']);
                 } else {
-                    $sql = "UPDATE tbl_attendance SET status=?,time_in=?,time_out=? WHERE attendance_id=?";
-                    if (executeQuery($conn, $sql, [$bulk_status,$bulk_time_in,$bulk_time_out,$existing['attendance_id']],'sssi')) $updated_count++;
+                    $stmt = $conn->prepare("UPDATE tbl_attendance SET status=?,time_in=?,time_out=? WHERE attendance_id=?");
+                    $stmt->bind_param("sssi", $bulk_status,$bulk_time_in,$bulk_time_out,$existing['attendance_id']);
                 }
-            } else { $skipped_count++; }
+                if ($stmt->execute()) $updated_count++;
+                $stmt->close();
+            } else {
+                $skipped_count++;
+            }
         } else {
-            $sql = "INSERT INTO tbl_attendance (user_id,attendance_date,status,time_in,time_out,created_by) VALUES (?,?,?,?,?,?)";
-            if (executeQuery($conn, $sql, [$user_id,$attendance_date,$bulk_status,$bulk_time_in,$bulk_time_out,$current_user_id],'issssi')) $success_count++;
+            $stmt = $conn->prepare("INSERT INTO tbl_attendance (user_id,attendance_date,status,time_in,time_out,created_by) VALUES (?,?,?,?,?,?)");
+            $stmt->bind_param("issssi", $uid,$attendance_date,$bulk_status,$bulk_time_in,$bulk_time_out,$current_user_id);
+            if ($stmt->execute()) $success_count++;
+            $stmt->close();
         }
     }
 
@@ -120,12 +146,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_mark'])) {
         logActivity($conn, $current_user_id, "Bulk marked attendance for $total users", 'tbl_attendance');
         $_SESSION['success_message'] = "Bulk attendance completed: " . implode(', ', $messages);
     } else {
-        $_SESSION['error_message'] = "No attendance records were created or updated. " . ($skipped_count > 0 ? "$skipped_count staff already have attendance marked. Enable 'Overwrite Existing' to update them." : "");
+        $_SESSION['error_message'] = "No records created or updated. " . ($skipped_count > 0 ? "$skipped_count staff already marked. Enable 'Overwrite Existing' to update them." : "No staff selected.");
     }
     header("Location: index.php?date=$attendance_date");
     exit();
 }
-
 // ── Fetch users ──────────────────────────────────────────────────────────────
 $users_query = "SELECT u.user_id, u.username, u.role,
                 CONCAT(r.first_name,' ',r.last_name) as full_name, r.profile_photo
@@ -588,43 +613,6 @@ textarea.att-input { resize: vertical; min-height: 80px; }
     <button type="button" class="db-btn db-btn--primary" onclick="openAttModal('bulkMarkModal')">
         <i class="fas fa-users"></i> Bulk Mark Attendance
     </button>
-</div>
-
-<!-- ─── FILTER CARD ───────────────────────────────────────────────────────── -->
-<div class="att-filter-card">
-    <form method="GET" class="att-filter-row">
-        <div class="att-filter-group">
-            <label><i class="fas fa-calendar me-1"></i> Date</label>
-            <input type="date" name="date" class="db-input" value="<?php echo $selected_date; ?>" onchange="this.form.submit()">
-        </div>
-        <div class="att-filter-group">
-            <label><i class="fas fa-id-badge me-1"></i> Role</label>
-            <select name="role" class="db-input" onchange="this.form.submit()">
-                <option value="all"   <?php echo $selected_role==='all'    ? 'selected':'' ?>>All Roles</option>
-                <option value="Admin" <?php echo $selected_role==='Admin'  ? 'selected':'' ?>>Admin</option>
-                <option value="Staff" <?php echo $selected_role==='Staff'  ? 'selected':'' ?>>Staff</option>
-                <option value="Tanod" <?php echo $selected_role==='Tanod'  ? 'selected':'' ?>>Tanod</option>
-                <option value="Driver"<?php echo $selected_role==='Driver' ? 'selected':'' ?>>Driver</option>
-            </select>
-        </div>
-        <div class="att-filter-group">
-            <label><i class="fas fa-filter me-1"></i> Status</label>
-            <select name="status" class="db-input" onchange="this.form.submit()">
-                <option value="all"      <?php echo $selected_status==='all'      ?'selected':''?>>All Status</option>
-                <option value="Present"  <?php echo $selected_status==='Present'  ?'selected':''?>>Present</option>
-                <option value="Late"     <?php echo $selected_status==='Late'     ?'selected':''?>>Late</option>
-                <option value="Absent"   <?php echo $selected_status==='Absent'   ?'selected':''?>>Absent</option>
-                <option value="On Leave" <?php echo $selected_status==='On Leave' ?'selected':''?>>On Leave</option>
-                <option value="unmarked" <?php echo $selected_status==='unmarked' ?'selected':''?>>Unmarked</option>
-            </select>
-        </div>
-        <div class="att-filter-group" style="flex:0;min-width:auto;">
-            <label>&nbsp;</label>
-            <a href="index.php?date=<?php echo date('Y-m-d'); ?>" class="db-btn db-btn--ghost" style="height:40px;align-items:center;">
-                <i class="fas fa-redo"></i> Reset
-            </a>
-        </div>
-    </form>
 </div>
 
 <!-- ─── MAIN ATTENDANCE PANEL ────────────────────────────────────────────── -->
