@@ -1133,6 +1133,23 @@ $current_path = $_SERVER['PHP_SELF'];
 <script>
 document.addEventListener('DOMContentLoaded', function () {
 
+    /* ── Sidebar toggle ── */
+    var sidebarToggle = document.getElementById('sidebarToggle');
+
+    // Restore saved preference (default: open)
+    if (localStorage.getItem('sidebarClosed') === 'true') {
+        document.body.classList.remove('sidebar-open');
+        document.body.classList.add('sidebar-closed');
+    }
+
+    if (sidebarToggle) {
+        sidebarToggle.addEventListener('click', function () {
+            var isClosed = document.body.classList.toggle('sidebar-closed');
+            document.body.classList.toggle('sidebar-open', !isClosed);
+            localStorage.setItem('sidebarClosed', isClosed ? 'true' : 'false');
+        });
+    }
+
     /* ── Collapsible nav sections ── */
     document.querySelectorAll('.nav-section-toggle').forEach(function (toggle) {
         toggle.addEventListener('click', function () {

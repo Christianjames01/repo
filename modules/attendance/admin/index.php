@@ -30,67 +30,79 @@ $selected_status   = isset($_GET['status']) ? $_GET['status'] : 'all';
 // ── Handle manual attendance marking ────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mark_attendance'])) {
     $user_id         = intval($_POST['user_id']);
-    $attendance_date = sanitizeInput($_POST['attendance_date']);
-    $status          = sanitizeInput($_POST['status']);
-    $time_in         = !empty($_POST['time_in'])  ? sanitizeInput($_POST['time_in'])  : null;
-    $time_out        = !empty($_POST['time_out']) ? sanitizeInput($_POST['time_out']) : null;
-    $notes           = !empty($_POST['notes']) ? sanitizeInput($_POST['notes']) : '';
+    // Use trim() only for DB-bound fields — sanitizeInput() runs htmlspecialchars which
+    // would corrupt stored values (e.g. notes with quotes, status comparisons)
+    $attendance_date = trim($_POST['attendance_date'] ?? '');
+    $status          = trim($_POST['status'] ?? 'Present');
+    $time_in         = !empty($_POST['time_in'])  ? trim($_POST['time_in'])  : null;
+    $time_out        = !empty($_POST['time_out']) ? trim($_POST['time_out']) : null;
+    $notes           = trim($_POST['notes'] ?? '');
 
-    if ($user_id <= 0) {
-        $_SESSION['error_message'] = 'Invalid staff member selected.';
-        header("Location: index.php?date=" . urlencode($attendance_date ?: date('Y-m-d')));
+    // Whitelist allowed statuses to prevent injection
+    $allowed_statuses = ['Present','Late','Absent','On Leave','Half Day'];
+    if (!in_array($status, $allowed_statuses)) {
+        $status = 'Present';
+    }
+
+    if ($user_id <= 0 || empty($attendance_date)) {
+        $_SESSION['error_message'] = 'Invalid staff member or date.';
+        header('Location: index.php?date=' . urlencode($attendance_date ?: date('Y-m-d')));
         exit();
     }
 
     // Check if record exists
-    $stmt = $conn->prepare("SELECT attendance_id FROM tbl_attendance WHERE user_id = ? AND attendance_date = ?");
-    $stmt->bind_param("is", $user_id, $attendance_date);
+    $stmt = $conn->prepare('SELECT attendance_id FROM tbl_attendance WHERE user_id = ? AND attendance_date = ?');
+    $stmt->bind_param('is', $user_id, $attendance_date);
     $stmt->execute();
-    $res = $stmt->get_result();
-    $existing = $res->fetch_assoc();
+    $existing = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
-    $columns_check  = $conn->query("SHOW COLUMNS FROM tbl_attendance LIKE 'updated_by'");
-    $has_updated_by = $columns_check && $columns_check->num_rows > 0;
+    $has_updated_by = $conn->query("SHOW COLUMNS FROM tbl_attendance LIKE 'updated_by'")->num_rows > 0;
 
     if ($existing) {
         if ($has_updated_by) {
-            $stmt = $conn->prepare("UPDATE tbl_attendance SET status=?,time_in=?,time_out=?,notes=?,updated_by=? WHERE attendance_id=?");
-            $stmt->bind_param("ssssii", $status,$time_in,$time_out,$notes,$current_user_id,$existing['attendance_id']);
-            $success = $stmt->execute();
-            $stmt->close();
+            $stmt = $conn->prepare('UPDATE tbl_attendance SET status=?,time_in=?,time_out=?,notes=?,updated_by=? WHERE attendance_id=?');
+            $stmt->bind_param('ssssii', $status, $time_in, $time_out, $notes, $current_user_id, $existing['attendance_id']);
         } else {
-            $stmt = $conn->prepare("UPDATE tbl_attendance SET status=?,time_in=?,time_out=?,notes=? WHERE attendance_id=?");
-            $stmt->bind_param("ssssi", $status,$time_in,$time_out,$notes,$existing['attendance_id']);
-            $success = $stmt->execute();
-            $stmt->close();
+            $stmt = $conn->prepare('UPDATE tbl_attendance SET status=?,time_in=?,time_out=?,notes=? WHERE attendance_id=?');
+            $stmt->bind_param('ssssi', $status, $time_in, $time_out, $notes, $existing['attendance_id']);
         }
+        $success = $stmt->execute();
+        if (!$success) $_SESSION['error_message'] = 'DB error: ' . $stmt->error;
+        $stmt->close();
         $message = 'Attendance updated successfully';
     } else {
-        $stmt = $conn->prepare("INSERT INTO tbl_attendance (user_id,attendance_date,status,time_in,time_out,notes,created_by) VALUES (?,?,?,?,?,?,?)");
-        $stmt->bind_param("isssssi", $user_id,$attendance_date,$status,$time_in,$time_out,$notes,$current_user_id);
+        $has_created_by = $conn->query("SHOW COLUMNS FROM tbl_attendance LIKE 'created_by'")->num_rows > 0;
+        if ($has_created_by) {
+            $stmt = $conn->prepare('INSERT INTO tbl_attendance (user_id,attendance_date,status,time_in,time_out,notes,created_by) VALUES (?,?,?,?,?,?,?)');
+            $stmt->bind_param('isssssi', $user_id, $attendance_date, $status, $time_in, $time_out, $notes, $current_user_id);
+        } else {
+            $stmt = $conn->prepare('INSERT INTO tbl_attendance (user_id,attendance_date,status,time_in,time_out,notes) VALUES (?,?,?,?,?,?)');
+            $stmt->bind_param('isssss', $user_id, $attendance_date, $status, $time_in, $time_out, $notes);
+        }
         $success = $stmt->execute();
+        if (!$success) $_SESSION['error_message'] = 'DB error: ' . $stmt->error;
         $stmt->close();
         $message = 'Attendance marked successfully';
     }
 
     if ($success) {
-        logActivity($conn, $current_user_id, "Marked attendance for user #{$user_id}: {$status} on {$attendance_date}", 'tbl_attendance', $user_id);
+        logActivity($conn, $current_user_id, "Marked attendance for user #{$user_id}: {$status} on {$attendance_date}", 'tbl_attendance');
         $_SESSION['success_message'] = $message;
-    } else {
-        $_SESSION['error_message'] = 'Failed to mark attendance: ' . $conn->error;
     }
-    header("Location: index.php?date=$attendance_date");
+    header('Location: index.php?date=' . urlencode($attendance_date));
     exit();
 }
 
 // ── Handle bulk attendance marking ──────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_mark'])) {
-    $attendance_date    = sanitizeInput($_POST['bulk_date']);
-    $bulk_status        = sanitizeInput($_POST['bulk_status']);
+    $attendance_date    = trim($_POST['bulk_date'] ?? date('Y-m-d'));
+    $bulk_status        = trim($_POST['bulk_status'] ?? 'Present');
+    $allowed_statuses   = ['Present','Late','Absent','On Leave','Half Day'];
+    if (!in_array($bulk_status, $allowed_statuses)) $bulk_status = 'Present';
     $selected_users     = isset($_POST['selected_users']) ? $_POST['selected_users'] : [];
-    $bulk_time_in       = !empty($_POST['bulk_time_in'])  ? sanitizeInput($_POST['bulk_time_in'])  : null;
-    $bulk_time_out      = !empty($_POST['bulk_time_out']) ? sanitizeInput($_POST['bulk_time_out']) : null;
+    $bulk_time_in       = !empty($_POST['bulk_time_in'])  ? trim($_POST['bulk_time_in'])  : null;
+    $bulk_time_out      = !empty($_POST['bulk_time_out']) ? trim($_POST['bulk_time_out']) : null;
     $overwrite_existing = isset($_POST['overwrite_existing']);
     $success_count = $updated_count = $skipped_count = 0;
 
@@ -117,11 +129,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_mark'])) {
         if ($existing) {
             if ($overwrite_existing) {
                 if ($has_updated_by) {
-                    $stmt = $conn->prepare("UPDATE tbl_attendance SET status=?,time_in=?,time_out=?,updated_by=? WHERE attendance_id=?");
-                    $stmt->bind_param("sssii", $bulk_status,$bulk_time_in,$bulk_time_out,$current_user_id,$existing['attendance_id']);
+                    $stmt = $conn->prepare('UPDATE tbl_attendance SET status=?,time_in=?,time_out=?,updated_by=? WHERE attendance_id=?');
+                    $stmt->bind_param('sssii', $bulk_status, $bulk_time_in, $bulk_time_out, $current_user_id, $existing['attendance_id']);
                 } else {
-                    $stmt = $conn->prepare("UPDATE tbl_attendance SET status=?,time_in=?,time_out=? WHERE attendance_id=?");
-                    $stmt->bind_param("sssi", $bulk_status,$bulk_time_in,$bulk_time_out,$existing['attendance_id']);
+                    $stmt = $conn->prepare('UPDATE tbl_attendance SET status=?,time_in=?,time_out=? WHERE attendance_id=?');
+                    $stmt->bind_param('sssi', $bulk_status, $bulk_time_in, $bulk_time_out, $existing['attendance_id']);
                 }
                 if ($stmt->execute()) $updated_count++;
                 $stmt->close();
@@ -129,26 +141,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_mark'])) {
                 $skipped_count++;
             }
         } else {
-            $stmt = $conn->prepare("INSERT INTO tbl_attendance (user_id,attendance_date,status,time_in,time_out,created_by) VALUES (?,?,?,?,?,?)");
-            $stmt->bind_param("issssi", $uid,$attendance_date,$bulk_status,$bulk_time_in,$bulk_time_out,$current_user_id);
+            $has_created_by = $conn->query("SHOW COLUMNS FROM tbl_attendance LIKE 'created_by'")->num_rows > 0;
+            if ($has_created_by) {
+                $stmt = $conn->prepare('INSERT INTO tbl_attendance (user_id,attendance_date,status,time_in,time_out,created_by) VALUES (?,?,?,?,?,?)');
+                $stmt->bind_param('issssi', $uid, $attendance_date, $bulk_status, $bulk_time_in, $bulk_time_out, $current_user_id);
+            } else {
+                $stmt = $conn->prepare('INSERT INTO tbl_attendance (user_id,attendance_date,status,time_in,time_out) VALUES (?,?,?,?,?)');
+                $stmt->bind_param('issss', $uid, $attendance_date, $bulk_status, $bulk_time_in, $bulk_time_out);
+            }
             if ($stmt->execute()) $success_count++;
             $stmt->close();
         }
     }
 
     $messages = [];
-    if ($success_count > 0) $messages[] = "Created $success_count new record" . ($success_count > 1 ? 's' : '');
-    if ($updated_count > 0) $messages[] = "Updated $updated_count existing record" . ($updated_count > 1 ? 's' : '');
-    if ($skipped_count > 0) $messages[] = "Skipped $skipped_count record" . ($skipped_count > 1 ? 's' : '') . " (already marked)";
+    if ($success_count > 0) $messages[] = "Created {$success_count} new record" . ($success_count > 1 ? 's' : '');
+    if ($updated_count > 0) $messages[] = "Updated {$updated_count} existing record" . ($updated_count > 1 ? 's' : '');
+    if ($skipped_count > 0) $messages[] = "Skipped {$skipped_count} record" . ($skipped_count > 1 ? 's' : '') . ' (already marked)';
 
     if ($success_count > 0 || $updated_count > 0) {
         $total = $success_count + $updated_count;
-        logActivity($conn, $current_user_id, "Bulk marked attendance for $total users", 'tbl_attendance');
-        $_SESSION['success_message'] = "Bulk attendance completed: " . implode(', ', $messages);
+        logActivity($conn, $current_user_id, "Bulk marked attendance for {$total} user(s) — {$bulk_status} on {$attendance_date}", 'tbl_attendance');
+        $_SESSION['success_message'] = 'Bulk attendance completed: ' . implode(', ', $messages);
     } else {
-        $_SESSION['error_message'] = "No records created or updated. " . ($skipped_count > 0 ? "$skipped_count staff already marked. Enable 'Overwrite Existing' to update them." : "No staff selected.");
+        $_SESSION['error_message'] = 'No records created or updated. ' . ($skipped_count > 0 ? "{$skipped_count} staff already marked — enable 'Overwrite Existing' to update them." : 'No staff selected.');
     }
-    header("Location: index.php?date=$attendance_date");
+    header('Location: index.php?date=' . urlencode($attendance_date));
     exit();
 }
 // ── Fetch users ──────────────────────────────────────────────────────────────
@@ -426,6 +444,19 @@ textarea.att-input { resize: vertical; min-height: 80px; }
     padding: 10px 14px; font-size: 12px; color: #92400e; display: flex; gap: 7px;
 }
 
+/* Bulk-modal selected-staff chips */
+.bulk-staff-chip {
+    display: inline-flex;
+    align-items: center;
+    background: #dbeafe;
+    color: #1e40af;
+    border-radius: 20px;
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: 'DM Mono', monospace;
+}
+
 /* Empty state */
 .att-empty {
     display: flex; flex-direction: column; align-items: center;
@@ -610,9 +641,54 @@ textarea.att-input { resize: vertical; min-height: 80px; }
     <a href="attendance-reports.php" class="db-btn db-btn--ghost">
         <i class="fas fa-chart-bar"></i> Reports
     </a>
-    <button type="button" class="db-btn db-btn--primary" onclick="openAttModal('bulkMarkModal')">
+    <button type="button" id="btnBulkMark" class="db-btn db-btn--primary">
         <i class="fas fa-users"></i> Bulk Mark Attendance
     </button>
+    <button type="button" id="btnSelectAllBulk" class="db-btn" style="background:linear-gradient(135deg,#059669,#10b981);color:#fff;border:none;">
+        <i class="fas fa-check-double"></i> Select All &amp; Bulk Mark
+    </button>
+</div>
+
+<!-- ─── FILTER CARD ───────────────────────────────────────────────────────── -->
+<div class="att-filter-card">
+    <form method="GET" action="index.php">
+        <div class="att-filter-row">
+            <div class="att-filter-group">
+                <label><i class="fas fa-calendar me-1"></i>Date</label>
+                <input type="date" name="date" class="db-input"
+                       value="<?php echo htmlspecialchars($selected_date); ?>"
+                       onchange="this.form.submit()">
+            </div>
+            <div class="att-filter-group">
+                <label><i class="fas fa-user-tag me-1"></i>Role</label>
+                <select name="role" class="db-input" onchange="this.form.submit()">
+                    <option value="all"   <?php echo $selected_role==='all'   ?'selected':''; ?>>All Roles</option>
+                    <option value="Admin"  <?php echo $selected_role==='Admin'  ?'selected':''; ?>>Admin</option>
+                    <option value="Staff"  <?php echo $selected_role==='Staff'  ?'selected':''; ?>>Staff</option>
+                    <option value="Tanod"  <?php echo $selected_role==='Tanod'  ?'selected':''; ?>>Tanod</option>
+                    <option value="Driver" <?php echo $selected_role==='Driver' ?'selected':''; ?>>Driver</option>
+                </select>
+            </div>
+            <div class="att-filter-group">
+                <label><i class="fas fa-filter me-1"></i>Status</label>
+                <select name="status" class="db-input" onchange="this.form.submit()">
+                    <option value="all"      <?php echo $selected_status==='all'      ?'selected':''; ?>>All Status</option>
+                    <option value="Present"  <?php echo $selected_status==='Present'  ?'selected':''; ?>>Present</option>
+                    <option value="Late"     <?php echo $selected_status==='Late'     ?'selected':''; ?>>Late</option>
+                    <option value="Absent"   <?php echo $selected_status==='Absent'   ?'selected':''; ?>>Absent</option>
+                    <option value="On Leave" <?php echo $selected_status==='On Leave' ?'selected':''; ?>>On Leave</option>
+                    <option value="Half Day" <?php echo $selected_status==='Half Day' ?'selected':''; ?>>Half Day</option>
+                    <option value="unmarked" <?php echo $selected_status==='unmarked' ?'selected':''; ?>>Unmarked</option>
+                </select>
+            </div>
+            <div class="att-filter-group" style="flex:0 0 auto;">
+                <label>&nbsp;</label>
+                <a href="index.php" class="db-btn db-btn--ghost" style="white-space:nowrap;">
+                    <i class="fas fa-times"></i> Reset
+                </a>
+            </div>
+        </div>
+    </form>
 </div>
 
 <!-- ─── MAIN ATTENDANCE PANEL ────────────────────────────────────────────── -->
@@ -623,10 +699,10 @@ textarea.att-input { resize: vertical; min-height: 80px; }
             <h2>Attendance — <?php echo date('F j, Y', strtotime($selected_date)); ?></h2>
         </div>
         <div class="db-panel__actions">
-            <button class="db-btn db-btn--ghost db-btn--sm" onclick="attSelectAll()">
+            <button id="btnPanelSelectAll" class="db-btn db-btn--ghost db-btn--sm">
                 <i class="fas fa-check-square"></i> Select All
             </button>
-            <button class="db-btn db-btn--ghost db-btn--sm" onclick="attDeselectAll()">
+            <button id="btnPanelDeselect" class="db-btn db-btn--ghost db-btn--sm">
                 <i class="fas fa-square"></i> Deselect
             </button>
         </div>
@@ -637,7 +713,7 @@ textarea.att-input { resize: vertical; min-height: 80px; }
             <thead>
                 <tr>
                     <th width="42">
-                        <input type="checkbox" id="attSelectAllCb" onchange="attToggleAll()" style="accent-color:#f59e0b;width:15px;height:15px;">
+                        <input type="checkbox" id="attSelectAllCb" style="accent-color:#f59e0b;width:15px;height:15px;">
                     </th>
                     <th>Staff Member</th>
                     <th>Role</th>
@@ -683,7 +759,7 @@ textarea.att-input { resize: vertical; min-height: 80px; }
             <tr>
                 <td>
                     <input type="checkbox" class="att-user-cb" value="<?php echo $user['user_id']; ?>"
-                           style="accent-color:#0d1b36;width:15px;height:15px;" onchange="attUpdateCount()">
+                           style="accent-color:#0d1b36;width:15px;height:15px;">
                 </td>
                 <td>
                     <div class="staff-info">
@@ -734,7 +810,9 @@ textarea.att-input { resize: vertical; min-height: 80px; }
                 </td>
                 <td>
                     <button type="button" class="btn-mark"
-                            onclick="openMarkModal(<?php echo htmlspecialchars(json_encode($user)); ?>, <?php echo htmlspecialchars(json_encode($attendance)); ?>)">
+                            data-user="<?php echo htmlspecialchars(json_encode($user), ENT_QUOTES, 'UTF-8'); ?>"
+                            data-attendance="<?php echo htmlspecialchars(json_encode($attendance ?: null), ENT_QUOTES, 'UTF-8'); ?>"
+                            onclick="openMarkModal(this)">
                         <i class="fas fa-edit"></i> Mark
                     </button>
                 </td>
@@ -765,7 +843,7 @@ textarea.att-input { resize: vertical; min-height: 80px; }
         <form method="POST">
             <div class="att-modal-header">
                 <h3><i class="fas fa-user-clock"></i> Mark Attendance</h3>
-                <button type="button" class="att-modal-close" onclick="closeAttModal('markAttModal')">×</button>
+                <button type="button" id="btnMarkClose" class="att-modal-close">×</button>
             </div>
 
             <div class="att-modal-body">
@@ -806,25 +884,25 @@ textarea.att-input { resize: vertical; min-height: 80px; }
                             <label><i class="fas fa-sign-in-alt" style="color:#10b981;"></i> Time In</label>
                             <div class="att-time-input-wrap">
                                 <input type="time" name="time_in" id="ma_time_in" class="att-input" onchange="maCalcHours()">
-                                <button type="button" class="att-now-btn att-now-btn--in" onclick="maNowIn()">Now</button>
+                                <button type="button" id="btnMarkNowIn" class="att-now-btn att-now-btn--in">Now</button>
                             </div>
                         </div>
                         <div class="att-time-field">
                             <label><i class="fas fa-sign-out-alt" style="color:#ef4444;"></i> Time Out</label>
                             <div class="att-time-input-wrap">
                                 <input type="time" name="time_out" id="ma_time_out" class="att-input" onchange="maCalcHours()">
-                                <button type="button" class="att-now-btn att-now-btn--out" onclick="maNowOut()">Now</button>
+                                <button type="button" id="btnMarkNowOut" class="att-now-btn att-now-btn--out">Now</button>
                             </div>
                         </div>
                     </div>
                     <div>
                         <div class="att-presets-label" style="margin-top:12px;">Quick Presets</div>
                         <div class="att-presets">
-                            <button type="button" class="att-preset-btn" onclick="maPreset('08:00','17:00')">8AM–5PM</button>
-                            <button type="button" class="att-preset-btn" onclick="maPreset('09:00','18:00')">9AM–6PM</button>
-                            <button type="button" class="att-preset-btn" onclick="maPreset('07:00','16:00')">7AM–4PM</button>
-                            <button type="button" class="att-preset-btn" onclick="maPreset('10:00','19:00')">10AM–7PM</button>
-                            <button type="button" class="att-preset-btn" onclick="maPreset('06:00','14:00')">6AM–2PM</button>
+                            <button type="button" class="att-preset-btn mark-preset-btn" data-in="08:00" data-out="17:00">8AM–5PM</button>
+                            <button type="button" class="att-preset-btn mark-preset-btn" data-in="09:00" data-out="18:00">9AM–6PM</button>
+                            <button type="button" class="att-preset-btn mark-preset-btn" data-in="07:00" data-out="16:00">7AM–4PM</button>
+                            <button type="button" class="att-preset-btn mark-preset-btn" data-in="10:00" data-out="19:00">10AM–7PM</button>
+                            <button type="button" class="att-preset-btn mark-preset-btn" data-in="06:00" data-out="14:00">6AM–2PM</button>
                         </div>
                     </div>
                     <div class="att-hours-box" id="ma_hours_box">
@@ -840,7 +918,7 @@ textarea.att-input { resize: vertical; min-height: 80px; }
             </div>
 
             <div class="att-modal-footer">
-                <button type="button" class="att-cancel-btn" onclick="closeAttModal('markAttModal')">Cancel</button>
+                <button type="button" id="btnMarkCancel" class="att-cancel-btn">Cancel</button>
                 <button type="submit" class="att-save-btn"><i class="fas fa-save"></i> Save Attendance</button>
             </div>
         </form>
@@ -856,7 +934,7 @@ textarea.att-input { resize: vertical; min-height: 80px; }
         <form method="POST" id="bulkForm">
             <div class="att-modal-header">
                 <h3><i class="fas fa-users-cog"></i> Bulk Mark Attendance</h3>
-                <button type="button" class="att-modal-close" onclick="closeAttModal('bulkMarkModal')">×</button>
+                <button type="button" id="btnBulkClose" class="att-modal-close">×</button>
             </div>
 
             <div class="att-modal-body">
@@ -864,17 +942,29 @@ textarea.att-input { resize: vertical; min-height: 80px; }
                 <input type="hidden" name="bulk_date" value="<?php echo $selected_date; ?>">
 
                 <!-- Instructions -->
-                <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px 16px;margin-bottom:18px;font-size:12.5px;color:#1e40af;display:flex;gap:8px;align-items:flex-start;">
+                <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:12.5px;color:#1e40af;display:flex;gap:8px;align-items:flex-start;">
                     <i class="fas fa-info-circle" style="margin-top:2px;flex-shrink:0;"></i>
-                    <span>Select staff from the main table first, then choose their status here. This will mark attendance for all selected staff at once.</span>
+                    <span>Select the staff you want to mark, then choose their status and click <strong>Mark Attendance</strong>.</span>
                 </div>
 
-                <!-- Selected Count -->
-                <div style="margin-bottom:16px;">
+                <!-- Selection Controls -->
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
                     <div class="att-selected-pill">
                         <i class="fas fa-users"></i>
                         <span class="count" id="bulk_count">0</span> staff selected
                     </div>
+                    <button type="button" id="btnModalSelAll" style="padding:5px 13px;border-radius:7px;border:1.5px solid #0d1b36;background:#fff;color:#0d1b36;font-family:'Sora',sans-serif;font-size:12px;font-weight:600;cursor:pointer;">
+                        <i class="fas fa-check-square"></i> Select All
+                    </button>
+                    <button type="button" id="btnModalClear" style="padding:5px 13px;border-radius:7px;border:1.5px solid #e2e8f0;background:#fff;color:#64748b;font-family:'Sora',sans-serif;font-size:12px;font-weight:600;cursor:pointer;">
+                        <i class="fas fa-square"></i> Clear
+                    </button>
+                </div>
+
+                <!-- Selected Staff Preview -->
+                <div id="bulk_staff_preview" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 14px;margin-bottom:14px;max-height:110px;overflow-y:auto;display:none;">
+                    <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px;">Selected Staff</div>
+                    <div id="bulk_staff_list" style="display:flex;flex-wrap:wrap;gap:5px;"></div>
                 </div>
 
                 <!-- Status -->
@@ -900,21 +990,21 @@ textarea.att-input { resize: vertical; min-height: 80px; }
                                 <label><i class="fas fa-sign-in-alt" style="color:#10b981;"></i> Time In</label>
                                 <div class="att-time-input-wrap">
                                     <input type="time" name="bulk_time_in" id="bulk_time_in" class="att-input">
-                                    <button type="button" class="att-now-btn att-now-btn--in" onclick="bulkNowIn()">Now</button>
+                                    <button type="button" id="btnBulkNowIn" class="att-now-btn att-now-btn--in">Now</button>
                                 </div>
                             </div>
                             <div class="att-time-field">
                                 <label><i class="fas fa-sign-out-alt" style="color:#ef4444;"></i> Time Out</label>
                                 <div class="att-time-input-wrap">
                                     <input type="time" name="bulk_time_out" id="bulk_time_out" class="att-input">
-                                    <button type="button" class="att-now-btn att-now-btn--out" onclick="bulkNowOut()">Now</button>
+                                    <button type="button" id="btnBulkNowOut" class="att-now-btn att-now-btn--out">Now</button>
                                 </div>
                             </div>
                         </div>
                         <div class="att-presets" style="margin-top:10px;">
-                            <button type="button" class="att-preset-btn" onclick="bulkPreset('08:00','17:00')">8AM–5PM</button>
-                            <button type="button" class="att-preset-btn" onclick="bulkPreset('09:00','18:00')">9AM–6PM</button>
-                            <button type="button" class="att-preset-btn" onclick="bulkPreset('07:00','16:00')">7AM–4PM</button>
+                            <button type="button" class="att-preset-btn bulk-preset-btn" data-in="08:00" data-out="17:00">8AM–5PM</button>
+                            <button type="button" class="att-preset-btn bulk-preset-btn" data-in="09:00" data-out="18:00">9AM–6PM</button>
+                            <button type="button" class="att-preset-btn bulk-preset-btn" data-in="07:00" data-out="16:00">7AM–4PM</button>
                         </div>
                     </div>
                 </div>
@@ -935,8 +1025,8 @@ textarea.att-input { resize: vertical; min-height: 80px; }
             </div>
 
             <div class="att-modal-footer">
-                <button type="button" class="att-cancel-btn" onclick="closeAttModal('bulkMarkModal')">Cancel</button>
-                <button type="button" class="att-save-btn" onclick="submitBulk()">
+                <button type="button" id="btnBulkCancel" class="att-cancel-btn">Cancel</button>
+                <button type="button" id="btnSubmitBulk" class="att-save-btn">
                     <i class="fas fa-check"></i> Mark Attendance
                 </button>
             </div>
@@ -947,130 +1037,281 @@ textarea.att-input { resize: vertical; min-height: 80px; }
 
 <!-- ─── SCRIPTS ───────────────────────────────────────────────────────────── -->
 <script>
-/* ── Live clock — window.onload ensures this fires after ALL scripts including Bootstrap ── */
-window.addEventListener('load', function(){
-    function attTick(){
-        var n=new Date(), h=n.getHours(), m=n.getMinutes(), s=n.getSeconds();
-        var ap=h>=12?'PM':'AM'; h=h%12||12;
-        var el=document.getElementById('att-live-time');
-        if(el) el.textContent=h+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0')+' '+ap;
+document.addEventListener('DOMContentLoaded', function () {
+
+    /* ── helpers ── */
+    function pad(v) { return String(v).padStart(2, '0'); }
+    function nowHHMM() { var n = new Date(); return pad(n.getHours()) + ':' + pad(n.getMinutes()); }
+
+    /* ── Live clock ── */
+    function attTick() {
+        var n = new Date(), h = n.getHours(), m = n.getMinutes(), s = n.getSeconds();
+        var ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12;
+        var el = document.getElementById('att-live-time');
+        if (el) el.textContent = h + ':' + pad(m) + ':' + pad(s) + ' ' + ap;
     }
     attTick();
     setInterval(attTick, 1000);
-});
 
-/* ── Modal helpers ──────────────────────────────────────────────────────── */
-function openAttModal(id){
-    document.getElementById(id).classList.add('db-modal--open');
-    document.body.style.overflow='hidden';
-}
-function closeAttModal(id){
-    document.getElementById(id).classList.remove('db-modal--open');
-    document.body.style.overflow='';
-}
-window.addEventListener('click',e=>{if(e.target.classList.contains('db-modal'))closeAttModal(e.target.id);});
-document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelectorAll('.db-modal--open').forEach(m=>closeAttModal(m.id));});
-
-/* ── Checkbox helpers ───────────────────────────────────────────────────── */
-function attSelectAll(){ document.querySelectorAll('.att-user-cb').forEach(c=>c.checked=true); document.getElementById('attSelectAllCb').checked=true; attUpdateCount(); }
-function attDeselectAll(){ document.querySelectorAll('.att-user-cb').forEach(c=>c.checked=false); document.getElementById('attSelectAllCb').checked=false; attUpdateCount(); }
-function attToggleAll(){ const v=document.getElementById('attSelectAllCb').checked; document.querySelectorAll('.att-user-cb').forEach(c=>c.checked=v); attUpdateCount(); }
-function attUpdateCount(){ document.getElementById('bulk_count').textContent=document.querySelectorAll('.att-user-cb:checked').length; }
-
-/* ── Mark Attendance Modal ──────────────────────────────────────────────── */
-function openMarkModal(user, attendance){
-    document.getElementById('ma_user_id').value   = user.user_id;
-    document.getElementById('ma_name_display').textContent = user.full_name || user.username;
-    document.getElementById('ma_avatar_initial').textContent = (user.full_name||user.username).charAt(0).toUpperCase();
-
-    if(attendance){
-        document.getElementById('ma_status').value  = attendance.status;
-        document.getElementById('ma_time_in').value = attendance.time_in  ? attendance.time_in.substring(0,5)  : '';
-        document.getElementById('ma_time_out').value= attendance.time_out ? attendance.time_out.substring(0,5) : '';
-        document.getElementById('ma_notes').value   = attendance.notes || '';
-    } else {
-        document.getElementById('ma_status').value   = 'Present';
-        document.getElementById('ma_time_in').value  = '';
-        document.getElementById('ma_time_out').value = '';
-        document.getElementById('ma_notes').value    = '';
+    /* ── Modal helpers — use style.display, NOT class toggling ─────────────
+       Reason: Bootstrap CSS can override .db-modal--open { display:flex }
+       with higher-specificity rules. Direct style assignment always wins.
+    ── */
+    function openModal(id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
     }
-    maUpdateStatus();
-    maCalcHours();
-    openAttModal('markAttModal');
-}
+    function closeModal(id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.style.display = 'none';
+        document.body.style.overflow = '';
+    }
 
-function maUpdateStatus(){
-    const s=document.getElementById('ma_status').value;
-    const hints={Present:'Staff was present for their full shift.',Late:'Staff arrived late for their shift.',Absent:'Staff did not report for duty.',On Leave:'Staff is on approved leave.','Half Day':'Staff worked half of their shift.'};
-    const icons={Present:'✓',Late:'⏰',Absent:'✗','On Leave':'📅','Half Day':'◐'};
-    document.getElementById('ma_status_hint').textContent = hints[s]||'';
-    document.getElementById('ma_status_icon').textContent = icons[s]||'✓';
-}
-
-function maNowIn(){
-    const n=new Date();
-    document.getElementById('ma_time_in').value=`${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}`;
-    maCalcHours();
-}
-function maNowOut(){
-    const n=new Date();
-    document.getElementById('ma_time_out').value=`${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}`;
-    maCalcHours();
-}
-function maPreset(ti,to){
-    document.getElementById('ma_time_in').value=ti;
-    document.getElementById('ma_time_out').value=to;
-    maCalcHours();
-}
-function maCalcHours(){
-    const ti=document.getElementById('ma_time_in').value;
-    const to=document.getElementById('ma_time_out').value;
-    const box=document.getElementById('ma_hours_box');
-    if(ti&&to){
-        const [ih,im]=ti.split(':').map(Number);
-        const [oh,om]=to.split(':').map(Number);
-        let diff=(oh*60+om)-(ih*60+im);
-        if(diff<0)diff+=1440;
-        document.getElementById('ma_hours_val').textContent=`${Math.floor(diff/60)}h ${diff%60}m`;
-        box.style.display='block';
-    } else { box.style.display='none'; }
-}
-
-/* ── Bulk Mark Modal ─────────────────────────────────────────────────────── */
-function toggleBulkTimes(){
-    const open=document.getElementById('bulk_times_toggle').checked;
-    document.getElementById('bulk_times_body').classList.toggle('open',open);
-    if(!open){document.getElementById('bulk_time_in').value='';document.getElementById('bulk_time_out').value='';}
-}
-function bulkNowIn(){ const n=new Date(); document.getElementById('bulk_time_in').value=`${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}`; }
-function bulkNowOut(){ const n=new Date(); document.getElementById('bulk_time_out').value=`${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}`; }
-function bulkPreset(ti,to){
-    document.getElementById('bulk_time_in').value=ti;
-    document.getElementById('bulk_time_out').value=to;
-    document.getElementById('bulk_times_toggle').checked=true;
-    toggleBulkTimes();
-}
-function submitBulk(){
-    const checked=document.querySelectorAll('.att-user-cb:checked');
-    if(checked.length===0){ alert('Please select at least one staff member from the main table.'); return; }
-    const form=document.getElementById('bulkForm');
-    // Remove previously added hidden inputs
-    form.querySelectorAll('input[name="selected_users[]"]').forEach(i=>i.remove());
-    checked.forEach(cb=>{
-        const inp=document.createElement('input');
-        inp.type='hidden'; inp.name='selected_users[]'; inp.value=cb.value;
-        form.appendChild(inp);
+    /* close on backdrop click */
+    document.querySelectorAll('.db-modal').forEach(function (m) {
+        m.addEventListener('click', function (e) {
+            if (e.target === m) closeModal(m.id);
+        });
     });
-    form.submit();
+    /* close on Escape */
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') {
+            document.querySelectorAll('.db-modal').forEach(function (m) {
+                if (m.style.display === 'flex') closeModal(m.id);
+            });
+        }
+    });
+
+    /* ── Checkbox helpers ── */
+    function updateCount() {
+        var checked = document.querySelectorAll('.att-user-cb:checked').length;
+        var total   = document.querySelectorAll('.att-user-cb').length;
+        var el = document.getElementById('bulk_count');
+        if (el) el.textContent = checked;
+        var hdr = document.getElementById('attSelectAllCb');
+        if (hdr) {
+            hdr.indeterminate = checked > 0 && checked < total;
+            hdr.checked       = total > 0 && checked === total;
+        }
+    }
+    window.attUpdateCount = updateCount;
+
+    function selectAll() {
+        document.querySelectorAll('.att-user-cb').forEach(function (c) { c.checked = true; });
+        var hdr = document.getElementById('attSelectAllCb');
+        if (hdr) { hdr.checked = true; hdr.indeterminate = false; }
+        updateCount();
+    }
+    function deselectAll() {
+        document.querySelectorAll('.att-user-cb').forEach(function (c) { c.checked = false; });
+        var hdr = document.getElementById('attSelectAllCb');
+        if (hdr) { hdr.checked = false; hdr.indeterminate = false; }
+        updateCount();
+    }
+    window.attSelectAll   = selectAll;
+    window.attDeselectAll = deselectAll;
+
+    /* header checkbox */
+    var hdrCb = document.getElementById('attSelectAllCb');
+    if (hdrCb) hdrCb.addEventListener('change', function () {
+        if (this.checked) selectAll(); else deselectAll();
+    });
+
+    /* row checkboxes — delegate via table tbody */
+    var tbody = document.querySelector('.db-table tbody');
+    if (tbody) tbody.addEventListener('change', function (e) {
+        if (e.target.classList.contains('att-user-cb')) updateCount();
+    });
+
+    /* ── Action bar + panel buttons ── */
+    function btn(id, fn) {
+        var el = document.getElementById(id);
+        if (el) el.addEventListener('click', fn);
+    }
+
+    btn('btnBulkMark',       function () { openBulkModalFn(); });
+    btn('btnSelectAllBulk',  function () { selectAll(); openBulkModalFn(); });
+    btn('btnPanelSelectAll', selectAll);
+    btn('btnPanelDeselect',  deselectAll);
+    btn('btnMarkClose',      function () { closeModal('markAttModal'); });
+    btn('btnMarkCancel',     function () { closeModal('markAttModal'); });
+    btn('btnBulkClose',      function () { closeModal('bulkMarkModal'); });
+    btn('btnBulkCancel',     function () { closeModal('bulkMarkModal'); });
+    btn('btnModalSelAll',    function () { selectAll();   refreshChips(); });
+    btn('btnModalClear',     function () { deselectAll(); refreshChips(); });
+
+    /* ── Bulk modal ── */
+    function refreshChips() {
+        var list    = document.getElementById('bulk_staff_list');
+        var preview = document.getElementById('bulk_staff_preview');
+        if (!list || !preview) return;
+        list.innerHTML = '';
+        var checked = document.querySelectorAll('.att-user-cb:checked');
+        if (checked.length > 0) {
+            checked.forEach(function (cb) {
+                var row    = cb.closest('tr');
+                var nameEl = row ? row.querySelector('.staff-name') : null;
+                var chip   = document.createElement('span');
+                chip.className   = 'bulk-staff-chip';
+                chip.textContent = nameEl ? nameEl.textContent.trim() : 'User #' + cb.value;
+                list.appendChild(chip);
+            });
+            preview.style.display = 'block';
+        } else {
+            preview.style.display = 'none';
+        }
+    }
+    function openBulkModalFn() {
+        updateCount();
+        refreshChips();
+        openModal('bulkMarkModal');
+    }
+    window.openBulkModal = openBulkModalFn;
+
+    /* bulk time toggle */
+    var timesToggle = document.getElementById('bulk_times_toggle');
+    if (timesToggle) timesToggle.addEventListener('change', function () {
+        var body = document.getElementById('bulk_times_body');
+        body.classList.toggle('open', this.checked);
+        if (!this.checked) {
+            document.getElementById('bulk_time_in').value  = '';
+            document.getElementById('bulk_time_out').value = '';
+        }
+    });
+
+    /* bulk submit */
+    btn('btnSubmitBulk', function () {
+        var checked = document.querySelectorAll('.att-user-cb:checked');
+        if (checked.length === 0) {
+            alert('Please select at least one staff member.\nUse \'Select All\' inside this modal or close and check rows.');
+            return;
+        }
+        var form = document.getElementById('bulkForm');
+        form.querySelectorAll('.bulk-user-input').forEach(function (i) { i.remove(); });
+        checked.forEach(function (cb) {
+            var inp = document.createElement('input');
+            inp.type = 'hidden'; inp.name = 'selected_users[]';
+            inp.value = cb.value; inp.className = 'bulk-user-input';
+            form.appendChild(inp);
+        });
+        form.submit();
+    });
+
+    /* bulk Now buttons */
+    btn('btnBulkNowIn',  function () { document.getElementById('bulk_time_in').value  = nowHHMM(); });
+    btn('btnBulkNowOut', function () { document.getElementById('bulk_time_out').value = nowHHMM(); });
+
+    /* bulk preset buttons */
+    document.querySelectorAll('.bulk-preset-btn').forEach(function (b) {
+        b.addEventListener('click', function () {
+            document.getElementById('bulk_time_in').value  = b.dataset.in;
+            document.getElementById('bulk_time_out').value = b.dataset.out;
+            document.getElementById('bulk_times_toggle').checked = true;
+            document.getElementById('bulk_times_body').classList.add('open');
+        });
+    });
+
+    /* ── Mark modal ── */
+    function calcHours() {
+        var ti = document.getElementById('ma_time_in').value;
+        var to = document.getElementById('ma_time_out').value;
+        var box = document.getElementById('ma_hours_box');
+        if (ti && to) {
+            var a = ti.split(':').map(Number), b = to.split(':').map(Number);
+            var diff = (b[0] * 60 + b[1]) - (a[0] * 60 + a[1]);
+            if (diff < 0) diff += 1440;
+            document.getElementById('ma_hours_val').textContent = Math.floor(diff / 60) + 'h ' + (diff % 60) + 'm';
+            box.style.display = 'block';
+        } else { box.style.display = 'none'; }
+    }
+    window.maCalcHours = calcHours;
+
+    function updateStatusHint() {
+        var s = (document.getElementById('ma_status') || {}).value;
+        var hints = { Present: 'Staff was present for their full shift.', Late: 'Staff arrived late.', Absent: 'Staff did not report for duty.', 'On Leave': 'Staff is on approved leave.', 'Half Day': 'Staff worked half of their shift.' };
+        var icons = { Present: '\u2713', Late: '\u23f0', Absent: '\u2717', 'On Leave': '\ud83d\udcc5', 'Half Day': '\u25d0' };
+        var hint = document.getElementById('ma_status_hint');
+        var icon = document.getElementById('ma_status_icon');
+        if (hint) hint.textContent = hints[s] || '';
+        if (icon) icon.textContent = icons[s] || '\u2713';
+    }
+    window.maUpdateStatus = updateStatusHint;
+
+    var maStatus = document.getElementById('ma_status');
+    if (maStatus) maStatus.addEventListener('change', updateStatusHint);
+
+    var maTimeIn  = document.getElementById('ma_time_in');
+    var maTimeOut = document.getElementById('ma_time_out');
+    if (maTimeIn)  maTimeIn.addEventListener('change',  calcHours);
+    if (maTimeOut) maTimeOut.addEventListener('change', calcHours);
+
+    btn('btnMarkNowIn',  function () { document.getElementById('ma_time_in').value  = nowHHMM(); calcHours(); });
+    btn('btnMarkNowOut', function () { document.getElementById('ma_time_out').value = nowHHMM(); calcHours(); });
+
+    document.querySelectorAll('.mark-preset-btn').forEach(function (b) {
+        b.addEventListener('click', function () {
+            document.getElementById('ma_time_in').value  = b.dataset.in;
+            document.getElementById('ma_time_out').value = b.dataset.out;
+            calcHours();
+        });
+    });
+
+    /* ── Auto-dismiss alerts ── */
+    setTimeout(function () {
+        document.querySelectorAll('.db-alert').forEach(function (a) {
+            a.style.transition = 'opacity .4s';
+            a.style.opacity = '0';
+            setTimeout(function () { try { a.remove(); } catch(e) {} }, 400);
+        });
+    }, 5000);
+
+}); /* end DOMContentLoaded */
+
+/* ──────────────────────────────────────────────────────────────────────────
+   GLOBAL FUNCTIONS — must be outside DOMContentLoaded so PHP-generated
+   onclick= attributes on table rows can reach them.
+────────────────────────────────────────────────────────────────────────── */
+function openMarkModal(btn) {
+    try {
+        var user       = JSON.parse(btn.dataset.user);
+        var attendance = (btn.dataset.attendance && btn.dataset.attendance !== 'null')
+                          ? JSON.parse(btn.dataset.attendance) : null;
+        var name = (user.full_name && user.full_name.trim()) ? user.full_name : user.username;
+
+        document.getElementById('ma_user_id').value              = user.user_id;
+        document.getElementById('ma_name_display').textContent   = name;
+        document.getElementById('ma_avatar_initial').textContent = name.charAt(0).toUpperCase();
+
+        if (attendance) {
+            document.getElementById('ma_status').value   = attendance.status   || 'Present';
+            document.getElementById('ma_time_in').value  = attendance.time_in  ? attendance.time_in.substring(0, 5)  : '';
+            document.getElementById('ma_time_out').value = attendance.time_out ? attendance.time_out.substring(0, 5) : '';
+            document.getElementById('ma_notes').value    = attendance.notes    || '';
+        } else {
+            document.getElementById('ma_status').value   = 'Present';
+            document.getElementById('ma_time_in').value  = '';
+            document.getElementById('ma_time_out').value = '';
+            document.getElementById('ma_notes').value    = '';
+        }
+        if (window.maUpdateStatus) window.maUpdateStatus();
+        if (window.maCalcHours)    window.maCalcHours();
+
+        var modal = document.getElementById('markAttModal');
+        modal.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+    } catch (err) {
+        console.error('openMarkModal error:', err);
+    }
 }
 
-/* ── Auto-dismiss alerts ────────────────────────────────────────────────── */
-setTimeout(()=>{
-    document.querySelectorAll('.db-alert').forEach(a=>{
-        a.style.opacity='0'; a.style.transform='translateY(-8px)';
-        setTimeout(()=>a.remove(),400);
-    });
-},5000);
-</script>
+function attToggleAll() {
+    var hdr = document.getElementById('attSelectAllCb');
+    if (!hdr) return;
+    if (hdr.checked) { if (window.attSelectAll) window.attSelectAll(); }
+    else             { if (window.attDeselectAll) window.attDeselectAll(); }
+}
 
 <?php include '../../../includes/footer.php'; ?>
