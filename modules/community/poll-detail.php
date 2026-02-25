@@ -27,8 +27,8 @@ function getPollWinner($conn, $poll_id) {
     $options = [];
     $max_votes = -1;
     while ($row = $result->fetch_assoc()) {
-        if ($max_votes === -1) $max_votes = $row['vote_count'];
-        if ($row['vote_count'] === $max_votes) $options[] = $row;
+        if ($max_votes === -1) $max_votes = (int)$row['vote_count'];
+        if ((int)$row['vote_count'] === (int)$max_votes) $options[] = $row;
     }
     return $options;
 }
@@ -131,7 +131,7 @@ $poll_query = "
     SELECT p.*, 
            CONCAT(r.first_name, ' ', r.last_name) as creator_name,
            (SELECT COUNT(DISTINCT resident_id) FROM tbl_poll_votes WHERE poll_id = p.poll_id) as total_votes,
-           (SELECT COUNT(*) FROM tbl_poll_votes WHERE poll_id = p.poll_id AND resident_id = ?) as has_voted
+           (SELECT COUNT(DISTINCT resident_id) FROM tbl_poll_votes WHERE poll_id = p.poll_id AND resident_id = ?) as has_voted
     FROM tbl_polls p
     LEFT JOIN tbl_residents r ON p.created_by = r.resident_id
     WHERE p.poll_id = ?
@@ -151,22 +151,30 @@ if ($result->num_rows == 0) {
 $poll = $result->fetch_assoc();
 $page_title = htmlspecialchars($poll['question']);
 
-// Get poll options with vote counts
+// Get poll options with vote counts — fetch ALL into array so we can loop multiple times
 $options_query = "
-    SELECT po.*, 
-           COUNT(pv.vote_id) as vote_count,
+    SELECT po.option_id,
+           po.poll_id,
+           po.option_text,
+           po.option_order,
+           (SELECT COUNT(*) FROM tbl_poll_votes WHERE option_id = po.option_id) as vote_count,
            (SELECT COUNT(*) FROM tbl_poll_votes WHERE option_id = po.option_id AND resident_id = ?) as user_voted
     FROM tbl_poll_options po
-    LEFT JOIN tbl_poll_votes pv ON po.option_id = pv.option_id
     WHERE po.poll_id = ?
-    GROUP BY po.option_id
     ORDER BY po.option_order ASC
 ";
 
 $options_stmt = $conn->prepare($options_query);
 $options_stmt->bind_param("ii", $current_resident_id, $poll_id);
 $options_stmt->execute();
-$options = $options_stmt->get_result();
+$options_result = $options_stmt->get_result();
+
+// ─── Store all options in a plain array so we can loop it multiple times ───
+$options_arr = [];
+while ($row = $options_result->fetch_assoc()) {
+    $options_arr[] = $row;
+}
+$options_stmt->close();
 
 // Check if poll is closed
 $is_closed = $poll['status'] === 'closed' || ($poll['end_date'] && strtotime($poll['end_date']) <= time());
@@ -586,10 +594,7 @@ include '../../includes/header.php';
                 <?php endif; ?>
                 
                 <form method="POST" action="">
-                    <?php 
-                    $options->data_seek(0); // Reset pointer
-                    while ($option = $options->fetch_assoc()): 
-                    ?>
+                    <?php foreach ($options_arr as $option): ?>
                         <label class="option-item">
                             <input type="<?php echo $poll['allow_multiple'] ? 'checkbox' : 'radio'; ?>" 
                                    name="options[]" 
@@ -597,7 +602,7 @@ include '../../includes/header.php';
                                    onchange="this.closest('.option-item').classList.toggle('selected', this.checked)">
                             <span class="option-text"><?php echo htmlspecialchars($option['option_text']); ?></span>
                         </label>
-                    <?php endwhile; ?>
+                    <?php endforeach; ?>
                     
                     <div class="mt-4">
                         <button type="submit" name="submit_vote" class="btn-primary">
@@ -616,15 +621,13 @@ include '../../includes/header.php';
                 </h2>
                 
                 <?php 
-                $options->data_seek(0); // Reset pointer
-                $total_votes = max(1, $poll['total_votes']); // Avoid division by zero
+                // Sum all option vote_counts for accurate percentage calculation
+                $total_vote_rows = max(1, array_sum(array_column($options_arr, 'vote_count')));
+                $winner_ids  = array_column($winners, 'option_id');
                 
-                // Get winner IDs for highlighting
-                $winner_ids = array_map(function($w) { return $w['option_id']; }, $winners);
-                
-                while ($option = $options->fetch_assoc()): 
-                    $percentage = ($option['vote_count'] / $total_votes) * 100;
-                    $is_winner = in_array($option['option_id'], $winner_ids);
+                foreach ($options_arr as $option):
+                    $percentage = ($option['vote_count'] / $total_vote_rows) * 100;
+                    $is_winner  = in_array($option['option_id'], $winner_ids);
                 ?>
                     <div class="result-bar <?php echo $is_winner ? 'winner' : ''; ?>">
                         <div class="result-header">
@@ -649,7 +652,7 @@ include '../../includes/header.php';
                                  style="width: <?php echo $percentage; ?>%"></div>
                         </div>
                     </div>
-                <?php endwhile; ?>
+                <?php endforeach; ?>
             </div>
         <?php elseif ($poll['has_voted'] > 0): ?>
             <div class="alert alert-info">
