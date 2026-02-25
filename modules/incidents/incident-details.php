@@ -623,7 +623,7 @@ html {
     <div class="page-header">
         <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
             <div class="flex-grow-1">
-                <a href="view-incidents.php" class="btn btn-outline-secondary btn-sm mb-3">
+                <a href="manage-incidents.php" class="btn btn-outline-secondary btn-sm mb-3">
                     <i class="fas fa-arrow-left me-2"></i>Back to Incidents
                 </a>
                 <h2>
