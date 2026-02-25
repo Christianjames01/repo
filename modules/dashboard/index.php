@@ -270,15 +270,16 @@ if ($user_role !== 'Resident' && tableExists($conn, 'tbl_complaints')) {
 }
 
 // ── FETCH: Announcements (ALL roles) ──
+// FIX: Sort purely by created_at DESC so newest always appears first,
+//      regardless of priority level.
 $announcements = [];
 if (tableExists($conn, 'tbl_announcements')) {
-    $check_column = $conn->query("SHOW COLUMNS FROM tbl_announcements LIKE 'priority'");
-    $has_priority = $check_column->num_rows > 0;
-    if ($has_priority) {
-        $stmt = $conn->prepare("SELECT * FROM tbl_announcements WHERE is_active = 1 ORDER BY CASE priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'normal' THEN 3 END, created_at DESC LIMIT 5");
-    } else {
-        $stmt = $conn->prepare("SELECT * FROM tbl_announcements WHERE is_active = 1 ORDER BY created_at DESC LIMIT 5");
-    }
+    $stmt = $conn->prepare("
+        SELECT * FROM tbl_announcements
+        WHERE is_active = 1
+        ORDER BY created_at DESC
+        LIMIT 5
+    ");
     $stmt->execute();
     $result = $stmt->get_result();
     while ($row = $result->fetch_assoc()) { $announcements[] = $row; }
@@ -308,11 +309,17 @@ if (tableExists($conn, 'tbl_barangay_media')) {
 }
 
 // ── FETCH: Activities (ALL roles) ──
+// FIX: Sort by activity_date ASC so the soonest upcoming event appears first.
 $activities = [];
 if (tableExists($conn, 'tbl_barangay_activities')) {
     $check_column = $conn->query("SHOW COLUMNS FROM tbl_barangay_activities LIKE 'location'");
     $has_location = $check_column->num_rows > 0;
-    $stmt = $conn->prepare("SELECT * FROM tbl_barangay_activities WHERE is_active = 1 ORDER BY activity_date DESC LIMIT 8");
+    $stmt = $conn->prepare("
+        SELECT * FROM tbl_barangay_activities
+        WHERE is_active = 1
+        ORDER BY activity_date ASC
+        LIMIT 8
+    ");
     $stmt->execute();
     $result = $stmt->get_result();
     while ($row = $result->fetch_assoc()) {
