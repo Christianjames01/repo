@@ -115,23 +115,6 @@ $extra_css = '<link rel="stylesheet" href="../../assets/css/officials.css">
         position: relative;
     }
     
-    .section-title {
-        text-align: center;
-        margin-bottom: 30px;
-        position: relative;
-    }
-    
-    .section-title::before {
-        content: "";
-        display: block;
-        width: 120px;
-        height: 120px;
-        margin: 0 auto 15px;
-        background-size: contain;
-        background-repeat: no-repeat;
-        background-position: center;
-    }
-    
     .officials-section:first-child .section-title::before {
         background-image: url("../../uploads/officials/brgy.png");
     }
@@ -288,6 +271,11 @@ include '../../includes/header.php';
                         <h3><?php echo htmlspecialchars($captain['first_name'] . ' ' . ($captain['middle_name'] ? substr($captain['middle_name'], 0, 1) . '. ' : '') . $captain['last_name']); ?></h3>
                         <p class="position"><?php echo htmlspecialchars($captain['position']); ?></p>
                         <p class="term"><?php echo date('Y', strtotime($captain['term_start'])); ?> - <?php echo date('Y', strtotime($captain['term_end'])); ?></p>
+                        <div class="official-box__overlay">
+                            <span class="ov-name"><?php echo htmlspecialchars($captain['first_name'] . ' ' . ($captain['middle_name'] ? substr($captain['middle_name'], 0, 1) . '. ' : '') . $captain['last_name']); ?></span>
+                            <span class="ov-position"><?php echo htmlspecialchars($captain['position']); ?></span>
+                            <span class="ov-term">Term: <?php echo date('Y', strtotime($captain['term_start'])); ?> – <?php echo date('Y', strtotime($captain['term_end'])); ?></span>
+                        </div>
                     </div>
                 </div>
                 
@@ -311,6 +299,11 @@ include '../../includes/header.php';
                         <h3><?php echo htmlspecialchars($kagawad['first_name'] . ' ' . ($kagawad['middle_name'] ? substr($kagawad['middle_name'], 0, 1) . '. ' : '') . $kagawad['last_name']); ?></h3>
                         <p class="position"><?php echo htmlspecialchars($kagawad['position']); ?></p>
                         <p class="term"><?php echo date('Y', strtotime($kagawad['term_start'])); ?> - <?php echo date('Y', strtotime($kagawad['term_end'])); ?></p>
+                        <div class="official-box__overlay">
+                            <span class="ov-name"><?php echo htmlspecialchars($kagawad['first_name'] . ' ' . ($kagawad['middle_name'] ? substr($kagawad['middle_name'], 0, 1) . '. ' : '') . $kagawad['last_name']); ?></span>
+                            <span class="ov-position"><?php echo htmlspecialchars($kagawad['position']); ?></span>
+                            <span class="ov-term">Term: <?php echo date('Y', strtotime($kagawad['term_start'])); ?> – <?php echo date('Y', strtotime($kagawad['term_end'])); ?></span>
+                        </div>
                     </div>
                     <?php endforeach; ?>
                 </div>
@@ -335,6 +328,11 @@ include '../../includes/header.php';
                         <h3><?php echo htmlspecialchars($secretary['first_name'] . ' ' . ($secretary['middle_name'] ? substr($secretary['middle_name'], 0, 1) . '. ' : '') . $secretary['last_name']); ?></h3>
                         <p class="position"><?php echo htmlspecialchars($secretary['position']); ?></p>
                         <p class="term"><?php echo date('Y', strtotime($secretary['term_start'])); ?> - <?php echo date('Y', strtotime($secretary['term_end'])); ?></p>
+                        <div class="official-box__overlay">
+                            <span class="ov-name"><?php echo htmlspecialchars($secretary['first_name'] . ' ' . ($secretary['middle_name'] ? substr($secretary['middle_name'], 0, 1) . '. ' : '') . $secretary['last_name']); ?></span>
+                            <span class="ov-position"><?php echo htmlspecialchars($secretary['position']); ?></span>
+                            <span class="ov-term">Term: <?php echo date('Y', strtotime($secretary['term_start'])); ?> – <?php echo date('Y', strtotime($secretary['term_end'])); ?></span>
+                        </div>
                     </div>
                     <?php endif; ?>
                     
@@ -352,6 +350,11 @@ include '../../includes/header.php';
                         <h3><?php echo htmlspecialchars($treasurer['first_name'] . ' ' . ($treasurer['middle_name'] ? substr($treasurer['middle_name'], 0, 1) . '. ' : '') . $treasurer['last_name']); ?></h3>
                         <p class="position"><?php echo htmlspecialchars($treasurer['position']); ?></p>
                         <p class="term"><?php echo date('Y', strtotime($treasurer['term_start'])); ?> - <?php echo date('Y', strtotime($treasurer['term_end'])); ?></p>
+                        <div class="official-box__overlay">
+                            <span class="ov-name"><?php echo htmlspecialchars($treasurer['first_name'] . ' ' . ($treasurer['middle_name'] ? substr($treasurer['middle_name'], 0, 1) . '. ' : '') . $treasurer['last_name']); ?></span>
+                            <span class="ov-position"><?php echo htmlspecialchars($treasurer['position']); ?></span>
+                            <span class="ov-term">Term: <?php echo date('Y', strtotime($treasurer['term_start'])); ?> – <?php echo date('Y', strtotime($treasurer['term_end'])); ?></span>
+                        </div>
                     </div>
                     <?php endif; ?>
                 </div>
@@ -383,6 +386,11 @@ include '../../includes/header.php';
                         <h3><?php echo htmlspecialchars($sk_chair['first_name'] . ' ' . ($sk_chair['middle_name'] ? substr($sk_chair['middle_name'], 0, 1) . '. ' : '') . $sk_chair['last_name']); ?></h3>
                         <p class="position"><?php echo htmlspecialchars($sk_chair['position']); ?></p>
                         <p class="term"><?php echo date('Y', strtotime($sk_chair['term_start'])); ?> - <?php echo date('Y', strtotime($sk_chair['term_end'])); ?></p>
+                        <div class="official-box__overlay">
+                            <span class="ov-name"><?php echo htmlspecialchars($sk_chair['first_name'] . ' ' . ($sk_chair['middle_name'] ? substr($sk_chair['middle_name'], 0, 1) . '. ' : '') . $sk_chair['last_name']); ?></span>
+                            <span class="ov-position"><?php echo htmlspecialchars($sk_chair['position']); ?></span>
+                            <span class="ov-term">Term: <?php echo date('Y', strtotime($sk_chair['term_start'])); ?> – <?php echo date('Y', strtotime($sk_chair['term_end'])); ?></span>
+                        </div>
                     </div>
                 </div>
                 
@@ -406,6 +414,11 @@ include '../../includes/header.php';
                         <h3><?php echo htmlspecialchars($sk_kagawad['first_name'] . ' ' . ($sk_kagawad['middle_name'] ? substr($sk_kagawad['middle_name'], 0, 1) . '. ' : '') . $sk_kagawad['last_name']); ?></h3>
                         <p class="position"><?php echo htmlspecialchars($sk_kagawad['position']); ?></p>
                         <p class="term"><?php echo date('Y', strtotime($sk_kagawad['term_start'])); ?> - <?php echo date('Y', strtotime($sk_kagawad['term_end'])); ?></p>
+                        <div class="official-box__overlay">
+                            <span class="ov-name"><?php echo htmlspecialchars($sk_kagawad['first_name'] . ' ' . ($sk_kagawad['middle_name'] ? substr($sk_kagawad['middle_name'], 0, 1) . '. ' : '') . $sk_kagawad['last_name']); ?></span>
+                            <span class="ov-position"><?php echo htmlspecialchars($sk_kagawad['position']); ?></span>
+                            <span class="ov-term">Term: <?php echo date('Y', strtotime($sk_kagawad['term_start'])); ?> – <?php echo date('Y', strtotime($sk_kagawad['term_end'])); ?></span>
+                        </div>
                     </div>
                     <?php endforeach; ?>
                 </div>
@@ -434,6 +447,11 @@ include '../../includes/header.php';
                 <h3><?php echo htmlspecialchars($official['first_name'] . ' ' . ($official['middle_name'] ? substr($official['middle_name'], 0, 1) . '. ' : '') . $official['last_name']); ?></h3>
                 <p class="position"><?php echo htmlspecialchars($official['position']); ?></p>
                 <p class="term"><?php echo date('Y', strtotime($official['term_start'])); ?> - <?php echo date('Y', strtotime($official['term_end'])); ?></p>
+                <div class="official-box__overlay">
+                    <span class="ov-name"><?php echo htmlspecialchars($official['first_name'] . ' ' . ($official['middle_name'] ? substr($official['middle_name'], 0, 1) . '. ' : '') . $official['last_name']); ?></span>
+                    <span class="ov-position"><?php echo htmlspecialchars($official['position']); ?></span>
+                    <span class="ov-term">Term: <?php echo date('Y', strtotime($official['term_start'])); ?> – <?php echo date('Y', strtotime($official['term_end'])); ?></span>
+                </div>
             </div>
             <?php endforeach; ?>
         </div>
