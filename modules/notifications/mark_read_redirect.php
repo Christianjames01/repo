@@ -15,7 +15,7 @@ if ($notification_id) {
     $stmt->close();
 }
 
-// Handle empty/hash redirects (e.g. announcements with no detail page)
+// Handle empty/hash redirects
 if ($redirect === '#' || $redirect === '' || $redirect === '/barangaylink1/modules/notifications/#') {
     header('Location: index.php');
     exit();
@@ -39,6 +39,14 @@ $allowed_relative_prefixes = [
     '../residents/',
 ];
 
+// Same-folder files (no ../ prefix) — exact match or with query string
+$allowed_same_folder = [
+    'index.php',
+    'notification-detail.php',
+    'email-history.php',
+    'email-residents.php',
+];
+
 $safe = false;
 
 // Check absolute paths
@@ -49,7 +57,7 @@ foreach ($allowed_absolute_prefixes as $prefix) {
     }
 }
 
-// Check relative paths
+// Check relative paths (with ../)
 if (!$safe) {
     foreach ($allowed_relative_prefixes as $prefix) {
         if (str_starts_with($redirect, $prefix)) {
@@ -59,9 +67,14 @@ if (!$safe) {
     }
 }
 
-// Allow plain index.php fallback
-if (!$safe && $redirect === 'index.php') {
-    $safe = true;
+// Check same-folder files
+if (!$safe) {
+    foreach ($allowed_same_folder as $file) {
+        if ($redirect === $file || str_starts_with($redirect, $file . '?')) {
+            $safe = true;
+            break;
+        }
+    }
 }
 
 header('Location: ' . ($safe ? $redirect : 'index.php'));
