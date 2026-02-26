@@ -136,7 +136,6 @@ body {
     box-shadow: 0 4px 16px rgba(245, 158, 11, .35);
 }
 
-.db-hero__text {}
 
 .db-hero__role-badge {
     display: inline-flex;
@@ -228,7 +227,6 @@ body {
     color: rgba(255, 255, 255, .55);
 }
 
-.db-hero__right {}
 
 .db-hero__datetime {
     background: rgba(255, 255, 255, .08);
@@ -386,7 +384,7 @@ body {
     color: var(--db-indigo);
 }
 
-.db-stat-card__body {}
+
 
 .db-stat-card__num {
     font-size: 30px;
@@ -516,7 +514,6 @@ body {
     animation: dbFadeUp .35s ease both;
 }
 
-.db-panel--compact {}
 
 @keyframes dbFadeUp {
     from {

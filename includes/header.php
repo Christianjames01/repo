@@ -222,6 +222,77 @@ $current_path = $_SERVER['PHP_SELF'];
         .nav-item-standalone {
             padding: 0 8px;
         }
+
+        /* ══════════════════════════════════════
+           BELL BADGE — real-time polling styles
+        ══════════════════════════════════════ */
+        /* The count badge on the header bell */
+        #bell-badge {
+            position: absolute;
+            top: 5px; right: 5px;
+            background: #dc3545; color: white;
+            border-radius: 50%;
+            min-width: 18px; height: 18px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 11px; font-weight: bold;
+            pointer-events: none;
+            line-height: 1;
+            padding: 0 3px;
+        }
+        /* Same badge on nav-sidebar Notifications link */
+        #sidebar-notif-badge {
+            position: absolute; right: 15px; top: 50%;
+            transform: translateY(-50%);
+            background: #dc3545; color: white;
+            border-radius: 10px; padding: 2px 6px;
+            font-size: 0.7rem; font-weight: bold;
+            min-width: 18px; text-align: center;
+            display: none;
+        }
+        @keyframes bellShake {
+            0%,100%{ transform:rotate(0) }
+            20%    { transform:rotate(-18deg) }
+            40%    { transform:rotate(18deg) }
+            60%    { transform:rotate(-10deg) }
+            80%    { transform:rotate(10deg) }
+        }
+        @keyframes badgePop {
+            0%,100%{ transform:scale(1) }
+            50%    { transform:scale(1.4) }
+        }
+        .bell-shake { animation: bellShake .65s ease; }
+        .badge-pop  { animation: badgePop  .35s ease; }
+
+        /* Toast container */
+        #notif-toast-wrap {
+            position: fixed;
+            top: 68px; right: 18px;
+            z-index: 99999;
+            display: flex; flex-direction: column; gap: 8px;
+            pointer-events: none;
+        }
+        .notif-toast {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 8px 28px rgba(0,0,0,.16);
+            border-left: 4px solid #3182ce;
+            padding: 12px 16px;
+            min-width: 270px; max-width: 340px;
+            display: flex; align-items: flex-start; gap: 10px;
+            pointer-events: all; cursor: pointer;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            animation: toastIn .22s ease;
+        }
+        @keyframes toastIn {
+            from { opacity:0; transform:translateX(24px) }
+            to   { opacity:1; transform:translateX(0) }
+        }
+        .notif-toast-icon { font-size: 1.25rem; flex-shrink: 0; line-height: 1.3; }
+        .notif-toast-body { flex: 1; min-width: 0; }
+        .notif-toast-title { font-size: 13px; font-weight: 700; color: #1a202c; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .notif-toast-msg   { font-size: 12px; color: #718096; line-height: 1.45; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+        .notif-toast-close { background: none; border: none; cursor: pointer; color: #a0aec0; font-size: 16px; line-height: 1; padding: 0; flex-shrink: 0; margin-top: -1px; }
+        .notif-toast-close:hover { color: #4a5568; }
     </style>
 
     <?php if (isset($extra_css)): ?>
@@ -379,12 +450,11 @@ $current_path = $_SERVER['PHP_SELF'];
                     <i class="fas fa-exclamation-circle"></i><span>Incidents</span>
                 </a>
             </div>
-            <div class="nav-item">
+            <div class="nav-item" style="position:relative;">
                 <a href="<?php echo $base_url; ?>/modules/notifications/index.php" class="nav-link <?php echo strpos($current_path,'notifications')!==false?'active':''; ?>">
                     <i class="fas fa-bell"></i><span>Notifications</span>
-                    <?php if ($unread_count > 0): ?>
-                        <span class="notification-badge"><?php echo $unread_count > 9 ? '9+' : $unread_count; ?></span>
-                    <?php endif; ?>
+                    <!-- sidebar badge — updated by JS poller -->
+                    <span id="sidebar-notif-badge" class="notification-badge"><?php echo $unread_count > 0 ? ($unread_count > 9 ? '9+' : $unread_count) : ''; ?></span>
                 </a>
             </div>
         <?php navSectionEnd(); ?>
@@ -444,12 +514,11 @@ $current_path = $_SERVER['PHP_SELF'];
                     <i class="fas fa-file-alt"></i><span>My Requests</span>
                 </a>
             </div>
-            <div class="nav-item">
+            <div class="nav-item" style="position:relative;">
                 <a href="<?php echo $base_url; ?>/modules/notifications/index.php" class="nav-link <?php echo strpos($current_path,'notifications')!==false?'active':''; ?>">
                     <i class="fas fa-bell"></i><span>Notifications</span>
-                    <?php if ($unread_count > 0): ?>
-                        <span class="notification-badge"><?php echo $unread_count > 9 ? '9+' : $unread_count; ?></span>
-                    <?php endif; ?>
+                    <!-- sidebar badge — updated by JS poller -->
+                    <span id="sidebar-notif-badge" class="notification-badge"><?php echo $unread_count > 0 ? ($unread_count > 9 ? '9+' : $unread_count) : ''; ?></span>
                 </a>
             </div>
         <?php navSectionEnd(); ?>
@@ -674,12 +743,14 @@ $current_path = $_SERVER['PHP_SELF'];
                     <i class="fas fa-user-tie"></i><span>Manage Staff</span>
                 </a>
             </div>
-            <div class="nav-item">
+            <!-- ★ Notifications link with live-updating sidebar badge ★ -->
+            <div class="nav-item" style="position:relative;">
                 <a href="<?php echo $base_url; ?>/modules/notifications/index.php" class="nav-link <?php echo strpos($current_path,'notifications')!==false?'active':''; ?>">
                     <i class="fas fa-bell"></i><span>Notifications</span>
-                    <?php if ($unread_count > 0): ?>
-                        <span class="notification-badge"><?php echo $unread_count > 9 ? '9+' : $unread_count; ?></span>
-                    <?php endif; ?>
+                    <span id="sidebar-notif-badge" class="notification-badge"
+                          style="display:<?php echo $unread_count > 0 ? 'inline-block' : 'none'; ?>;">
+                        <?php echo $unread_count > 9 ? '9+' : $unread_count; ?>
+                    </span>
                 </a>
             </div>
             <div class="nav-item">
@@ -1018,22 +1089,29 @@ $current_path = $_SERVER['PHP_SELF'];
     </div>
 
     <div class="header-right">
-        <!-- Notification dropdown -->
+        <!-- ★ Notification bell — real-time badge ★ -->
         <div class="notification-dropdown" style="position:relative;margin-right:20px;">
-            <button class="notification-bell" id="notificationBell" style="background:none;border:none;cursor:pointer;position:relative;padding:10px;">
-                <i class="fas fa-bell" style="font-size:20px;color:#4a5568;"></i>
-                <?php if ($unread_count > 0): ?>
-                    <span class="notification-count" style="position:absolute;top:5px;right:5px;background:#dc3545;color:white;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;">
-                        <?php echo $unread_count > 9 ? '9+' : $unread_count; ?>
-                    </span>
-                <?php endif; ?>
+            <button class="notification-bell" id="notificationBell"
+                    style="background:none;border:none;cursor:pointer;position:relative;padding:10px;">
+                <i class="fas fa-bell" id="bell-icon" style="font-size:20px;color:#4a5568;"></i>
+                <!-- ★ id="bell-badge" is what the JS poller targets ★ -->
+                <span id="bell-badge"
+                      style="display:<?php echo $unread_count > 0 ? 'flex' : 'none'; ?>;">
+                    <?php echo $unread_count > 9 ? '9+' : $unread_count; ?>
+                </span>
             </button>
 
-            <div class="notification-panel" id="notificationPanel" style="display:none;position:absolute;right:0;top:100%;width:350px;max-height:400px;overflow-y:auto;background:white;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);z-index:1000;margin-top:5px;">
+            <div class="notification-panel" id="notificationPanel"
+                 style="display:none;position:absolute;right:0;top:100%;width:350px;max-height:400px;
+                        overflow-y:auto;background:white;border-radius:8px;
+                        box-shadow:0 4px 12px rgba(0,0,0,0.15);z-index:1000;margin-top:5px;">
                 <div style="padding:15px;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;">
                     <h6 style="margin:0;font-weight:600;">Notifications</h6>
                     <?php if ($unread_count > 0): ?>
-                        <span style="background:#edf2f7;padding:2px 8px;border-radius:12px;font-size:12px;color:#4a5568;"><?php echo $unread_count; ?> new</span>
+                        <span id="panel-unread-label"
+                              style="background:#edf2f7;padding:2px 8px;border-radius:12px;font-size:12px;color:#4a5568;">
+                            <?php echo $unread_count; ?> new
+                        </span>
                     <?php endif; ?>
                 </div>
 
@@ -1043,34 +1121,40 @@ $current_path = $_SERVER['PHP_SELF'];
                             <?php
                             $icon='bell'; $color='#6b7280'; $link='#';
                             switch($notif['type']) {
-                                case 'complaint_filed':           $icon='file-alt';             $color='#f59e0b'; $link=$base_url.'/modules/complaints/complaint-details.php?id='.$notif['reference_id']; break;
-                                case 'complaint_status_update':   $icon='sync-alt';             $color='#3b82f6'; $link=$base_url.'/modules/complaints/complaint-details.php?id='.$notif['reference_id']; break;
-                                case 'complaint_resolved':        $icon='check-circle';         $color='#10b981'; $link=$base_url.'/modules/complaints/complaint-details.php?id='.$notif['reference_id']; break;
-                                case 'complaint_closed':          $icon='times-circle';         $color='#6b7280'; $link=$base_url.'/modules/complaints/complaint-details.php?id='.$notif['reference_id']; break;
-                                case 'complaint_assignment':      $icon='user-shield';          $color='#8b5cf6'; $link=$base_url.'/modules/complaints/complaint-details.php?id='.$notif['reference_id']; break;
-                                case 'document_request_submitted':$icon='file-invoice';         $color='#3b82f6'; $link=$base_url.'/modules/requests/view-request.php?id='.$notif['reference_id']; break;
-                                case 'request_status_update':     $icon='check-circle';         $color='#10b981'; $link=$base_url.'/modules/requests/view-request.php?id='.$notif['reference_id']; break;
-                                case 'payment_confirmed':         $icon='money-bill-wave';      $color='#10b981'; $link=$base_url.'/modules/requests/view-request.php?id='.$notif['reference_id']; break;
-                                case 'incident_reported':         $icon='exclamation-triangle'; $color='#ef4444'; $link=$base_url.'/modules/incidents/incident-details.php?id='.$notif['reference_id']; break;
-                                case 'incident_status_update':    $icon='sync-alt';             $color='#3b82f6'; $link=$base_url.'/modules/incidents/incident-details.php?id='.$notif['reference_id']; break;
-                                case 'incident_resolved':         $icon='check-circle';         $color='#10b981'; $link=$base_url.'/modules/incidents/incident-details.php?id='.$notif['reference_id']; break;
-                                case 'blotter_filed':             $icon='file-alt';             $color='#f59e0b'; $link=$base_url.'/modules/blotter/view-blotter.php?id='.$notif['reference_id']; break;
-                                case 'blotter_status_update':     $icon='sync-alt';             $color='#3b82f6'; $link=$base_url.'/modules/blotter/view-blotter.php?id='.$notif['reference_id']; break;
-                                case 'blotter_hearing_scheduled': $icon='gavel';               $color='#8b5cf6'; $link=$base_url.'/modules/blotter/view-blotter.php?id='.$notif['reference_id']; break;
-                                case 'blotter_resolved':          $icon='check-circle';         $color='#10b981'; $link=$base_url.'/modules/blotter/view-blotter.php?id='.$notif['reference_id']; break;
+                                case 'complaint_filed':            $icon='file-alt';             $color='#f59e0b'; $link=$base_url.'/modules/complaints/complaint-details.php?id='.$notif['reference_id']; break;
+                                case 'complaint_status_update':    $icon='sync-alt';             $color='#3b82f6'; $link=$base_url.'/modules/complaints/complaint-details.php?id='.$notif['reference_id']; break;
+                                case 'complaint_resolved':         $icon='check-circle';         $color='#10b981'; $link=$base_url.'/modules/complaints/complaint-details.php?id='.$notif['reference_id']; break;
+                                case 'complaint_closed':           $icon='times-circle';         $color='#6b7280'; $link=$base_url.'/modules/complaints/complaint-details.php?id='.$notif['reference_id']; break;
+                                case 'complaint_assignment':       $icon='user-shield';          $color='#8b5cf6'; $link=$base_url.'/modules/complaints/complaint-details.php?id='.$notif['reference_id']; break;
+                                case 'document_request_submitted': $icon='file-invoice';         $color='#3b82f6'; $link=$base_url.'/modules/requests/view-request.php?id='.$notif['reference_id']; break;
+                                case 'request_status_update':      $icon='check-circle';         $color='#10b981'; $link=$base_url.'/modules/requests/view-request.php?id='.$notif['reference_id']; break;
+                                case 'payment_confirmed':          $icon='money-bill-wave';      $color='#10b981'; $link=$base_url.'/modules/requests/view-request.php?id='.$notif['reference_id']; break;
+                                case 'incident_reported':          $icon='exclamation-triangle'; $color='#ef4444'; $link=$base_url.'/modules/incidents/incident-details.php?id='.$notif['reference_id']; break;
+                                case 'incident_status_update':     $icon='sync-alt';             $color='#3b82f6'; $link=$base_url.'/modules/incidents/incident-details.php?id='.$notif['reference_id']; break;
+                                case 'incident_resolved':          $icon='check-circle';         $color='#10b981'; $link=$base_url.'/modules/incidents/incident-details.php?id='.$notif['reference_id']; break;
+                                case 'blotter_filed':              $icon='file-alt';             $color='#f59e0b'; $link=$base_url.'/modules/blotter/view-blotter.php?id='.$notif['reference_id']; break;
+                                case 'blotter_status_update':      $icon='sync-alt';             $color='#3b82f6'; $link=$base_url.'/modules/blotter/view-blotter.php?id='.$notif['reference_id']; break;
+                                case 'blotter_hearing_scheduled':  $icon='gavel';               $color='#8b5cf6'; $link=$base_url.'/modules/blotter/view-blotter.php?id='.$notif['reference_id']; break;
+                                case 'blotter_resolved':           $icon='check-circle';         $color='#10b981'; $link=$base_url.'/modules/blotter/view-blotter.php?id='.$notif['reference_id']; break;
                                 case 'appointment_booked':
-                                case 'appointment_confirmed':     $icon='calendar-check';       $color='#10b981'; $link=($user_role==='Resident')?$base_url.'/modules/health/book-appointment.php':$base_url.'/modules/health/appointments.php'; break;
-                                case 'appointment_cancelled':     $icon='calendar-times';       $color='#ef4444'; $link=($user_role==='Resident')?$base_url.'/modules/health/book-appointment.php':$base_url.'/modules/health/appointments.php'; break;
+                                case 'appointment_confirmed':      $icon='calendar-check';       $color='#10b981'; $link=($user_role==='Resident')?$base_url.'/modules/health/book-appointment.php':$base_url.'/modules/health/appointments.php'; break;
+                                case 'appointment_cancelled':      $icon='calendar-times';       $color='#ef4444'; $link=($user_role==='Resident')?$base_url.'/modules/health/book-appointment.php':$base_url.'/modules/health/appointments.php'; break;
                                 case 'medical_assistance_request':
-                                case 'medical_assistance':        $icon='hand-holding-medical'; $color='#6366f1'; $link=($user_role==='Resident')?$base_url.'/modules/health/request-assistance.php':$base_url.'/modules/health/medical-assistance.php'; break;
-                                case 'announcement':              $icon='bullhorn';             $color='#8b5cf6'; $link='#'; break;
+                                case 'medical_assistance':         $icon='hand-holding-medical'; $color='#6366f1'; $link=($user_role==='Resident')?$base_url.'/modules/health/request-assistance.php':$base_url.'/modules/health/medical-assistance.php'; break;
+                                case 'announcement':               $icon='bullhorn';             $color='#8b5cf6'; $link='#'; break;
+                                // ★ NEW: email reply from resident
+                                case 'email_reply':                $icon='envelope';             $color='#3182ce'; $link=$base_url.'/modules/notifications/notification-detail.php?id='.$notif['notification_id']; break;
                             }
                             $bg_color = $notif['is_read'] ? '#ffffff' : '#f0f9ff';
                             $time_diff = time() - strtotime($notif['created_at']);
-                            if ($time_diff < 60)          $time_ago = "Just now";
-                            elseif ($time_diff < 3600)    $time_ago = floor($time_diff/60)." min ago";
-                            elseif ($time_diff < 86400)   $time_ago = floor($time_diff/3600)." hr ago";
-                            else                          $time_ago = date('M d, h:i A', strtotime($notif['created_at']));
+                            if ($time_diff < 60)        $time_ago = "Just now";
+                            elseif ($time_diff < 3600)  $time_ago = floor($time_diff/60)." min ago";
+                            elseif ($time_diff < 86400) $time_ago = floor($time_diff/3600)." hr ago";
+                            else                        $time_ago = date('M d, h:i A', strtotime($notif['created_at']));
+                            // email_reply always links to notification-detail, not the raw reference_id
+                            if ($notif['type'] === 'email_reply') {
+                                $link = $base_url.'/modules/notifications/notification-detail.php?id='.intval($notif['notification_id']);
+                            }
                             ?>
                             <a href="<?php echo $base_url; ?>/modules/notifications/mark_read_redirect.php?id=<?php echo intval($notif['notification_id']); ?>&redirect=<?php echo urlencode($link); ?>"
                                style="display:block;padding:12px 15px;border-bottom:1px solid #f3f4f6;text-decoration:none;color:inherit;background:<?php echo $bg_color; ?>;transition:background 0.2s;"
@@ -1103,11 +1187,15 @@ $current_path = $_SERVER['PHP_SELF'];
 
                 <?php if (!empty($recent_notifications)): ?>
                 <div style="padding:10px 15px;border-top:1px solid #e2e8f0;text-align:center;">
-                    <a href="<?php echo $base_url; ?>/modules/notifications/index.php" style="color:#3b82f6;text-decoration:none;font-size:13px;font-weight:500;">View All Notifications</a>
+                    <a href="<?php echo $base_url; ?>/modules/notifications/index.php"
+                       style="color:#3b82f6;text-decoration:none;font-size:13px;font-weight:500;">
+                       View All Notifications
+                    </a>
                 </div>
                 <?php endif; ?>
             </div>
         </div>
+        <!-- end notification dropdown -->
 
         <div class="user-profile">
             <div class="user-avatar">
@@ -1128,6 +1216,11 @@ $current_path = $_SERVER['PHP_SELF'];
 </header>
 
 <!-- ════════════════════════════════════════════════════════
+     TOAST CONTAINER  (injected by JS poller)
+════════════════════════════════════════════════════════ -->
+<div id="notif-toast-wrap"></div>
+
+<!-- ════════════════════════════════════════════════════════
      JAVASCRIPT
 ════════════════════════════════════════════════════════ -->
 <script>
@@ -1135,13 +1228,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
     /* ── Sidebar toggle ── */
     var sidebarToggle = document.getElementById('sidebarToggle');
-
-    // Restore saved preference (default: open)
     if (localStorage.getItem('sidebarClosed') === 'true') {
         document.body.classList.remove('sidebar-open');
         document.body.classList.add('sidebar-closed');
     }
-
     if (sidebarToggle) {
         sidebarToggle.addEventListener('click', function () {
             var isClosed = document.body.classList.toggle('sidebar-closed');
@@ -1155,8 +1245,6 @@ document.addEventListener('DOMContentLoaded', function () {
         toggle.addEventListener('click', function () {
             var section = this.closest('.nav-section');
             section.classList.toggle('open');
-
-            // Persist state in sessionStorage so refresh remembers open sections
             var id = section.dataset.section;
             if (id) {
                 var openSections = JSON.parse(sessionStorage.getItem('openNavSections') || '{}');
@@ -1165,36 +1253,152 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
     });
-
-    // Restore previously-open sections from sessionStorage
-    // (PHP already opens the active one; this also reopens manually-opened ones)
     var stored = JSON.parse(sessionStorage.getItem('openNavSections') || '{}');
     document.querySelectorAll('.nav-section[data-section]').forEach(function (section) {
         var id = section.dataset.section;
-        if (stored[id] === true) {
-            section.classList.add('open');
-        }
+        if (stored[id] === true) section.classList.add('open');
     });
 
-    /* ── Notification bell ── */
+    /* ── Notification bell dropdown ── */
     var bell  = document.getElementById('notificationBell');
     var panel = document.getElementById('notificationPanel');
     if (bell && panel) {
-        var isOpen = false;
+        var panelOpen = false;
         bell.addEventListener('click', function (e) {
             e.preventDefault(); e.stopPropagation();
-            isOpen = !isOpen;
-            panel.style.display = isOpen ? 'block' : 'none';
+            panelOpen = !panelOpen;
+            panel.style.display = panelOpen ? 'block' : 'none';
         });
         document.addEventListener('click', function (e) {
-            if (isOpen && !bell.contains(e.target) && !panel.contains(e.target)) {
-                isOpen = false;
+            if (panelOpen && !bell.contains(e.target) && !panel.contains(e.target)) {
+                panelOpen = false;
                 panel.style.display = 'none';
             }
         });
         panel.addEventListener('click', function (e) { e.stopPropagation(); });
     }
-});
+
+    /* ════════════════════════════════════════
+       REAL-TIME NOTIFICATION POLLER
+       Polls notification_count.php every 30 s.
+       Updates bell badge + sidebar badge + toast.
+    ════════════════════════════════════════ */
+    var BASE_URL   = '<?php echo $base_url; ?>';
+    var COUNT_URL  = BASE_URL + '/modules/notifications/notification_count.php';
+    var NOTIF_URL  = BASE_URL + '/modules/notifications/index.php?filter=unread';
+    var POLL_MS    = 30000; // 30 seconds
+    var lastCount  = <?php echo intval($unread_count); ?>; // seed with server-rendered value
+
+    var bellBadge      = document.getElementById('bell-badge');
+    var bellIcon       = document.getElementById('bell-icon');
+    var sidebarBadge   = document.getElementById('sidebar-notif-badge');
+    var panelLabel     = document.getElementById('panel-unread-label');
+    var toastWrap      = document.getElementById('notif-toast-wrap');
+
+    /* Update every badge element in one go */
+    function applyCount(n) {
+        /* Header bell badge */
+        if (bellBadge) {
+            if (n > 0) {
+                bellBadge.textContent   = n > 99 ? '99+' : n;
+                bellBadge.style.display = 'flex';
+            } else {
+                bellBadge.style.display = 'none';
+            }
+        }
+        /* Sidebar Notifications badge */
+        if (sidebarBadge) {
+            if (n > 0) {
+                sidebarBadge.textContent   = n > 9 ? '9+' : n;
+                sidebarBadge.style.display = 'inline-block';
+            } else {
+                sidebarBadge.style.display = 'none';
+            }
+        }
+        /* Dropdown header "X new" pill */
+        if (panelLabel) {
+            if (n > 0) {
+                panelLabel.textContent   = n + ' new';
+                panelLabel.style.display = '';
+            } else {
+                panelLabel.style.display = 'none';
+            }
+        }
+    }
+
+    /* Shake bell + pop badge on genuinely new notifications */
+    function animateNewNotif() {
+        if (bellIcon) {
+            bellIcon.classList.remove('bell-shake');
+            void bellIcon.offsetWidth; // reflow
+            bellIcon.classList.add('bell-shake');
+            setTimeout(function () { bellIcon.classList.remove('bell-shake'); }, 700);
+        }
+        if (bellBadge) {
+            bellBadge.classList.remove('badge-pop');
+            void bellBadge.offsetWidth;
+            bellBadge.classList.add('badge-pop');
+            setTimeout(function () { bellBadge.classList.remove('badge-pop'); }, 400);
+        }
+    }
+
+    /* Show a toast popup */
+    function showToast(title, msg) {
+        if (!toastWrap) return;
+        var t = document.createElement('div');
+        t.className = 'notif-toast';
+        t.innerHTML =
+            '<span class="notif-toast-icon">✉️</span>' +
+            '<div class="notif-toast-body">' +
+            '  <div class="notif-toast-title">' + escH(title) + '</div>' +
+            '  <div class="notif-toast-msg">'   + escH(msg)   + '</div>' +
+            '</div>' +
+            '<button class="notif-toast-close" title="Dismiss">&times;</button>';
+
+        t.querySelector('.notif-toast-close').addEventListener('click', function (e) {
+            e.stopPropagation(); removeToast(t);
+        });
+        t.addEventListener('click', function () {
+            window.location.href = NOTIF_URL;
+        });
+        toastWrap.appendChild(t);
+        setTimeout(function () { removeToast(t); }, 7000);
+    }
+    function removeToast(el) {
+        el.style.opacity   = '0';
+        el.style.transform = 'translateX(28px)';
+        el.style.transition= 'opacity .3s, transform .3s';
+        setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 350);
+    }
+    function escH(s) {
+        return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    /* Poll */
+    function pollCount() {
+        fetch(COUNT_URL, { credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                var n = parseInt(d.unread_count || d.total_unread || 0, 10);
+                if (n > lastCount) {
+                    var diff = n - lastCount;
+                    animateNewNotif();
+                    showToast(
+                        diff === 1 ? 'New Notification' : diff + ' New Notifications',
+                        'You have ' + n + ' unread notification' + (n !== 1 ? 's.' : '.')
+                    );
+                }
+                applyCount(n);
+                lastCount = n;
+            })
+            .catch(function () { /* network error — skip silently */ });
+    }
+
+    /* Kick off: first check after 3 s, then every 30 s */
+    setTimeout(pollCount, 3000);
+    setInterval(pollCount, POLL_MS);
+
+}); // end DOMContentLoaded
 </script>
 
 <!-- Main Content -->

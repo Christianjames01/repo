@@ -150,6 +150,29 @@ define('SYSTEM_VERSION', '1.0.0');
 define('DEBUG_MODE', true);
 
 // ============================================
+// EMAIL / SMTP CONFIGURATION
+// ============================================
+define('MAIL_HOST',       'smtp.gmail.com');
+define('MAIL_PORT',       587);
+define('MAIL_USERNAME',   'sanjuanbrgycentro@gmail.com');
+define('MAIL_PASSWORD',   'kdbtphdxvmvgcpub'); // Gmail App Password
+define('MAIL_ENCRYPTION', 'tls');
+define('MAIL_FROM_EMAIL', 'sanjuanbrgycentro@gmail.com');
+define('MAIL_FROM_NAME',  'Barangay System');
+define('MAIL_IS_HTML',    true);
+define('MAIL_CHARSET',    'UTF-8');
+define('MAIL_DEBUG',      0);
+define('MAIL_TIMEOUT',    10);
+define('MAIL_SMTP_KEEPALIVE', true);
+
+// ============================================
+// IMAP — for reading incoming resident emails
+// ============================================
+define('IMAP_HOST',     '{imap.gmail.com:993/imap/ssl}INBOX');
+define('IMAP_USER',     'sanjuanbrgycentro@gmail.com');
+define('IMAP_PASSWORD', 'kdbtphdxvmvgcpub'); // same Gmail App Password
+
+// ============================================
 // LOAD FUNCTIONS IN CORRECT ORDER
 // ============================================
 
