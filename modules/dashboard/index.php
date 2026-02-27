@@ -13,8 +13,8 @@ $error_message = '';
 
 // Handle quick actions from dashboard
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if ($user_role !== 'Admin' && $user_role !== 'Staff' && $user_role !== 'Super Admin') {
-        $error_message = "You don't have permission to perform this action.";
+   if ($user_role !== 'Admin' && $user_role !== 'Staff' && $user_role !== 'Super Admin') {
+    $error_message = "You don't have permission to perform this action.";
     } elseif (isset($_POST['action'])) {
 
         if ($_POST['action'] === 'add_announcement') {
@@ -495,7 +495,7 @@ $role_badge = $role_badge_colors[$user_role] ?? 'badge-resident';
 <!-- ═══════════════════════════════════════════
      STATS CARDS — Admin/Staff View
 ═══════════════════════════════════════════ -->
-<?php if ($user_role !== 'Resident'): ?>
+<?php if ($user_role !== 'Resident' && $user_role !== 'Treasurer'): ?>
 <div class="db-stats-row">
     <div class="db-stat-card db-stat-card--clickable" onclick="toggleSection('pendingIncidentsSection', this)">
         <div class="db-stat-card__icon db-stat-card__icon--blue">
@@ -571,7 +571,7 @@ $role_badge = $role_badge_colors[$user_role] ?? 'badge-resident';
     <div class="db-grid__main">
 
         <!-- ── ALL RESIDENTS (Admin/Staff, toggled) ── -->
-        <?php if ($user_role !== 'Resident'): ?>
+      <?php if ($user_role !== 'Resident' && $user_role !== 'Treasurer'): ?>
         <div class="db-panel" id="allResidentsSection" style="display:none;">
             <div class="db-panel__header">
                 <div class="db-panel__title">
@@ -637,7 +637,7 @@ $role_badge = $role_badge_colors[$user_role] ?? 'badge-resident';
 
 
         <!-- ── PENDING INCIDENTS (Admin/Staff, toggled) ── -->
-        <?php if ($user_role !== 'Resident'): ?>
+       <?php if ($user_role !== 'Resident' && $user_role !== 'Treasurer'): ?>
         <div class="db-panel" id="pendingIncidentsSection" style="display:none;">
             <div class="db-panel__header">
                 <div class="db-panel__title">
@@ -682,7 +682,7 @@ $role_badge = $role_badge_colors[$user_role] ?? 'badge-resident';
 
 
         <!-- ── ALL COMPLAINTS (Admin/Staff, toggled) ── -->
-        <?php if ($user_role !== 'Resident'): ?>
+       <?php if ($user_role !== 'Resident' && $user_role !== 'Treasurer'): ?>
         <div class="db-panel" id="allComplaintsSection" style="display:none;">
             <div class="db-panel__header">
                 <div class="db-panel__title">
@@ -767,7 +767,7 @@ $role_badge = $role_badge_colors[$user_role] ?? 'badge-resident';
 
 
         <!-- ── PENDING COMPLAINTS (Admin/Staff, toggled) ── -->
-        <?php if ($user_role !== 'Resident'): ?>
+       <?php if ($user_role !== 'Resident' && $user_role !== 'Treasurer'): ?>
         <div class="db-panel" id="pendingComplaintsSection" style="display:none;">
             <div class="db-panel__header">
                 <div class="db-panel__title">
@@ -819,7 +819,7 @@ $role_badge = $role_badge_colors[$user_role] ?? 'badge-resident';
                     <span class="db-panel__icon db-panel__icon--amber"><i class="fas fa-bullhorn"></i></span>
                     <h2>Announcements</h2>
                 </div>
-                <?php if ($user_role !== 'Resident'): ?>
+             <?php if ($user_role !== 'Resident' && $user_role !== 'Treasurer'): ?>
                 <button class="db-btn db-btn--primary db-btn--sm" onclick="openModal('addAnnouncementModal')">
                     <i class="fas fa-plus"></i> Post
                 </button>
@@ -846,7 +846,7 @@ $role_badge = $role_badge_colors[$user_role] ?? 'badge-resident';
                                     </span>
                                 </div>
                             </div>
-                            <?php if ($user_role !== 'Resident'): ?>
+                <?php if ($user_role !== 'Resident' && $user_role !== 'Treasurer'): ?>
                             <div class="db-ann__controls">
                                 <button class="db-icon-btn" onclick='editAnnouncement(<?php echo json_encode($ann); ?>)' title="Edit"><i class="fas fa-edit"></i></button>
                                 <form method="POST" style="display:inline">
@@ -869,7 +869,7 @@ $role_badge = $role_badge_colors[$user_role] ?? 'badge-resident';
             <div class="db-empty">
                 <i class="fas fa-bullhorn"></i>
                 <p><?php echo ($user_role !== 'Resident') ? 'No announcements yet. Post one to keep residents informed.' : 'No announcements yet. Check back later.'; ?></p>
-                <?php if ($user_role !== 'Resident'): ?>
+         <?php if ($user_role !== 'Resident' && $user_role !== 'Treasurer'): ?>
                 <button class="db-btn db-btn--primary db-btn--sm" onclick="openModal('addAnnouncementModal')"><i class="fas fa-plus"></i> Post Announcement</button>
                 <?php endif; ?>
             </div>
@@ -887,7 +887,7 @@ $role_badge = $role_badge_colors[$user_role] ?? 'badge-resident';
                     <span class="db-panel__icon db-panel__icon--teal"><i class="fas fa-calendar-check"></i></span>
                     <h2>Barangay Activities</h2>
                 </div>
-                <?php if ($user_role !== 'Resident'): ?>
+               <?php if ($user_role !== 'Resident' && $user_role !== 'Treasurer'): ?>
                 <div style="display:flex;gap:0.5rem">
                     <button class="db-btn db-btn--primary db-btn--sm" onclick="openModal('addActivityModal')"><i class="fas fa-plus"></i> Add</button>
                     <a href="../activities/manage.php" class="db-btn db-btn--ghost db-btn--sm"><i class="fas fa-list"></i> All</a>
@@ -917,7 +917,7 @@ $role_badge = $role_badge_colors[$user_role] ?? 'badge-resident';
                                     <?php endif; ?>
                                 </div>
                             </div>
-                            <?php if ($user_role !== 'Resident'): ?>
+                           <?php if ($user_role !== 'Resident' && $user_role !== 'Treasurer'): ?>
                             <div class="db-ann__controls">
                                 <button class="db-icon-btn" onclick='editActivity(<?php echo json_encode($act); ?>)' title="Edit"><i class="fas fa-edit"></i></button>
                                 <form method="POST" style="display:inline">
@@ -943,7 +943,7 @@ $role_badge = $role_badge_colors[$user_role] ?? 'badge-resident';
             <div class="db-empty">
                 <i class="fas fa-calendar-check"></i>
                 <p>No activities yet.</p>
-                <?php if ($user_role !== 'Resident'): ?>
+              <?php if ($user_role !== 'Resident' && $user_role !== 'Treasurer'): ?>
                 <button class="db-btn db-btn--primary db-btn--sm" onclick="openModal('addActivityModal')"><i class="fas fa-plus"></i> Add Activity</button>
                 <?php endif; ?>
             </div>
@@ -967,7 +967,7 @@ $role_badge = $role_badge_colors[$user_role] ?? 'badge-resident';
                     <span class="db-panel__icon db-panel__icon--rose"><i class="fas fa-video"></i></span>
                     <h2>Video Updates</h2>
                 </div>
-                <?php if ($user_role !== 'Resident'): ?>
+          <?php if ($user_role !== 'Resident' && $user_role !== 'Treasurer'): ?>
                 <a href="../media/manage.php" class="db-btn db-btn--ghost db-btn--sm"><i class="fas fa-cog"></i></a>
                 <?php endif; ?>
             </div>
@@ -997,7 +997,7 @@ $role_badge = $role_badge_colors[$user_role] ?? 'badge-resident';
             <div class="db-empty db-empty--sm">
                 <i class="fas fa-video"></i>
                 <p>No video available</p>
-                <?php if ($user_role !== 'Resident'): ?>
+              <?php if ($user_role !== 'Resident' && $user_role !== 'Treasurer'): ?>
                 <a href="../media/manage.php" class="db-btn db-btn--primary db-btn--sm"><i class="fas fa-plus"></i> Add Video</a>
                 <?php endif; ?>
             </div>
@@ -1016,7 +1016,7 @@ $role_badge = $role_badge_colors[$user_role] ?? 'badge-resident';
                     <span class="db-panel__icon db-panel__icon--indigo"><i class="fas fa-images"></i></span>
                     <h2>Photo Gallery</h2>
                 </div>
-                <?php if ($user_role !== 'Resident'): ?>
+             <?php if ($user_role !== 'Resident' && $user_role !== 'Treasurer'): ?>
                 <a href="../media/manage.php" class="db-btn db-btn--ghost db-btn--sm"><i class="fas fa-cog"></i></a>
                 <?php endif; ?>
             </div>
@@ -1028,7 +1028,7 @@ $role_badge = $role_badge_colors[$user_role] ?? 'badge-resident';
                          alt="<?php echo htmlspecialchars($photo['caption']); ?>"
                          onclick="openImageModal('../../<?php echo htmlspecialchars($photo['file_path']); ?>', '<?php echo htmlspecialchars($photo['caption']); ?>')">
                     <div class="db-gallery__cap"><?php echo htmlspecialchars($photo['caption']); ?></div>
-                    <?php if ($user_role !== 'Resident'): ?>
+                   <?php if ($user_role !== 'Resident' && $user_role !== 'Treasurer'): ?>
                     <div class="db-gallery__actions">
                         <form method="POST" style="display:inline">
                             <input type="hidden" name="action" value="toggle_media">
@@ -1050,7 +1050,7 @@ $role_badge = $role_badge_colors[$user_role] ?? 'badge-resident';
             <div class="db-empty db-empty--sm">
                 <i class="fas fa-images"></i>
                 <p>No photos yet</p>
-                <?php if ($user_role !== 'Resident'): ?>
+          <?php if ($user_role !== 'Resident' && $user_role !== 'Treasurer'): ?>
                 <a href="../media/manage.php" class="db-btn db-btn--primary db-btn--sm"><i class="fas fa-plus"></i> Upload</a>
                 <?php endif; ?>
             </div>

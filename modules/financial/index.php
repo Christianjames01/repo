@@ -7,7 +7,7 @@ $page_title = 'Financial Management';
 $user_role = getCurrentUserRole();
 
 // Only Super Admin and Staff can access
-if (!in_array($user_role, ['Super Admin', 'Staff', 'Admin'])) {
+if (!in_array($user_role, ['Super Admin', 'Staff', 'Treasurer', 'Admin'])) {
     header('Location: ../../modules/dashboard/index.php');
     exit();
 }

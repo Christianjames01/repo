@@ -19,8 +19,6 @@ if (!isset($_GET['id']) || intval($_GET['id']) <= 0) {
 
 $request_id = intval($_GET['id']);
 
-
-
 // Auto-create replies table if missing
 $conn->query("CREATE TABLE IF NOT EXISTS tbl_request_replies (
     reply_id     INT AUTO_INCREMENT PRIMARY KEY,
@@ -71,33 +69,114 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         header('Location: view-request.php?id=' . $request_id); exit();
     }
 
-    // Update Payment
     if ($_POST['action'] === 'update_payment' && $user_role !== 'Resident') {
         $payment_status = intval($_POST['payment_status']);
+
+        // ── Prevent duplicate revenue: check current payment status ──
+        $cur_stmt = $conn->prepare("SELECT payment_status FROM tbl_requests WHERE request_id = ?");
+        $cur_stmt->bind_param("i", $request_id);
+        $cur_stmt->execute();
+        $cur_data = $cur_stmt->get_result()->fetch_assoc();
+        $cur_stmt->close();
+        $was_already_paid = ($cur_data && $cur_data['payment_status'] == 1);
+
         $stmt = $conn->prepare("UPDATE tbl_requests SET payment_status=? WHERE request_id=?");
         $stmt->bind_param("ii", $payment_status, $request_id);
 
         if ($stmt->execute()) {
-            $_SESSION['success_message'] = 'Payment status updated successfully';
-            if ($payment_status == 1) {
-                $res_stmt = $conn->prepare("SELECT u.user_id, rt.request_type_name, rt.fee
-                    FROM tbl_requests req
-                    INNER JOIN tbl_residents r  ON req.resident_id   = r.resident_id
-                    INNER JOIN tbl_users u      ON r.resident_id     = u.resident_id
-                    INNER JOIN tbl_request_types rt ON req.request_type_id = rt.request_type_id
-                    WHERE req.request_id = ?");
+
+            // Only create revenue when newly marking as Paid (not already paid)
+            if ($payment_status == 1 && !$was_already_paid) {
+
+                $res_stmt = $conn->prepare(
+                    "SELECT u.user_id, rt.request_type_name, rt.fee,
+                            res.first_name, res.last_name
+                     FROM tbl_requests req
+                     INNER JOIN tbl_residents res ON req.resident_id   = res.resident_id
+                     INNER JOIN tbl_users u        ON res.resident_id  = u.resident_id
+                     INNER JOIN tbl_request_types rt ON req.request_type_id = rt.request_type_id
+                     WHERE req.request_id = ?"
+                );
                 $res_stmt->bind_param("i", $request_id);
                 $res_stmt->execute();
                 $rd = $res_stmt->get_result()->fetch_assoc();
                 $res_stmt->close();
-                if ($rd) {
-                    $notif_stmt = $conn->prepare("INSERT INTO tbl_notifications (user_id,type,reference_type,reference_id,title,message,is_read,created_at) VALUES (?,?,?,?,?,?,0,NOW())");
-                    $nt = "payment_confirmed"; $rt2 = "request";
+
+                if ($rd && $rd['fee'] > 0) {
+                    $fee = (float) $rd['fee'];
+
+                    // Get or auto-create the "Document Fees" category
+                    $category_id = null;
+                    $cat_res = $conn->query("SELECT category_id FROM tbl_revenue_categories WHERE category_name = 'Document Fees' LIMIT 1");
+                    if ($cat_res && $cat_res->num_rows > 0) {
+                        $category_id = (int) $cat_res->fetch_assoc()['category_id'];
+                    } else {
+                        $conn->query("INSERT INTO tbl_revenue_categories (category_name, description, is_active) VALUES ('Document Fees', 'Revenue from document requests', 1)");
+                        $category_id = (int) $conn->insert_id;
+                    }
+
+                    if ($category_id) {
+                        $reference_number = 'REV-' . date('Ymd') . '-' . str_pad($request_id, 6, '0', STR_PAD_LEFT);
+                        $resident_name    = trim($rd['first_name'] . ' ' . $rd['last_name']);
+                        $source           = $resident_name . ' – ' . $rd['request_type_name'];
+                        $description      = "Payment for {$rd['request_type_name']} (Request #{$request_id})";
+
+                        // Insert as PENDING — finance staff verifies in revenues.php
+                        // which then updates the fund balance upon verification.
+                        $rev_stmt = $conn->prepare(
+                            "INSERT INTO tbl_revenues
+                                (reference_number, category_id, source, amount, description,
+                                 transaction_date, payment_method, received_by,
+                                 status, created_at)
+                             VALUES (?, ?, ?, ?, ?, NOW(), 'Cash', ?, 'Pending', NOW())"
+                        );
+                        $rev_stmt->bind_param("sisdsi",
+                            $reference_number,  // s
+                            $category_id,       // i
+                            $source,            // s
+                            $fee,               // d
+                            $description,       // s
+                            $user_id            // i - received_by
+                        );
+                        $rev_stmt->execute();
+                        $rev_stmt->close();
+                    }
+
+                    // Notify resident
+                    $notif_stmt = $conn->prepare(
+                        "INSERT INTO tbl_notifications (user_id,type,reference_type,reference_id,title,message,is_read,created_at)
+                         VALUES (?,?,?,?,?,?,0,NOW())"
+                    );
+                    $nt     = "payment_confirmed";
+                    $rt2    = "request";
                     $ntitle = "Payment Confirmed";
-                    $nmsg   = "Your payment of ₱" . number_format($rd['fee'],2) . " for {$rd['request_type_name']} has been confirmed";
+                    $nmsg   = "Your payment of ₱" . number_format($fee, 2) . " for {$rd['request_type_name']} has been confirmed. Reference: {$reference_number}";
                     $notif_stmt->bind_param("ississ", $rd['user_id'], $nt, $rt2, $request_id, $ntitle, $nmsg);
-                    $notif_stmt->execute(); $notif_stmt->close();
+                    $notif_stmt->execute();
+                    $notif_stmt->close();
+
+                    // Notify Treasurer(s) about payment
+                    $tres_result = $conn->query("SELECT user_id FROM tbl_users WHERE role = 'Treasurer'");
+                    if ($tres_result && $tres_result->num_rows > 0) {
+                        $tres_notif = $conn->prepare(
+                            "INSERT INTO tbl_notifications (user_id, type, reference_type, reference_id, title, message, is_read, created_at) VALUES (?, 'payment_confirmed', 'request', ?, ?, ?, 0, NOW())"
+                        );
+                        $tres_title = "Document Payment Received";
+                        $tres_msg   = "{$resident_name} paid ₱" . number_format($fee, 2) . " for {$rd['request_type_name']} (Request #{$request_id}). Reference: {$reference_number}";
+                        while ($tres_row = $tres_result->fetch_assoc()) {
+                            $tres_uid = $tres_row['user_id'];
+                            $tres_notif->bind_param("iiss", $tres_uid, $request_id, $tres_title, $tres_msg);
+                            $tres_notif->execute();
+                        }
+                        $tres_notif->close();
+                    }
+
+                    $_SESSION['success_message'] = "Payment confirmed! Revenue entry created and pending finance verification. Reference: {$reference_number}";
+                } else {
+                    $_SESSION['success_message'] = 'Payment status updated successfully';
                 }
+            } else {
+                $_SESSION['success_message'] = 'Payment status updated successfully';
             }
         } else {
             $_SESSION['error_message'] = 'Failed to update payment status';
@@ -127,7 +206,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             if ($ins->execute()) {
                 $_SESSION['success_message'] = 'Reply sent successfully';
 
-                // ── Notify the resident about the admin reply ───────────
                 $info_stmt = $conn->prepare(
                     "SELECT u.user_id AS resident_user_id,
                             rt.request_type_name,
@@ -161,8 +239,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $notif_stmt->execute();
                     $notif_stmt->close();
                 }
-                // ── End notification ────────────────────────────────────
-
             } else {
                 $_SESSION['error_message'] = 'Failed to send reply';
             }
@@ -199,7 +275,6 @@ if (!$request) {
     header('Location: my-requests.php'); exit();
 }
 
-// Check if request is rejected
 $is_rejected = ($request['status'] === 'Rejected');
 
 // Fetch attachments
@@ -292,6 +367,21 @@ body { background: var(--bg); color: var(--text); }
 .admin-actions .section-divider { border-top:1px solid var(--border); margin:1.25rem 0; padding-top:1.25rem; }
 .admin-actions .form-check-label { color:var(--text); font-size:0.9rem; }
 
+/* Auto-verify notice inside payment form */
+.auto-verify-notice {
+    background: #ecfdf5;
+    border: 1px solid #6ee7b7;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    font-size: 0.8rem;
+    color: #065f46;
+    margin-top: 0.75rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+}
+.auto-verify-notice i { color: #059669; margin-top: 1px; flex-shrink: 0; }
+
 .purpose-box { background:var(--bg); border-left:3px solid var(--accent); padding:1rem 1.25rem; border-radius:0 8px 8px 0; white-space:pre-wrap; font-size:0.9rem; line-height:1.7; color:var(--text); }
 
 .status-panel { padding:1.5rem; border-radius:8px; text-align:center; margin-bottom:0; }
@@ -331,7 +421,6 @@ body { background: var(--bg); color: var(--text); }
 
 .count-badge { display:inline-flex; align-items:center; justify-content:center; background:var(--bg); color:var(--muted); border:1px solid var(--border); border-radius:5px; font-size:0.75rem; font-weight:600; min-width:22px; height:22px; padding:0 0.4rem; margin-left:0.4rem; }
 
-/* ── Reply Thread ── */
 .reply-thread-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden; margin-bottom:1.25rem; }
 .reply-thread-header { padding:0.875rem 1.25rem; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
 .reply-thread-header h6 { margin:0; font-weight:600; font-size:0.9rem; color:var(--text); }
@@ -352,7 +441,6 @@ body { background: var(--bg); color: var(--text); }
 .reply-bubble.resident { background:#f0fdf4; border:1px solid #9fe0be; color:#166534; align-self:flex-end; border-bottom-right-radius:3px; text-align:right; }
 .reply-meta { font-size:0.68rem; opacity:0.6; margin-top:0.25rem; display:block; }
 
-/* Admin reply form */
 .reply-form-area { padding:1rem 1.25rem; border-top:1px solid var(--border); background:var(--bg); }
 .reply-form-label { font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); margin-bottom:0.4rem; display:block; }
 .reply-textarea { width:100%; border:1px solid var(--border); border-radius:8px; padding:0.6rem 0.875rem; font-size:0.875rem; resize:none; background:var(--surface); color:var(--text); outline:none; transition:border-color 0.18s; }
@@ -360,7 +448,6 @@ body { background: var(--bg); color: var(--text); }
 .btn-send-reply { background:var(--accent); color:#fff; border:none; border-radius:7px; font-size:0.82rem; font-weight:600; padding:0.45rem 1rem; cursor:pointer; transition:background 0.18s; }
 .btn-send-reply:hover { background:#1d4ed8; }
 
-/* Disabled state for rejected requests */
 .reply-form-area.disabled { opacity: 0.6; pointer-events: none; }
 .reply-textarea:disabled { background: #f5f5f5; cursor: not-allowed; }
 .btn-send-reply:disabled { background: #9ca3af; cursor: not-allowed; }
@@ -373,7 +460,6 @@ body { background: var(--bg); color: var(--text); }
 
 <div class="container-fluid py-4">
 
-    <!-- Page Header -->
     <div class="row mb-2">
         <div class="col-12">
             <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -405,10 +491,8 @@ body { background: var(--bg); color: var(--text); }
     <?php endif; ?>
 
     <div class="row">
-        <!-- Main Content -->
         <div class="col-lg-8 mb-4">
 
-            <!-- Admin Actions -->
             <?php if ($user_role !== 'Resident'): ?>
             <div class="admin-actions">
                 <div class="admin-actions-title">
@@ -444,7 +528,12 @@ body { background: var(--bg); color: var(--text); }
                                 <label class="form-check-label" for="payment_paid">Paid — ₱<?php echo number_format($request['fee'],2); ?></label>
                             </div>
                         </div>
-                        <button type="submit" class="btn btn-primary-minimal w-100"><i class="fas fa-check me-1"></i>Update Payment</button>
+                        <!-- Auto-verify notice -->
+                        <div class="auto-verify-notice">
+                            <i class="fas fa-check-circle"></i>
+                           <span>Marking as <strong>Paid</strong> creates a <strong>Pending</strong> revenue entry for finance staff to review and verify.</span>
+                        </div>
+                        <button type="submit" class="btn btn-primary-minimal w-100 mt-3"><i class="fas fa-check me-1"></i>Update Payment</button>
                     </form>
                 </div>
                 <?php endif; ?>
@@ -492,7 +581,7 @@ body { background: var(--bg); color: var(--text); }
                 </div>
             </div>
 
-            <!-- ── Remarks & Reply Thread ── -->
+            <!-- Remarks & Reply Thread -->
             <?php if ($has_thread || $user_role !== 'Resident'): ?>
             <div class="reply-thread-card">
                 <div class="reply-thread-header">
@@ -506,16 +595,12 @@ body { background: var(--bg); color: var(--text); }
                     <?php if (!$has_thread): ?>
                         <p style="font-size:0.85rem;color:var(--muted);margin:0;">No remarks or replies yet.</p>
                     <?php else: ?>
-
-                        <!-- Admin remark (from tbl_requests.remarks) -->
                         <?php if (!empty($request['remarks'])): ?>
                         <div class="admin-remark-bubble">
                             <span class="bubble-label"><i class="fas fa-user-shield me-1"></i>Admin Remark</span>
                             <?php echo nl2br(htmlspecialchars($request['remarks'])); ?>
                         </div>
                         <?php endif; ?>
-
-                        <!-- Reply thread from tbl_request_replies -->
                         <?php foreach ($replies as $reply): ?>
                         <div class="reply-bubble <?php echo $reply['sender_type']; ?>">
                             <?php echo nl2br(htmlspecialchars($reply['message'])); ?>
@@ -534,7 +619,6 @@ body { background: var(--bg); color: var(--text); }
                     <?php endif; ?>
                 </div>
 
-                <!-- Admin reply form -->
                 <?php if ($user_role !== 'Resident'): ?>
                 <div class="reply-form-area <?php echo $is_rejected ? 'disabled' : ''; ?>">
                     <?php if ($is_rejected): ?>
@@ -609,7 +693,6 @@ body { background: var(--bg); color: var(--text); }
 
         <!-- Sidebar -->
         <div class="col-lg-4">
-            <!-- Status Card -->
             <div class="modern-card">
                 <div class="modern-card-body" style="padding:1.25rem;">
                     <?php
@@ -630,7 +713,6 @@ body { background: var(--bg); color: var(--text); }
                 </div>
             </div>
 
-            <!-- Timeline -->
             <div class="modern-card">
                 <div class="modern-card-header">
                     <h6><i class="fas fa-history me-2" style="color:var(--muted);"></i>Timeline</h6>
@@ -678,7 +760,6 @@ body { background: var(--bg); color: var(--text); }
                 </div>
             </div>
 
-            <!-- Resident Information (admin only) -->
             <?php if ($user_role !== 'Resident'): ?>
             <div class="modern-card">
                 <div class="modern-card-header">

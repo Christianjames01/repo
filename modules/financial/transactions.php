@@ -6,7 +6,7 @@ requireLogin();
 $page_title = 'Transaction History';
 $user_role = getCurrentUserRole();
 
-if (!in_array($user_role, ['Super Admin', 'Staff', 'Admin'])) {
+if (!in_array($user_role, ['Super Admin', 'Treasurer', 'Admin'])) {
     header('Location: ../../modules/dashboard/index.php');
     exit();
 }

@@ -32,6 +32,7 @@ $user_role = isset($_SESSION['role_name']) ? $_SESSION['role_name'] : (isset($_S
 
 $is_tanod = in_array($user_role, ['Tanod', 'Barangay Tanod']);
 $is_driver = ($user_role === 'Driver');
+$is_treasurer = ($user_role === 'Treasurer');
 
 $driver_vehicle_id = null;
 if ($is_driver && isLoggedIn()) {
@@ -470,7 +471,91 @@ $current_path = $_SERVER['PHP_SELF'];
                     <i class="fas fa-sign-out-alt"></i><span>Logout</span>
                 </a>
             </div>
-        <?php navSectionEnd(); ?>
+            <?php navSectionEnd(); ?>
+
+  <?php elseif ($is_treasurer): ?>
+    <!-- ════ TREASURER — Finance + Main + Disaster + Account Only ════ -->
+
+    <?php navSectionStart('tres-main', 'Main', ['dashboard', 'calendar', 'officials']); ?>
+        <div class="nav-item">
+            <a href="<?php echo $base_url; ?>/modules/dashboard/index.php"
+               class="nav-link <?php echo (basename($current_path)=='index.php'&&strpos($current_path,'dashboard')!==false)?'active':''; ?>">
+                <i class="fas fa-th-large"></i><span>Dashboard</span>
+            </a>
+        </div>
+        <div class="nav-item">
+            <a href="<?php echo $base_url; ?>/modules/calendar/index.php"
+               class="nav-link <?php echo strpos($current_path,'calendar')!==false?'active':''; ?>">
+                <i class="fas fa-calendar-alt"></i><span>Calendar</span>
+            </a>
+        </div>
+        <div class="nav-item">
+           <a href="<?php echo $base_url; ?>/modules/officials/index.php"
+               class="nav-link <?php echo strpos($current_path,'officials')!==false?'active':''; ?>">
+                <i class="fas fa-users-cog"></i><span>Officials</span>
+            </a>
+        </div>
+    <?php navSectionEnd(); ?>
+
+    <?php navSectionStart('tres-financial', 'Financial Management', ['financial']); ?>
+        <div class="nav-item">
+            <a href="<?php echo $base_url; ?>/modules/financial/index.php"
+               class="nav-link <?php echo basename($current_path)=='index.php'&&strpos($current_path,'financial')!==false?'active':''; ?>">
+                <i class="fas fa-money-bill-wave"></i><span>Financial Overview</span>
+            </a>
+        </div>
+        <div class="nav-item">
+            <a href="<?php echo $base_url; ?>/modules/financial/budget.php"
+               class="nav-link <?php echo basename($current_path)=='budget.php'&&strpos($current_path,'financial')!==false?'active':''; ?>">
+                <i class="fas fa-wallet"></i><span>Budget Management</span>
+            </a>
+        </div>
+        <div class="nav-item">
+            <a href="<?php echo $base_url; ?>/modules/financial/expenses.php"
+               class="nav-link <?php echo basename($current_path)=='expenses.php'&&strpos($current_path,'financial')!==false?'active':''; ?>">
+                <i class="fas fa-receipt"></i><span>Expenses</span>
+            </a>
+        </div>
+        <div class="nav-item">
+            <a href="<?php echo $base_url; ?>/modules/financial/revenues.php"
+               class="nav-link <?php echo basename($current_path)=='revenues.php'&&strpos($current_path,'financial')!==false?'active':''; ?>">
+                <i class="fas fa-coins"></i><span>Revenue</span>
+            </a>
+        </div>
+        <div class="nav-item">
+            <a href="<?php echo $base_url; ?>/modules/financial/transactions.php"
+               class="nav-link <?php echo basename($current_path)=='transactions.php'&&strpos($current_path,'financial')!==false?'active':''; ?>">
+                <i class="fas fa-exchange-alt"></i><span>Transactions</span>
+            </a>
+        </div>
+    <?php navSectionEnd(); ?>
+
+    <?php navSectionStart('tres-notifications', 'Notifications', ['notifications']); ?>
+        <div class="nav-item" style="position:relative;">
+            <a href="<?php echo $base_url; ?>/modules/notifications/index.php"
+               class="nav-link <?php echo strpos($current_path,'notifications')!==false?'active':''; ?>">
+                <i class="fas fa-bell"></i><span>Notifications</span>
+                <span id="sidebar-notif-badge" class="notification-badge"
+                      style="display:<?php echo $unread_count > 0 ? 'inline-block' : 'none'; ?>;">
+                    <?php echo $unread_count > 9 ? '9+' : $unread_count; ?>
+                </span>
+            </a>
+        </div>
+    <?php navSectionEnd(); ?>
+
+    <?php navSectionStart('tres-account', 'Account', ['profile']); ?>
+        <div class="nav-item">
+            <a href="<?php echo $base_url; ?>/modules/residents/profile.php"
+               class="nav-link <?php echo strpos($current_path,'profile.php')!==false?'active':''; ?>">
+                <i class="fas fa-user-circle"></i><span>Profile</span>
+            </a>
+        </div>
+        <div class="nav-item">
+            <a href="<?php echo $base_url; ?>/modules/auth/logout.php" class="nav-link">
+                <i class="fas fa-sign-out-alt"></i><span>Logout</span>
+            </a>
+        </div>
+    <?php navSectionEnd(); ?>
 
     <?php elseif ($user_role === 'Resident'): ?>
         <!-- ════ RESIDENT — collapsible sections, light theme ════ -->
@@ -701,7 +786,7 @@ $current_path = $_SERVER['PHP_SELF'];
                 </a>
             </div>
             <div class="nav-item">
-                <a href="<?php echo $base_url; ?>/modules/officials/manage.php" class="nav-link <?php echo strpos($current_path,'officials')!==false?'active':''; ?>">
+               <a href="<?php echo $base_url; ?>/modules/officials/index.php"class="nav-link <?php echo strpos($current_path,'officials')!==false?'active':''; ?>">
                     <i class="fas fa-users-cog"></i><span>Officials</span>
                 </a>
             </div>
@@ -733,11 +818,12 @@ $current_path = $_SERVER['PHP_SELF'];
                     <i class="fas fa-clipboard-list"></i><span>Manage Blotter Records</span>
                 </a>
             </div>
-            <div class="nav-item">
-                <a href="<?php echo $base_url; ?>/modules/requests/admin-manage-requests.php" class="nav-link <?php echo strpos($current_path,'requests/admin')!==false?'active':''; ?>">
-                    <i class="fas fa-file-invoice"></i><span>Manage Documents</span>
-                </a>
-            </div>
+           <div class="nav-item">
+    <a href="<?php echo $base_url; ?>/modules/requests/admin-manage-requests.php"
+       class="nav-link <?php echo strpos($current_path,'requests')!==false?'active':''; ?>">
+        <i class="fas fa-file-invoice"></i><span>Document Requests</span>
+    </a>
+</div>
             <div class="nav-item">
                 <a href="<?php echo $base_url; ?>/modules/staff/manage.php" class="nav-link <?php echo strpos($current_path,'staff/manage')!==false?'active':''; ?>">
                     <i class="fas fa-user-tie"></i><span>Manage Staff</span>
