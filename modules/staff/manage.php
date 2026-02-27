@@ -46,7 +46,6 @@ if ($check_photo->num_rows == 0) {
 $status_column = $has_status ? 'u.status' : ($has_is_active ? 'u.is_active' : "'active' as status");
 
 // ─── Role map: role name → role_id ───────────────────────────────────────────
-// Keep this in one place so PHP and JS stay in sync.
 $role_map = [
     'Admin'            => 1,
     'Staff'            => 6,
@@ -64,15 +63,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     // ── Helper: upload a profile photo ───────────────────────────────────────
     function handlePhotoUpload($upload_dir, &$error_message) {
         if (!isset($_FILES['profile_photo']) || $_FILES['profile_photo']['error'] !== UPLOAD_ERR_OK) {
-            return null; // no file uploaded
+            return null;
         }
         $allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
         if (!in_array($_FILES['profile_photo']['type'], $allowed_types) || $_FILES['profile_photo']['size'] > 5242880) {
             $error_message = "Invalid photo format or size too large (max 5MB).";
             return false;
         }
-        $extension    = pathinfo($_FILES['profile_photo']['name'], PATHINFO_EXTENSION);
-        $filename     = uniqid() . '_' . time() . '.' . $extension;
+        $extension = pathinfo($_FILES['profile_photo']['name'], PATHINFO_EXTENSION);
+        $filename  = uniqid() . '_' . time() . '.' . $extension;
         if (!move_uploaded_file($_FILES['profile_photo']['tmp_name'], $upload_dir . $filename)) {
             $error_message = "Failed to upload profile photo.";
             return false;
@@ -88,20 +87,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             exit();
         }
         try {
-            $username   = trim($_POST['username']);
-            $email      = trim($_POST['email']);
-            $password   = $_POST['password']; // stored as-is, no hashing
-            $first_name = trim($_POST['first_name']);
-            $last_name  = trim($_POST['last_name']);
-            $role       = trim($_POST['role']);
-            $phone      = trim($_POST['phone'] ?? '');
+            $username          = trim($_POST['username']);
+            $email             = trim($_POST['email']);
+            $password          = $_POST['password'];
+            $first_name        = trim($_POST['first_name']);
+            $middle_name       = trim($_POST['middle_name'] ?? '');
+            $last_name         = trim($_POST['last_name']);
+            $ext               = trim($_POST['ext'] ?? '');
+            $role              = trim($_POST['role']);
+            $phone             = trim($_POST['phone'] ?? '');
+            $date_of_birth     = $_POST['date_of_birth'] ?? '';
+            $gender            = $_POST['gender'] ?? '';
+            $civil_status      = $_POST['civil_status'] ?? '';
+            $occupation        = trim($_POST['occupation'] ?? '');
+            $birthplace        = trim($_POST['birthplace'] ?? '');
+            $permanent_address = trim($_POST['permanent_address'] ?? '');
+            $street            = trim($_POST['street'] ?? '');
+            $barangay          = trim($_POST['barangay'] ?? '');
+            $town              = trim($_POST['town'] ?? '');
+            $province          = trim($_POST['province'] ?? '');
 
-            // Resolve role_id from server-side map (never trust hidden field alone)
+            // Build full address
+            $address_parts = array_filter([$permanent_address, $street, $barangay, $town, $province]);
+            $address = implode(', ', $address_parts);
+
+            // Resolve role_id
             $role_id = isset($role_map[$role]) ? $role_map[$role] : intval($_POST['role_id'] ?? 0);
 
             // Validate required fields
             if (empty($username) || empty($email) || empty($password) || empty($first_name) || empty($last_name) || empty($role)) {
                 $error_message = "All required fields must be filled in.";
+            }
+
+            // Validate age (must be at least 18)
+            if (!$error_message && !empty($date_of_birth)) {
+                $dob = new DateTime($date_of_birth);
+                $now = new DateTime();
+                if ($now->diff($dob)->y < 18) {
+                    $error_message = "Staff member must be at least 18 years old.";
+                }
+            }
+
+            // Validate contact number (Philippine format)
+            if (!$error_message && !empty($phone)) {
+                $clean_phone = preg_replace('/[^0-9]/', '', $phone);
+                if (strlen($clean_phone) != 11 || substr($clean_phone, 0, 2) != '09') {
+                    $error_message = "Contact number must be in format 09XXXXXXXXX";
+                } else {
+                    $phone = $clean_phone;
+                }
             }
 
             // Photo upload
@@ -130,24 +164,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 if ($dup) $error_message = "Email already exists!";
             }
 
-            // Insert resident
+            // Insert resident with full fields
             if (!$error_message) {
-                $stmt = $conn->prepare("INSERT INTO tbl_residents (first_name, last_name, email, phone, profile_photo, is_verified) VALUES (?, ?, ?, ?, ?, 1)");
-                $stmt->bind_param("sssss", $first_name, $last_name, $email, $phone, $profile_photo);
-                if ($stmt->execute()) {
-                    $resident_id = $stmt->insert_id;
-                    $stmt->close();
+                $is_verified = 1;
+                $res_status  = 'active';
 
-                    // Insert user — build query based on available columns
+                // ── Safely get next resident_id (handles non-AUTO_INCREMENT tables) ──
+                $conn->query("LOCK TABLES tbl_residents WRITE");
+                $id_res = $conn->query("SELECT COALESCE(MAX(resident_id), 0) + 1 AS next_id FROM tbl_residents");
+                if (!$id_res) {
+                    $conn->query("UNLOCK TABLES");
+                    $error_message = "Could not determine next resident_id: " . $conn->error;
+                }
+            }
+
+            if (!$error_message) {
+                $next_resident_id = (int) $id_res->fetch_assoc()['next_id'];
+
+                $stmt = $conn->prepare("
+                    INSERT INTO tbl_residents
+                        (resident_id, first_name, middle_name, last_name, ext_name,
+                         date_of_birth, birthplace, gender, civil_status,
+                         address, permanent_address, street, barangay, town, province,
+                         contact_number, phone, email, occupation,
+                         profile_photo, status, is_verified, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                ");
+                $stmt->bind_param("issssssssssssssssssssi",
+                    $next_resident_id,
+                    $first_name, $middle_name, $last_name, $ext,
+                    $date_of_birth, $birthplace, $gender, $civil_status,
+                    $address, $permanent_address, $street, $barangay, $town, $province,
+                    $phone, $phone,
+                    $email, $occupation,
+                    $profile_photo,
+                    $res_status,
+                    $is_verified
+                );
+
+                if ($stmt->execute() && $stmt->affected_rows > 0) {
+                    // Use the manually assigned ID — insert_id is 0 on non-AUTO_INCREMENT tables
+                    $resident_id = $next_resident_id;
+                    $stmt->close();
+                    $conn->query("UNLOCK TABLES");
+
+                    // Insert user
                     if ($has_status && $has_is_active) {
-                        $status   = 'active';
+                        $u_status  = 'active';
                         $is_active = 1;
                         $stmt = $conn->prepare("INSERT INTO tbl_users (username, email, password, role, role_id, status, is_active, resident_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-                        $stmt->bind_param("ssssisii", $username, $email, $password, $role, $role_id, $status, $is_active, $resident_id);
+                        $stmt->bind_param("ssssisii", $username, $email, $password, $role, $role_id, $u_status, $is_active, $resident_id);
                     } elseif ($has_status) {
-                        $status = 'active';
+                        $u_status = 'active';
                         $stmt = $conn->prepare("INSERT INTO tbl_users (username, email, password, role, role_id, status, resident_id) VALUES (?, ?, ?, ?, ?, ?, ?)");
-                        $stmt->bind_param("ssssisi", $username, $email, $password, $role, $role_id, $status, $resident_id);
+                        $stmt->bind_param("ssssisi", $username, $email, $password, $role, $role_id, $u_status, $resident_id);
                     } elseif ($has_is_active) {
                         $is_active = 1;
                         $stmt = $conn->prepare("INSERT INTO tbl_users (username, email, password, role, role_id, is_active, resident_id) VALUES (?, ?, ?, ?, ?, ?, ?)");
@@ -164,11 +234,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     }
                     $stmt->close();
                 } else {
+                    $conn->query("UNLOCK TABLES");
                     $error_message = "Error creating resident record: " . $stmt->error;
                     $stmt->close();
                 }
             }
         } catch (Exception $e) {
+            $conn->query("UNLOCK TABLES");
             $error_message = "Error: " . $e->getMessage();
         }
     }
@@ -183,14 +255,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $last_name  = trim($_POST['last_name']);
             $role       = trim($_POST['role'] ?? '');
             $phone      = trim($_POST['phone'] ?? '');
-            $password   = $_POST['password'] ?? ''; // not trimmed — spaces could be intentional
+            $password   = $_POST['password'] ?? '';
 
-            // Validate required fields
             if (empty($username) || empty($email) || empty($first_name) || empty($last_name)) {
                 $error_message = "All required fields must be filled in.";
             }
 
-            // Photo upload
             $profile_photo = null;
             $update_photo  = false;
             if (!$error_message) {
@@ -201,7 +271,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $profile_photo = $photo_result;
                     $update_photo  = true;
 
-                    // Delete old photo
                     $stmt = $conn->prepare("SELECT r.profile_photo FROM tbl_users u LEFT JOIN tbl_residents r ON u.resident_id = r.resident_id WHERE u.user_id = ?");
                     $stmt->bind_param("i", $user_id);
                     $stmt->execute();
@@ -213,7 +282,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 }
             }
 
-            // Username duplicate check
             if (!$error_message) {
                 $stmt = $conn->prepare("SELECT user_id FROM tbl_users WHERE username = ? AND user_id != ?");
                 $stmt->bind_param("si", $username, $user_id);
@@ -223,7 +291,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 if ($dup) $error_message = "Username already exists!";
             }
 
-            // Email duplicate check
             if (!$error_message) {
                 $stmt = $conn->prepare("SELECT user_id FROM tbl_users WHERE email = ? AND user_id != ?");
                 $stmt->bind_param("si", $email, $user_id);
@@ -233,7 +300,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 if ($dup) $error_message = "Email already in use by another account!";
             }
 
-            // Fetch current DB values
             if (!$error_message) {
                 $stmt = $conn->prepare("SELECT resident_id, role, role_id FROM tbl_users WHERE user_id = ?");
                 $stmt->bind_param("i", $user_id);
@@ -243,16 +309,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
                 $resident_id = $cur['resident_id'] ?? null;
 
-                // If role was not submitted (blank), preserve existing DB role
                 if (empty($role)) {
                     $role    = $cur['role'];
                     $role_id = intval($cur['role_id']);
                 } else {
-                    // Resolve role_id from server-side map
                     $role_id = isset($role_map[$role]) ? $role_map[$role] : intval($_POST['role_id'] ?? $cur['role_id']);
                 }
 
-                // Update tbl_residents
                 if ($resident_id) {
                     if ($update_photo) {
                         $stmt = $conn->prepare("UPDATE tbl_residents SET first_name=?, last_name=?, email=?, phone=?, profile_photo=? WHERE resident_id=?");
@@ -267,7 +330,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $stmt->close();
                 }
 
-                // Update tbl_users
                 if (!$error_message) {
                     if (!empty($password)) {
                         $stmt = $conn->prepare("UPDATE tbl_users SET username=?, email=?, password=?, role=?, role_id=? WHERE user_id=?");
@@ -324,7 +386,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         try {
             $user_id = intval($_POST['user_id']);
 
-            // Get photo path before deleting
             $stmt = $conn->prepare("SELECT r.profile_photo FROM tbl_users u LEFT JOIN tbl_residents r ON u.resident_id = r.resident_id WHERE u.user_id = ?");
             $stmt->bind_param("i", $user_id);
             $stmt->execute();
@@ -347,7 +408,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         }
     }
 
-    // Redirect to avoid double-POST on refresh
     $_SESSION['temp_success'] = $success_message;
     $_SESSION['temp_error']   = $error_message;
     header('Location: ' . $_SERVER['PHP_SELF']);
@@ -424,23 +484,32 @@ tbody tr:hover { background: rgba(13,110,253,0.04); }
 .btn-icon.danger:hover { background: #fee2e2; color: #dc2626; }
 .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
 .modal.show { display: flex; }
-.modal-content { background: white; border-radius: var(--border-radius-lg); width: 90%; max-width: 600px; max-height: 90vh; overflow-y: auto; box-shadow: var(--shadow-lg); animation: modalSlideIn 0.3s ease; }
+.modal-content { background: white; border-radius: var(--border-radius-lg); width: 90%; max-width: 700px; max-height: 90vh; overflow-y: auto; box-shadow: var(--shadow-lg); animation: modalSlideIn 0.3s ease; }
 @keyframes modalSlideIn { from { opacity: 0; transform: translateY(-20px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
-.modal-header { padding: 1.5rem; border-bottom: 2px solid #e9ecef; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%); border-radius: var(--border-radius-lg) var(--border-radius-lg) 0 0; }
+.modal-header { padding: 1.5rem; border-bottom: 2px solid #e9ecef; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%); border-radius: var(--border-radius-lg) var(--border-radius-lg) 0 0; position: sticky; top: 0; z-index: 10; }
 .modal-title { font-size: 1.25rem; font-weight: 700; color: #1e293b; margin: 0; }
 .close-btn { background: none; border: none; font-size: 1.5rem; color: #64748b; cursor: pointer; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 6px; transition: all var(--transition-speed) ease; }
 .close-btn:hover { background: #f1f5f9; color: #1e293b; }
 .modal form { padding: 1.5rem; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.form-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
 .form-group { margin-bottom: 1.25rem; }
 .form-group label { display: block; font-size: 0.875rem; font-weight: 700; color: #475569; margin-bottom: 0.5rem; }
-.form-control { width: 100%; padding: 0.75rem; border: 2px solid #e9ecef; border-radius: 8px; font-size: 0.875rem; transition: all var(--transition-speed) ease; box-sizing: border-box; }
+.required { color: #ef4444; }
+.form-control { width: 100%; padding: 0.75rem; border: 2px solid #e9ecef; border-radius: 8px; font-size: 0.875rem; transition: all var(--transition-speed) ease; box-sizing: border-box; background: white; }
 .form-control:focus { outline: none; border-color: #0d6efd; box-shadow: 0 0 0 4px rgba(13,110,253,0.1); }
+.section-title {
+    color: #1e3a8a; font-size: 0.95rem; font-weight: 700;
+    margin: 1.5rem 0 1rem; padding-bottom: 0.5rem;
+    border-bottom: 2px solid #e2e8f0;
+    display: flex; align-items: center; gap: 0.5rem;
+}
 .photo-upload-area { border: 2px dashed #e9ecef; border-radius: 8px; padding: 1.5rem; text-align: center; cursor: pointer; transition: all var(--transition-speed) ease; }
 .photo-upload-area:hover { border-color: #0d6efd; background: #f8fafc; }
 .photo-upload-area .upload-icon { font-size: 2rem; color: #94a3b8; margin-bottom: 0.5rem; }
 .photo-preview { width: 100px; height: 100px; border-radius: 50%; margin: 0 auto 0.75rem; overflow: hidden; display: none; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
 .photo-preview img { width: 100%; height: 100%; object-fit: cover; }
+.helper-text { font-size: 0.8rem; color: #64748b; margin-top: 0.25rem; }
 .btn-submit { width: 100%; padding: 0.875rem; background: #0d6efd; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem; transition: all var(--transition-speed) ease; font-size: 1rem; margin-top: 0.5rem; }
 .btn-submit:hover { background: #0b5ed7; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
 .btn { padding: 0.75rem 1.5rem; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; transition: all var(--transition-speed) ease; }
@@ -459,7 +528,7 @@ tbody tr:hover { background: rgba(13,110,253,0.04); }
 @media (max-width: 768px) {
     .staff-management { padding: 1rem; }
     .page-header { flex-direction: column; align-items: flex-start; gap: 1rem; }
-    .form-row { grid-template-columns: 1fr; }
+    .form-row, .form-row-3 { grid-template-columns: 1fr; }
     th, td { font-size: 0.8rem; padding: 0.75rem; }
 }
 html { scroll-behavior: smooth; }
@@ -596,41 +665,132 @@ html { scroll-behavior: smooth; }
         <form method="POST" enctype="multipart/form-data" id="addStaffForm" onsubmit="return validateAddForm()">
             <input type="hidden" name="action" value="add_staff">
 
-            <!-- Photo -->
+            <!-- ── Profile Photo ──────────────────────────────────── -->
+            <div class="section-title"><i class="fas fa-camera"></i> Profile Photo</div>
             <div class="form-group">
-                <label>Profile Photo <span style="font-weight:400;color:#94a3b8;">(optional)</span></label>
                 <div class="photo-upload-area" onclick="document.getElementById('add_photo').click()">
                     <div class="photo-preview" id="add_preview"></div>
                     <i class="fas fa-camera upload-icon"></i>
-                    <p style="margin:0;color:#64748b;font-size:.875rem;">Click to upload photo</p>
+                    <p style="margin:0;color:#64748b;font-size:.875rem;">Click to upload photo <span style="color:#94a3b8;">(optional)</span></p>
                     <p style="margin:.25rem 0 0;font-size:.75rem;color:#94a3b8;">JPG, PNG or GIF · max 5 MB</p>
                 </div>
                 <input type="file" name="profile_photo" id="add_photo" accept="image/*" style="display:none;" onchange="previewPhoto(this,'add_preview')">
             </div>
 
+            <!-- ── Personal Information ───────────────────────────── -->
+            <div class="section-title"><i class="fas fa-user"></i> Personal Information</div>
+
             <div class="form-row">
                 <div class="form-group">
-                    <label>First Name *</label>
+                    <label>First Name <span class="required">*</span></label>
                     <input type="text" name="first_name" class="form-control" required placeholder="Juan">
                 </div>
                 <div class="form-group">
-                    <label>Last Name *</label>
+                    <label>Last Name <span class="required">*</span></label>
                     <input type="text" name="last_name" class="form-control" required placeholder="dela Cruz">
                 </div>
             </div>
 
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Middle Name</label>
+                    <input type="text" name="middle_name" class="form-control" placeholder="Middle name (optional)">
+                </div>
+                <div class="form-group">
+                    <label>Extension</label>
+                    <input type="text" name="ext" class="form-control" placeholder="Jr., Sr., III (optional)">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Date of Birth</label>
+                    <input type="date" name="date_of_birth" class="form-control"
+                           max="<?php echo date('Y-m-d', strtotime('-18 years')); ?>">
+                    <small class="helper-text">Must be 18 years or older</small>
+                </div>
+                <div class="form-group">
+                    <label>Gender</label>
+                    <select name="gender" class="form-control">
+                        <option value="">Select gender</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Civil Status</label>
+                    <select name="civil_status" class="form-control">
+                        <option value="">Select status</option>
+                        <option value="Single">Single</option>
+                        <option value="Married">Married</option>
+                        <option value="Widowed">Widowed</option>
+                        <option value="Separated">Separated</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Occupation</label>
+                    <input type="text" name="occupation" class="form-control" placeholder="Occupation (optional)">
+                </div>
+            </div>
+
             <div class="form-group">
-                <label>Email Address *</label>
+                <label>Birthplace</label>
+                <input type="text" name="birthplace" class="form-control" placeholder="City, Province">
+            </div>
+
+            <!-- ── Address Information ────────────────────────────── -->
+            <div class="section-title"><i class="fas fa-map-marker-alt"></i> Address Information</div>
+
+            <div class="form-group">
+                <label>Permanent Address</label>
+                <input type="text" name="permanent_address" class="form-control" placeholder="House No., Street">
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Street</label>
+                    <input type="text" name="street" class="form-control" placeholder="Street name (optional)">
+                </div>
+                <div class="form-group">
+                    <label>Barangay</label>
+                    <input type="text" name="barangay" class="form-control" placeholder="Barangay">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Town/City</label>
+                    <input type="text" name="town" class="form-control" placeholder="Town/City">
+                </div>
+                <div class="form-group">
+                    <label>Province</label>
+                    <input type="text" name="province" class="form-control" placeholder="Province">
+                </div>
+            </div>
+
+            <!-- ── Contact Information ────────────────────────────── -->
+            <div class="section-title"><i class="fas fa-phone"></i> Contact Information</div>
+
+            <div class="form-group">
+                <label>Mobile Number</label>
+                <input type="tel" name="phone" id="add_phone" class="form-control"
+                       placeholder="09XXXXXXXXX" pattern="[0-9]{11}" maxlength="11">
+                <small class="helper-text">Format: 09XXXXXXXXX</small>
+            </div>
+
+            <div class="form-group">
+                <label>Email Address <span class="required">*</span></label>
                 <input type="email" name="email" class="form-control" required placeholder="juan@example.com">
             </div>
 
-            <div class="form-group">
-                <label>Phone Number</label>
-                <input type="text" name="phone" class="form-control" placeholder="+63 XXX XXX XXXX">
-            </div>
+            <!-- ── Role & Account ─────────────────────────────────── -->
+            <div class="section-title"><i class="fas fa-id-badge"></i> Role & Account</div>
 
             <div class="form-group">
-                <label>Role *</label>
+                <label>Role <span class="required">*</span></label>
                 <select name="role" id="add_role" class="form-control" required>
                     <option value="">— Select Role —</option>
                     <option value="Admin">Admin</option>
@@ -642,24 +802,28 @@ html { scroll-behavior: smooth; }
                     <option value="Staff">Staff</option>
                     <option value="Driver">Driver</option>
                 </select>
-                <!-- role_id is resolved server-side from $role_map, but we send it as a fallback -->
                 <input type="hidden" name="role_id" id="add_role_id" value="0">
                 <p class="role-badge-note"><i class="fas fa-info-circle me-1"></i>Role ID is assigned automatically.</p>
             </div>
 
             <div class="form-row">
                 <div class="form-group">
-                    <label>Username *</label>
-                    <input type="text" name="username" class="form-control" required placeholder="juandelacruz">
+                    <label>Username <span class="required">*</span></label>
+                    <input type="text" name="username" class="form-control" required placeholder="juandelacruz"
+                           minlength="5" maxlength="20">
+                    <small class="helper-text">5–20 characters, letters, numbers, underscores only</small>
                 </div>
                 <div class="form-group">
-                    <label>Password *</label>
+                    <label>Password <span class="required">*</span></label>
                     <div style="position:relative;">
-                        <input type="password" name="password" id="add_password" class="form-control" required placeholder="Password" style="padding-right:2.75rem;">
-                        <button type="button" onclick="togglePw('add_password','add_pw_eye')" style="position:absolute;right:.75rem;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#64748b;">
+                        <input type="password" name="password" id="add_password" class="form-control" required
+                               placeholder="Password" style="padding-right:2.75rem;" minlength="8">
+                        <button type="button" onclick="togglePw('add_password','add_pw_eye')"
+                                style="position:absolute;right:.75rem;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#64748b;">
                             <i class="fas fa-eye" id="add_pw_eye"></i>
                         </button>
                     </div>
+                    <small class="helper-text">Minimum 8 characters</small>
                 </div>
             </div>
 
@@ -680,7 +844,6 @@ html { scroll-behavior: smooth; }
         <form method="POST" enctype="multipart/form-data" id="editStaffForm">
             <input type="hidden" name="action" value="edit_staff">
             <input type="hidden" name="user_id" id="edit_user_id">
-            <!-- role_id sent as fallback; server resolves from role name via $role_map -->
             <input type="hidden" name="role_id" id="edit_role_id" value="0">
 
             <!-- Photo -->
@@ -697,17 +860,17 @@ html { scroll-behavior: smooth; }
 
             <div class="form-row">
                 <div class="form-group">
-                    <label>First Name *</label>
+                    <label>First Name <span class="required">*</span></label>
                     <input type="text" name="first_name" id="edit_first_name" class="form-control" required>
                 </div>
                 <div class="form-group">
-                    <label>Last Name *</label>
+                    <label>Last Name <span class="required">*</span></label>
                     <input type="text" name="last_name" id="edit_last_name" class="form-control" required>
                 </div>
             </div>
 
             <div class="form-group">
-                <label>Email *</label>
+                <label>Email <span class="required">*</span></label>
                 <input type="email" name="email" id="edit_email" class="form-control" required>
             </div>
 
@@ -717,7 +880,7 @@ html { scroll-behavior: smooth; }
             </div>
 
             <div class="form-group">
-                <label>Role *</label>
+                <label>Role <span class="required">*</span></label>
                 <select name="role" id="edit_role" class="form-control" required onchange="syncRoleId('edit')">
                     <option value="">— Select Role —</option>
                     <option value="Admin">Admin</option>
@@ -734,14 +897,16 @@ html { scroll-behavior: smooth; }
 
             <div class="form-row">
                 <div class="form-group">
-                    <label>Username *</label>
+                    <label>Username <span class="required">*</span></label>
                     <input type="text" name="username" id="edit_username" class="form-control" required>
                 </div>
                 <div class="form-group">
                     <label>New Password <span style="font-weight:400;color:#94a3b8;">(optional)</span></label>
                     <div style="position:relative;">
-                        <input type="password" name="password" id="edit_password" class="form-control" placeholder="Leave blank to keep current" style="padding-right:2.75rem;">
-                        <button type="button" onclick="togglePw('edit_password','edit_pw_eye')" style="position:absolute;right:.75rem;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#64748b;">
+                        <input type="password" name="password" id="edit_password" class="form-control"
+                               placeholder="Leave blank to keep current" style="padding-right:2.75rem;">
+                        <button type="button" onclick="togglePw('edit_password','edit_pw_eye')"
+                                style="position:absolute;right:.75rem;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#64748b;">
                             <i class="fas fa-eye" id="edit_pw_eye"></i>
                         </button>
                     </div>
@@ -822,7 +987,7 @@ html { scroll-behavior: smooth; }
 </div>
 
 <script>
-// ── Role → role_id map (mirrors PHP $role_map) ──────────────────────────────
+// ── Role → role_id map ───────────────────────────────────────────────────────
 const ROLE_MAP = {
     'Admin':            1,
     'Barangay Captain': 2,
@@ -838,7 +1003,6 @@ const ROLE_MAP = {
 function openModal(id)  { document.getElementById(id).classList.add('show'); }
 function closeModal(id) {
     document.getElementById(id).classList.remove('show');
-    // Only reset photo previews for the add/edit modals
     if (id === 'addStaffModal')  resetPreview('add_preview',  'add_photo');
     if (id === 'editStaffModal') resetPreview('edit_preview', 'edit_photo');
 }
@@ -858,40 +1022,50 @@ function previewPhoto(input, previewId) {
     reader.onload = function(e) {
         preview.innerHTML = '<img src="' + e.target.result + '" alt="Preview">';
         preview.style.display = 'block';
-        // Hide the camera icon/text when a photo is selected
-        const area = input.previousElementSibling || input.closest('.photo-upload-area');
     };
     reader.readAsDataURL(input.files[0]);
 }
 
-// ── Sync role_id hidden field from dropdown ──────────────────────────────────
+// ── Sync role_id hidden field ────────────────────────────────────────────────
 function syncRoleId(prefix) {
     const sel = document.getElementById(prefix + '_role');
     const val = sel ? sel.value : '';
     document.getElementById(prefix + '_role_id').value = ROLE_MAP[val] || 0;
 }
 
-// Also sync on add form change
 document.getElementById('add_role').addEventListener('change', function() { syncRoleId('add'); });
 
-// ── Password visibility toggle ───────────────────────────────────────────────
+// ── Phone: numbers only ──────────────────────────────────────────────────────
+document.getElementById('add_phone').addEventListener('input', function() {
+    this.value = this.value.replace(/[^0-9]/g, '');
+});
+
+// ── Password toggle ──────────────────────────────────────────────────────────
 function togglePw(inputId, iconId) {
     const inp  = document.getElementById(inputId);
     const icon = document.getElementById(iconId);
     if (inp.type === 'password') {
-        inp.type   = 'text';
+        inp.type = 'text';
         icon.className = 'fas fa-eye-slash';
     } else {
-        inp.type   = 'password';
+        inp.type = 'password';
         icon.className = 'fas fa-eye';
     }
 }
 
-// ── Validate Add form before submit ─────────────────────────────────────────
+// ── Validate Add form ────────────────────────────────────────────────────────
 function validateAddForm() {
     const role = document.getElementById('add_role').value;
     if (!role) { alert('Please select a role.'); return false; }
-    syncRoleId('add'); // ensure role_id is set at submit time
+    syncRoleId('add');
+
+    // Validate phone if entered
+    const phone = document.getElementById('add_phone').value;
+    if (phone && (phone.length !== 11 || !phone.startsWith('09'))) {
+        alert('Contact number must be in format 09XXXXXXXXX (11 digits).');
+        return false;
+    }
+
     return true;
 }
 
@@ -905,23 +1079,18 @@ function editStaff(staff) {
     document.getElementById('edit_username').value   = staff.username   || '';
     document.getElementById('edit_password').value   = '';
 
-    // Set role dropdown
     const roleSelect = document.getElementById('edit_role');
     roleSelect.value = staff.role || '';
 
-    // Sync role_id: prefer ROLE_MAP lookup, fall back to DB value
     const mappedId = ROLE_MAP[staff.role];
     document.getElementById('edit_role_id').value = mappedId !== undefined ? mappedId : (staff.role_id || 0);
 
-    // Show existing photo if any
     const preview = document.getElementById('edit_preview');
-    const icon    = document.getElementById('edit_camera_icon');
-    const text    = document.getElementById('edit_upload_text');
     if (staff.profile_photo) {
         preview.innerHTML = '<img src="../../uploads/profiles/' + staff.profile_photo + '" alt="Current Photo">';
         preview.style.display = 'block';
     } else {
-        preview.innerHTML    = '';
+        preview.innerHTML     = '';
         preview.style.display = 'none';
     }
 
@@ -938,7 +1107,7 @@ function openDeleteModal(staff) {
     openModal('deleteStaffModal');
 }
 
-// ── Status toggle modal ───────────────────────────────────────────────────────
+// ── Status toggle modal ──────────────────────────────────────────────────────
 function openStatusModal(staff) {
     const isActive  = (staff.status === 'active' || staff.status == 1);
     const newStatus = isActive ? 'inactive' : 'active';
@@ -946,7 +1115,7 @@ function openStatusModal(staff) {
         ? staff.first_name + ' ' + staff.last_name
         : staff.username;
 
-    document.getElementById('status_user_id').value   = staff.user_id;
+    document.getElementById('status_user_id').value    = staff.user_id;
     document.getElementById('status_new_status').value = newStatus;
     document.getElementById('status_staff_name').textContent = name + ' (' + staff.role + ')';
 
@@ -965,9 +1134,9 @@ function openStatusModal(staff) {
         icon.className = 'fas fa-user-slash'; icon.style.color = '#d97706';
         mIcon.className = 'fas fa-ban me-2 text-warning';
         mTitle.textContent = 'Deactivate Staff Member';
-        q.textContent    = 'Deactivate this staff member?';
-        aText.textContent = 'You are about to deactivate:';
-        desc.textContent  = 'They will lose system access. You can re-activate at any time.';
+        q.textContent      = 'Deactivate this staff member?';
+        aText.textContent  = 'You are about to deactivate:';
+        desc.textContent   = 'They will lose system access. You can re-activate at any time.';
         btn.style.background = '#d97706'; btn.style.color = 'white';
         btnTxt.textContent = 'Deactivate';
     } else {
@@ -975,9 +1144,9 @@ function openStatusModal(staff) {
         icon.className = 'fas fa-user-check'; icon.style.color = '#059669';
         mIcon.className = 'fas fa-check-circle me-2 text-success';
         mTitle.textContent = 'Activate Staff Member';
-        q.textContent    = 'Activate this staff member?';
-        aText.textContent = 'You are about to activate:';
-        desc.textContent  = 'They will regain access to the system.';
+        q.textContent      = 'Activate this staff member?';
+        aText.textContent  = 'You are about to activate:';
+        desc.textContent   = 'They will regain access to the system.';
         btn.style.background = '#059669'; btn.style.color = 'white';
         btnTxt.textContent = 'Activate';
     }
@@ -992,12 +1161,12 @@ function searchTable() {
     rows.forEach(r => { r.style.display = r.textContent.toLowerCase().includes(filter) ? '' : 'none'; });
 }
 
-// ── Close modal on backdrop click ────────────────────────────────────────────
+// ── Backdrop click to close ──────────────────────────────────────────────────
 window.addEventListener('click', function(e) {
     if (e.target.classList.contains('modal')) closeModal(e.target.id);
 });
 
-// ── Close modal on Escape ─────────────────────────────────────────────────────
+// ── Escape key to close ──────────────────────────────────────────────────────
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
         document.querySelectorAll('.modal.show').forEach(m => closeModal(m.id));
