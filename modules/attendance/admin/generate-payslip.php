@@ -12,12 +12,12 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 if (!isLoggedIn()) {
-    redirect('/barangaylink/modules/auth/login.php', 'Please login to continue', 'error');
+    redirect('/barangaylink1/modules/auth/login.php', 'Please login to continue', 'error');
 }
 
 $user_role = getCurrentUserRole();
 if (!in_array($user_role, ['Admin', 'Super Admin'])) {
-    redirect('/barangaylink/modules/dashboard/index.php', 'Access denied', 'error');
+    redirect('/barangaylink1/modules/dashboard/index.php', 'Access denied', 'error');
 }
 
 $page_title = 'Generate Payslip';
@@ -249,8 +249,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_payslip'])) 
         $payslip_id = $conn->insert_id;
         logActivity($conn, $current_user_id, 'Generated payslip', 'tbl_payslips', $payslip_id, "Period: $pay_period_start to $pay_period_end");
         $_SESSION['success_message'] = 'Payslip generated successfully';
-        header("Location: view-payslip.php?id=$payslip_id");
-        exit();
+       header("Location: /barangaylink1/modules/attendance/admin/view-payslip.php?id=$payslip_id");
+exit();
     } else {
         // Log the actual error for debugging
         error_log("Payslip generation failed: " . $conn->error);

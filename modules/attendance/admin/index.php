@@ -186,13 +186,21 @@ if ($selected_role !== 'all') {
 $attendance_records = [];
 foreach ($users as $user) {
     $attendance = fetchOne($conn,
-        "SELECT a.*, CONCAT(cr.first_name,' ',cr.last_name) as marked_by_name
-         FROM tbl_attendance a
-         LEFT JOIN tbl_users cu ON a.created_by=cu.user_id
-         LEFT JOIN tbl_residents cr ON cu.resident_id=cr.resident_id
-         WHERE a.user_id=? AND a.attendance_date=?",
-        [$user['user_id'], $selected_date], 'is'
-    );
+    "SELECT a.*, 
+        CONCAT(cr.first_name,' ',cr.last_name) as marked_by_name,
+        COALESCE(
+            CONCAT(ur.first_name,' ',ur.last_name),
+            CONCAT(cr.first_name,' ',cr.last_name),
+            cu.username
+        ) as marked_by_name
+     FROM tbl_attendance a
+     LEFT JOIN tbl_users cu ON a.created_by = cu.user_id
+     LEFT JOIN tbl_residents cr ON cu.resident_id = cr.resident_id
+     LEFT JOIN tbl_users uu ON a.updated_by = uu.user_id
+     LEFT JOIN tbl_residents ur ON uu.resident_id = ur.resident_id
+     WHERE a.user_id=? AND a.attendance_date=?",
+    [$user['user_id'], $selected_date], 'is'
+);
     $attendance_records[$user['user_id']] = $attendance;
 }
 
@@ -641,9 +649,6 @@ textarea.att-input { resize: vertical; min-height: 80px; }
     <a href="attendance-reports.php" class="db-btn db-btn--ghost">
         <i class="fas fa-chart-bar"></i> Reports
     </a>
-    <button type="button" id="btnBulkMark" class="db-btn db-btn--primary">
-        <i class="fas fa-users"></i> Bulk Mark Attendance
-    </button>
     <button type="button" id="btnSelectAllBulk" class="db-btn" style="background:linear-gradient(135deg,#059669,#10b981);color:#fff;border:none;">
         <i class="fas fa-check-double"></i> Select All &amp; Bulk Mark
     </button>
@@ -1313,5 +1318,6 @@ function attToggleAll() {
     if (hdr.checked) { if (window.attSelectAll) window.attSelectAll(); }
     else             { if (window.attDeselectAll) window.attDeselectAll(); }
 }
+</script>
 
 <?php include '../../../includes/footer.php'; ?>

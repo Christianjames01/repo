@@ -315,11 +315,11 @@ if (tableExists($conn, 'tbl_barangay_activities')) {
     $check_column = $conn->query("SHOW COLUMNS FROM tbl_barangay_activities LIKE 'location'");
     $has_location = $check_column->num_rows > 0;
     $stmt = $conn->prepare("
-        SELECT * FROM tbl_barangay_activities
-        WHERE is_active = 1
-        ORDER BY activity_date ASC
-        LIMIT 8
-    ");
+    SELECT * FROM tbl_barangay_activities
+    WHERE is_active = 1
+    ORDER BY created_at DESC
+    LIMIT 8
+");
     $stmt->execute();
     $result = $stmt->get_result();
     while ($row = $result->fetch_assoc()) {

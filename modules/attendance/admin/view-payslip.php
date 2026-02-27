@@ -12,7 +12,7 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 if (!isLoggedIn()) {
-    redirect('/barangaylink/modules/auth/login.php', 'Please login to continue', 'error');
+    redirect('/barangaylink1/modules/auth/login.php', 'Please login to continue', 'error');
 }
 
 $user_role = getCurrentUserRole();
@@ -24,7 +24,7 @@ $is_admin = in_array($user_role, ['Admin', 'Super Admin']);
 $payslip_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 
 if (!$payslip_id) {
-    redirect('/barangaylink/modules/attendance/admin/payslip-list.php', 'Invalid payslip', 'error');
+    redirect('/barangaylink1/modules/attendance/admin/payslip-list.php', 'Invalid payslip', 'error');
 }
 
 // Get payslip details
@@ -44,12 +44,12 @@ $payslip = fetchOne($conn,
 );
 
 if (!$payslip) {
-    redirect('/barangaylink/modules/attendance/admin/payslip-list.php', 'Payslip not found', 'error');
+    redirect('/barangaylink1/modules/attendance/admin/payslip-list.php', 'Payslip not found', 'error');
 }
 
 // Check permission - staff can only view their own payslips
 if (!$is_admin && $payslip['user_id'] != $current_user_id) {
-    redirect('/barangaylink/modules/dashboard/index.php', 'Access denied', 'error');
+    redirect('/barangaylink1/modules/dashboard/index.php', 'Access denied', 'error');
 }
 
 // Get attendance records for this period - ONLY DAYS WITH ACTUAL TIME IN/OUT

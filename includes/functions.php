@@ -682,15 +682,21 @@ function getUserFullName($conn, $user_id) {
  * Notify when a new incident is reported
  * Super Admin gets notified
  */
+/**
+ * Notify when a new incident is reported
+ * Super Admin AND other staff roles get notified
+ */
 function notifyIncidentReported($conn, $incident_id, $incident_title) {
-    // Get all Super Administrators
-    $super_admins = fetchAll($conn, 
-        "SELECT user_id FROM tbl_users WHERE role = 'Super Administrator' AND status = 'active'", 
+    // Get all admin and staff users who should be notified
+    $admins = fetchAll($conn,
+        "SELECT user_id FROM tbl_users 
+         WHERE role IN ('Super Administrator', 'Administrator', 'Admin', 'Staff', 'Secretary', 'Tanod') 
+         AND status = 'active'",
         [], ''
     );
-    
+
     $success = true;
-    foreach ($super_admins as $admin) {
+    foreach ($admins as $admin) {
         $result = createNotification(
             $conn,
             $admin['user_id'],
@@ -702,10 +708,9 @@ function notifyIncidentReported($conn, $incident_id, $incident_title) {
         );
         $success = $success && $result;
     }
-    
+
     return $success;
 }
-
 function notifyIncidentAssignment($conn, $incident_id, $incident_title, $assigned_to_id, $assigned_by_name, $reporter_id = null) {
     $success = true;
     

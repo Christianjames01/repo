@@ -12,7 +12,7 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 if (!isLoggedIn()) {
-    redirect('/barangaylink/modules/auth/login.php', 'Please login to continue', 'error');
+    redirect('/barangaylink1/modules/auth/login.php', 'Please login to continue', 'error');
 }
 
 $user_role = getCurrentUserRole();
