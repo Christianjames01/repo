@@ -165,14 +165,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_special_schedu
     exit();
 }
 
-// Get all active staff
+// Get all active staff — ALL roles except Admin and Super Admin
 $users = fetchAll($conn, 
     "SELECT u.user_id, u.username, u.role, 
             CONCAT(r.first_name, ' ', r.last_name) as full_name,
             r.profile_photo
     FROM tbl_users u
     LEFT JOIN tbl_residents r ON u.resident_id = r.resident_id
-    WHERE u.is_active = 1 AND u.role IN ('Admin', 'Staff', 'Tanod', 'Driver')
+    WHERE u.is_active = 1 
+      AND u.role IN ('Staff', 'Tanod', 'Barangay Tanod', 'Driver', 'Barangay Captain', 'Secretary', 'Treasurer')
     ORDER BY u.role, r.last_name"
 );
 
@@ -243,12 +244,21 @@ include '../../../includes/header.php';
                         <label for="user_id" class="form-label fw-bold">Select Staff Member</label>
                         <select class="form-select form-select-lg" id="user_id" name="user_id" onchange="this.form.submit()">
                             <option value="">-- Select a staff member --</option>
-                            <?php foreach ($users as $user): ?>
+                            <?php 
+                            $current_role_group = '';
+                            foreach ($users as $user): 
+                                // Group by role for better readability
+                                if ($user['role'] !== $current_role_group) {
+                                    if ($current_role_group !== '') echo '</optgroup>';
+                                    echo '<optgroup label="' . htmlspecialchars($user['role']) . '">';
+                                    $current_role_group = $user['role'];
+                                }
+                            ?>
                                 <option value="<?php echo $user['user_id']; ?>" <?php echo $selected_user == $user['user_id'] ? 'selected' : ''; ?>>
-                                    <?php echo htmlspecialchars($user['full_name'] ?? $user['username']); ?> 
-                                    (<?php echo $user['role']; ?>)
+                                    <?php echo htmlspecialchars($user['full_name'] ?? $user['username']); ?>
                                 </option>
                             <?php endforeach; ?>
+                            <?php if ($current_role_group !== '') echo '</optgroup>'; ?>
                         </select>
                     </div>
                     <div class="col-md-2">
@@ -273,24 +283,67 @@ include '../../../includes/header.php';
         ?>
         
         <!-- Staff Info Card -->
+        <?php
+        $su_name    = trim($selected_user_data['full_name'] ?? '') ?: ($selected_user_data['username'] ?? '?');
+        $su_initial = strtoupper(substr($su_name, 0, 1));
+        $su_role    = $selected_user_data['role'] ?? '';
+        $su_photo   = !empty($selected_user_data['profile_photo'])
+                        ? '/barangaylink/uploads/profiles/' . $selected_user_data['profile_photo']
+                        : '';
+
+        // Role → colour map (matches index.php palette)
+        $roleColors = [
+            'Barangay Captain' => ['bg' => '#fce7f3', 'color' => '#9f1239'],
+            'Secretary'        => ['bg' => '#fef9c3', 'color' => '#713f12'],
+            'Treasurer'        => ['bg' => '#e0f2fe', 'color' => '#075985'],
+            'Staff'            => ['bg' => '#fef3c7', 'color' => '#92400e'],
+            'Tanod'            => ['bg' => '#dbeafe', 'color' => '#1e40af'],
+            'Barangay Tanod'   => ['bg' => '#dbeafe', 'color' => '#1e40af'],
+            'Driver'           => ['bg' => '#d1fae5', 'color' => '#065f46'],
+        ];
+        $rc = $roleColors[$su_role] ?? ['bg' => '#f1f5f9', 'color' => '#475569'];
+
+        // Avatar background colours cycle through a small palette based on initial
+        $avatarPalette = ['#0d1b36','#1e40af','#065f46','#9f1239','#713f12','#075985','#7c3aed'];
+        $avatarBg = $avatarPalette[ord($su_initial) % count($avatarPalette)];
+        ?>
         <div class="card border-0 shadow-sm mb-4">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <?php if (!empty($selected_user_data['profile_photo'])): ?>
-                        <img src="<?php echo '/barangaylink/uploads/profiles/' . $selected_user_data['profile_photo']; ?>" 
-                             class="rounded-circle me-3" width="64" height="64" alt="Profile">
-                    <?php else: ?>
-                        <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center me-3" 
-                             style="width: 64px; height: 64px; font-size: 24px;">
-                            <?php echo strtoupper(substr($selected_user_data['full_name'] ?? $selected_user_data['username'], 0, 1)); ?>
+            <div class="card-body py-3">
+                <div class="d-flex align-items-center gap-3">
+
+                    <!-- Avatar -->
+                    <div style="position:relative;flex-shrink:0;">
+                        <?php if ($su_photo): ?>
+                            <img id="suPhoto"
+                                 src="<?php echo htmlspecialchars($su_photo); ?>"
+                                 alt="<?php echo htmlspecialchars($su_name); ?>"
+                                 width="64" height="64"
+                                 style="width:64px;height:64px;border-radius:14px;object-fit:cover;display:block;"
+                                 onerror="this.style.display='none';document.getElementById('suInitial').style.display='flex';">
+                        <?php endif; ?>
+                        <div id="suInitial"
+                             style="width:64px;height:64px;border-radius:14px;background:<?php echo $avatarBg; ?>;
+                                    color:#fff;font-size:26px;font-weight:800;font-family:'Sora',sans-serif;
+                                    display:<?php echo $su_photo ? 'none' : 'flex'; ?>;
+                                    align-items:center;justify-content:center;">
+                            <?php echo $su_initial; ?>
                         </div>
-                    <?php endif; ?>
-                    <div>
-                        <h4 class="mb-1"><?php echo htmlspecialchars($selected_user_data['full_name'] ?? $selected_user_data['username']); ?></h4>
-                        <p class="text-muted mb-0">
-                            <span class="badge bg-secondary bg-opacity-10 text-secondary"><?php echo $selected_user_data['role']; ?></span>
-                        </p>
                     </div>
+
+                    <!-- Info -->
+                    <div>
+                        <div style="font-size:17px;font-weight:800;color:#0f172a;line-height:1.2;">
+                            <?php echo htmlspecialchars($su_name); ?>
+                        </div>
+                        <div style="margin-top:5px;">
+                            <span style="display:inline-block;padding:3px 10px;border-radius:20px;
+                                         background:<?php echo $rc['bg']; ?>;color:<?php echo $rc['color']; ?>;
+                                         font-size:11px;font-weight:700;letter-spacing:.4px;font-family:'DM Mono',monospace;">
+                                <?php echo htmlspecialchars($su_role); ?>
+                            </span>
+                        </div>
+                    </div>
+
                 </div>
             </div>
         </div>
@@ -511,7 +564,7 @@ include '../../../includes/header.php';
                         </div>
                     </div>
                     
-                    <!-- Staff Selection -->
+                    <!-- Staff Selection — grouped by role -->
                     <div class="mb-3">
                         <label class="form-label fw-bold">Select Staff Members <span class="text-danger">*</span></label>
                         <div class="form-check mb-2">
@@ -521,17 +574,26 @@ include '../../../includes/header.php';
                             </label>
                         </div>
                         <div style="max-height: 300px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 0.375rem; padding: 1rem;">
-                            <?php foreach ($users as $user): ?>
+                            <?php 
+                            $modal_role_group = '';
+                            foreach ($users as $user):
+                                if ($user['role'] !== $modal_role_group) {
+                                    if ($modal_role_group !== '') echo '</div>';
+                                    $modal_role_group = $user['role'];
+                                    echo '<div class="mb-1"><small class="text-muted fw-bold text-uppercase" style="letter-spacing:.5px;font-size:10px;">' . htmlspecialchars($modal_role_group) . '</small></div>';
+                                    echo '<div class="ms-2 mb-3">';
+                                }
+                            ?>
                                 <div class="form-check mb-2">
                                     <input class="form-check-input template-user-checkbox" type="checkbox" 
                                            name="selected_users[]" value="<?php echo $user['user_id']; ?>" 
                                            id="template_user_<?php echo $user['user_id']; ?>">
                                     <label class="form-check-label" for="template_user_<?php echo $user['user_id']; ?>">
                                         <?php echo htmlspecialchars($user['full_name'] ?? $user['username']); ?>
-                                        <span class="badge bg-secondary bg-opacity-10 text-secondary ms-1"><?php echo $user['role']; ?></span>
                                     </label>
                                 </div>
                             <?php endforeach; ?>
+                            <?php if ($modal_role_group !== '') echo '</div>'; ?>
                         </div>
                     </div>
                 </div>
@@ -718,14 +780,11 @@ function showTemplatePreview() {
     
     days.forEach(day => {
         if (day.in && day.out) {
-            // Calculate hours
             const [inHour, inMin] = day.in.split(':').map(Number);
             const [outHour, outMin] = day.out.split(':').map(Number);
             let diff = (outHour * 60 + outMin) - (inHour * 60 + inMin);
             if (diff < 0) diff += 24 * 60;
             const hours = (diff / 60).toFixed(1);
-            
-            // Format time for display
             const timeIn = formatTime(day.in);
             const timeOut = formatTime(day.out);
             

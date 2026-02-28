@@ -803,4 +803,4 @@ setTimeout(function () {
 }, 5000);
 </script>
 
-<?php include '../../includes/footer.php'; ?>
+<?php include '../../includes/footer.php';?>

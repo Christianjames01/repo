@@ -30,15 +30,12 @@ $selected_status   = isset($_GET['status']) ? $_GET['status'] : 'all';
 // ── Handle manual attendance marking ────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mark_attendance'])) {
     $user_id         = intval($_POST['user_id']);
-    // Use trim() only for DB-bound fields — sanitizeInput() runs htmlspecialchars which
-    // would corrupt stored values (e.g. notes with quotes, status comparisons)
     $attendance_date = trim($_POST['attendance_date'] ?? '');
     $status          = trim($_POST['status'] ?? 'Present');
     $time_in         = !empty($_POST['time_in'])  ? trim($_POST['time_in'])  : null;
     $time_out        = !empty($_POST['time_out']) ? trim($_POST['time_out']) : null;
     $notes           = trim($_POST['notes'] ?? '');
 
-    // Whitelist allowed statuses to prevent injection
     $allowed_statuses = ['Present','Late','Absent','On Leave','Half Day'];
     if (!in_array($status, $allowed_statuses)) {
         $status = 'Present';
@@ -50,7 +47,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mark_attendance'])) {
         exit();
     }
 
-    // Check if record exists
     $stmt = $conn->prepare('SELECT attendance_id FROM tbl_attendance WHERE user_id = ? AND attendance_date = ?');
     $stmt->bind_param('is', $user_id, $attendance_date);
     $stmt->execute();
@@ -169,12 +165,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_mark'])) {
     header('Location: index.php?date=' . urlencode($attendance_date));
     exit();
 }
-// ── Fetch users ──────────────────────────────────────────────────────────────
+
+// ── Fetch users — ALL roles ──────────────────────────────────────────────────
 $users_query = "SELECT u.user_id, u.username, u.role,
                 CONCAT(r.first_name,' ',r.last_name) as full_name, r.profile_photo
                 FROM tbl_users u
                 LEFT JOIN tbl_residents r ON u.resident_id = r.resident_id
-                WHERE u.is_active=1 AND u.role IN ('Admin','Staff','Tanod','Driver')";
+                WHERE u.is_active=1 AND u.role IN (
+                    'Admin','Staff','Tanod','Barangay Tanod',
+                    'Driver','Barangay Captain','Secretary','Treasurer'
+                )";
 
 if ($selected_role !== 'all') {
     $users = fetchAll($conn, $users_query . " AND u.role=? ORDER BY u.role,r.last_name", [$selected_role], 's');
@@ -186,8 +186,7 @@ if ($selected_role !== 'all') {
 $attendance_records = [];
 foreach ($users as $user) {
     $attendance = fetchOne($conn,
-    "SELECT a.*, 
-        CONCAT(cr.first_name,' ',cr.last_name) as marked_by_name,
+    "SELECT a.*,
         COALESCE(
             CONCAT(ur.first_name,' ',ur.last_name),
             CONCAT(cr.first_name,' ',cr.last_name),
@@ -218,25 +217,16 @@ $stats = fetchOne($conn,
 $total_users = count($users);
 $unmarked    = $total_users - ($stats['total_marked'] ?? 0);
 
-// Link dashboard CSS
 $extra_css = '<link rel="stylesheet" href="../../../assets/css/dashboard-index.css?v=' . time() . '">';
 include '../../../includes/header.php';
 ?>
 
-<!-- ─── Inline attendance-specific overrides ─────────────────────────────── -->
 <style>
-/* Attendance Status Badges */
 .att-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 3px 10px;
-    border-radius: 20px;
-    font-family: 'DM Mono', monospace;
-    font-size: 10.5px;
-    font-weight: 600;
-    letter-spacing: .3px;
-    white-space: nowrap;
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 10px; border-radius: 20px;
+    font-family: 'DM Mono', monospace; font-size: 10.5px;
+    font-weight: 600; letter-spacing: .3px; white-space: nowrap;
 }
 .att-badge--present  { background: #d1fae5; color: #065f46; }
 .att-badge--late     { background: #fef3c7; color: #92400e; }
@@ -245,80 +235,59 @@ include '../../../includes/header.php';
 .att-badge--halfday  { background: #ede9fe; color: #4c1d95; }
 .att-badge--unmarked { background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; }
 
-/* Role Badge in table */
+/* Role pills — all 8 roles */
 .role-pill {
-    display: inline-block;
-    padding: 2px 9px;
-    border-radius: 20px;
-    font-family: 'DM Mono', monospace;
-    font-size: 10px;
-    font-weight: 500;
-    letter-spacing: .4px;
+    display: inline-block; padding: 2px 9px; border-radius: 20px;
+    font-family: 'DM Mono', monospace; font-size: 10px;
+    font-weight: 500; letter-spacing: .4px;
 }
-.role-pill--admin  { background: #fee2e2; color: #991b1b; }
-.role-pill--staff  { background: #fef3c7; color: #92400e; }
-.role-pill--tanod  { background: #dbeafe; color: #1e40af; }
-.role-pill--driver { background: #d1fae5; color: #065f46; }
+.role-pill--admin     { background: #fee2e2; color: #991b1b; }
+.role-pill--captain   { background: #fce7f3; color: #9f1239; }
+.role-pill--secretary { background: #fef9c3; color: #713f12; }
+.role-pill--treasurer { background: #e0f2fe; color: #075985; }
+.role-pill--staff     { background: #fef3c7; color: #92400e; }
+.role-pill--tanod     { background: #dbeafe; color: #1e40af; }
+.role-pill--driver    { background: #d1fae5; color: #065f46; }
 
-/* Time display */
 .time-in  { color: #10b981; font-family: 'DM Mono', monospace; font-size: 12px; font-weight: 600; }
 .time-out { color: #ef4444; font-family: 'DM Mono', monospace; font-size: 12px; font-weight: 600; }
 
-/* Filter Card */
 .att-filter-card {
-    background: #fff;
-    border: 1px solid #e2e8f0;
-    border-radius: 14px;
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 14px;
     box-shadow: 0 1px 3px rgba(13,27,54,.06), 0 4px 16px rgba(13,27,54,.07);
-    padding: 18px 22px;
-    margin-bottom: 20px;
+    padding: 18px 22px; margin-bottom: 20px;
 }
 .att-filter-card .db-input {
-    width: 100%;
-    padding: 9px 13px;
-    border: 1.5px solid #e2e8f0;
-    border-radius: 8px;
-    font-family: 'Sora', sans-serif;
-    font-size: 13px;
-    color: #0f172a;
-    background: #f8fafc;
-    outline: none;
-    transition: all .18s;
-    appearance: none;
+    width: 100%; padding: 9px 13px; border: 1.5px solid #e2e8f0; border-radius: 8px;
+    font-family: 'Sora', sans-serif; font-size: 13px; color: #0f172a;
+    background: #f8fafc; outline: none; transition: all .18s; appearance: none;
 }
 .att-filter-card .db-input:focus { border-color: #1c3461; box-shadow: 0 0 0 3px rgba(28,52,97,.1); background:#fff; }
 .att-filter-row { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; }
 .att-filter-group { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 140px; }
 .att-filter-group label { font-size: 11.5px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: .5px; }
 
-/* Staff avatar circle */
 .staff-avatar {
     width: 34px; height: 34px; border-radius: 10px;
     display: flex; align-items: center; justify-content: center;
     font-weight: 700; font-size: 13px; color: #fff; flex-shrink: 0;
-    background: linear-gradient(135deg, #0d1b36, #1c3461);
-    overflow: hidden;
+    background: linear-gradient(135deg, #0d1b36, #1c3461); overflow: hidden;
 }
 .staff-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .staff-info { display: flex; align-items: center; gap: 10px; }
-.staff-name  { font-weight: 700; font-size: 13px; color: #0f172a; }
+.staff-name { font-weight: 700; font-size: 13px; color: #0f172a; }
 
-/* Mark button */
 .btn-mark {
     display: inline-flex; align-items: center; gap: 5px;
     padding: 6px 14px; border-radius: 7px; font-family: 'Sora', sans-serif;
     font-size: 12px; font-weight: 600; cursor: pointer; border: none;
-    background: linear-gradient(135deg, #0d1b36, #1c3461);
-    color: #fff; transition: all .18s ease;
+    background: linear-gradient(135deg, #0d1b36, #1c3461); color: #fff; transition: all .18s ease;
 }
 .btn-mark:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(13,27,54,.25); }
 
-/* Modal overrides for attendance */
 .att-modal-header {
-    background: linear-gradient(135deg, #0d1b36, #1c3461);
-    padding: 18px 22px;
-    border-radius: 20px 20px 0 0;
-    display: flex; align-items: center; justify-content: space-between;
+    background: linear-gradient(135deg, #0d1b36, #1c3461); padding: 18px 22px;
+    border-radius: 20px 20px 0 0; display: flex; align-items: center; justify-content: space-between;
 }
 .att-modal-header h3 { color: #fff; font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
 .att-modal-close {
@@ -327,16 +296,11 @@ include '../../../includes/header.php';
     font-size: 18px; display: flex; align-items: center; justify-content: center;
 }
 .att-modal-close:hover { background: rgba(255,255,255,.22); }
-
 .att-modal-body { padding: 22px; }
 
 .att-staff-info-box {
-    background: linear-gradient(135deg, #eff6ff, #f0fdfa);
-    border: 1px solid #bfdbfe;
-    border-radius: 12px;
-    padding: 14px 18px;
-    display: flex; align-items: center; gap: 14px;
-    margin-bottom: 20px;
+    background: linear-gradient(135deg, #eff6ff, #f0fdfa); border: 1px solid #bfdbfe;
+    border-radius: 12px; padding: 14px 18px; display: flex; align-items: center; gap: 14px; margin-bottom: 20px;
 }
 .att-staff-info-box .big-avatar {
     width: 48px; height: 48px; border-radius: 12px;
@@ -351,8 +315,7 @@ include '../../../includes/header.php';
 .att-field label { display: block; font-size: 12px; font-weight: 700; margin-bottom: 5px; color: #0f172a; text-transform: uppercase; letter-spacing: .5px; }
 .att-field .req { color: #e11d48; }
 .att-input {
-    width: 100%; padding: 10px 13px;
-    border: 1.5px solid #e2e8f0; border-radius: 8px;
+    width: 100%; padding: 10px 13px; border: 1.5px solid #e2e8f0; border-radius: 8px;
     font-family: 'Sora', sans-serif; font-size: 13px; color: #0f172a;
     background: #f8fafc; outline: none; transition: all .18s; appearance: none;
 }
@@ -364,9 +327,8 @@ textarea.att-input { resize: vertical; min-height: 80px; }
     padding: 16px 18px; margin-bottom: 16px;
 }
 .att-time-card-header {
-    font-size: 12px; font-weight: 700; color: #0d1b36;
-    text-transform: uppercase; letter-spacing: .5px;
-    margin-bottom: 14px; display: flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 700; color: #0d1b36; text-transform: uppercase;
+    letter-spacing: .5px; margin-bottom: 14px; display: flex; align-items: center; gap: 6px;
 }
 .att-time-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .att-time-field label { font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 5px; display: block; }
@@ -381,21 +343,17 @@ textarea.att-input { resize: vertical; min-height: 80px; }
 .att-now-btn:hover { background: #0d1b36; color: #fff; border-color: #0d1b36; }
 .att-now-btn--in:hover  { background: #10b981; border-color: #10b981; color: #fff; }
 .att-now-btn--out:hover { background: #ef4444; border-color: #ef4444; color: #fff; }
-
 .att-presets { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 6px; }
 .att-presets-label { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
 .att-preset-btn {
     padding: 5px 12px; border: 1.5px solid #e2e8f0; border-radius: 6px;
-    background: #fff; font-family: 'DM Mono', monospace;
-    font-size: 10.5px; font-weight: 500; cursor: pointer; color: #64748b;
-    transition: all .15s;
+    background: #fff; font-family: 'DM Mono', monospace; font-size: 10.5px;
+    font-weight: 500; cursor: pointer; color: #64748b; transition: all .15s;
 }
 .att-preset-btn:hover { border-color: #0d1b36; color: #0d1b36; background: #f0f4ff; }
-
 .att-hours-box {
     background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px;
-    padding: 10px 14px; margin-top: 12px;
-    font-size: 12px; font-weight: 600; color: #065f46; display: none;
+    padding: 10px 14px; margin-top: 12px; font-size: 12px; font-weight: 600; color: #065f46; display: none;
 }
 .att-hours-box span { font-family: 'DM Mono', monospace; font-size: 15px; font-weight: 700; }
 
@@ -406,29 +364,21 @@ textarea.att-input { resize: vertical; min-height: 80px; }
 }
 .att-save-btn {
     padding: 10px 28px; border-radius: 8px; border: none;
-    background: linear-gradient(135deg, #0d1b36, #1c3461);
-    color: #fff; font-family: 'Sora', sans-serif;
-    font-size: 13px; font-weight: 700; cursor: pointer; transition: all .18s;
-    display: flex; align-items: center; gap: 6px;
+    background: linear-gradient(135deg, #0d1b36, #1c3461); color: #fff;
+    font-family: 'Sora', sans-serif; font-size: 13px; font-weight: 700;
+    cursor: pointer; transition: all .18s; display: flex; align-items: center; gap: 6px;
 }
 .att-save-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(13,27,54,.3); }
 .att-cancel-btn {
-    padding: 10px 20px; border-radius: 8px;
-    border: 1.5px solid #e2e8f0; background: #fff;
-    color: #64748b; font-family: 'Sora', sans-serif;
-    font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s;
+    padding: 10px 20px; border-radius: 8px; border: 1.5px solid #e2e8f0; background: #fff;
+    color: #64748b; font-family: 'Sora', sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s;
 }
 .att-cancel-btn:hover { border-color: #94a3b8; color: #0f172a; }
 
-/* Status select — colour-coded */
 .status-select-wrap { position: relative; }
 .status-select-wrap select { padding-left: 34px !important; }
-.status-select-icon {
-    position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
-    font-size: 14px; pointer-events: none; z-index: 1;
-}
+.status-select-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 14px; pointer-events: none; z-index: 1; }
 
-/* Bulk modal specifics */
 .att-check-card {
     background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px;
     padding: 14px 16px; margin-bottom: 14px;
@@ -445,27 +395,14 @@ textarea.att-input { resize: vertical; min-height: 80px; }
     font-family: 'DM Mono', monospace;
 }
 .att-selected-pill .count { font-size: 16px; font-weight: 800; }
-
-/* Overwrite check */
 .overwrite-warn {
     background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;
     padding: 10px 14px; font-size: 12px; color: #92400e; display: flex; gap: 7px;
 }
-
-/* Bulk-modal selected-staff chips */
 .bulk-staff-chip {
-    display: inline-flex;
-    align-items: center;
-    background: #dbeafe;
-    color: #1e40af;
-    border-radius: 20px;
-    padding: 3px 10px;
-    font-size: 11px;
-    font-weight: 600;
-    font-family: 'DM Mono', monospace;
+    display: inline-flex; align-items: center; background: #dbeafe; color: #1e40af;
+    border-radius: 20px; padding: 3px 10px; font-size: 11px; font-weight: 600; font-family: 'DM Mono', monospace;
 }
-
-/* Empty state */
 .att-empty {
     display: flex; flex-direction: column; align-items: center;
     justify-content: center; padding: 48px 24px; text-align: center; gap: 8px;
@@ -473,35 +410,19 @@ textarea.att-input { resize: vertical; min-height: 80px; }
 .att-empty i { font-size: 36px; color: #e2e8f0; }
 .att-empty p { font-size: 13px; color: #94a3b8; }
 
-/* Responsive tweaks */
 @media (max-width: 768px) {
     .att-time-row { grid-template-columns: 1fr; }
     .att-filter-row { flex-direction: column; }
-    .db-table thead th:nth-child(7),
-    .db-table tbody td:nth-child(7) { display: none; }
 }
-/* ── Modal base styles ── */
 .db-modal {
-    display: none;
-    position: fixed;
-    inset: 0;
-    z-index: 9999;
-    background: rgba(13,27,54,.55);
-    backdrop-filter: blur(3px);
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-}
-.db-modal--open {
-    display: flex !important;
+    display: none; position: fixed; inset: 0; z-index: 9999;
+    background: rgba(13,27,54,.55); backdrop-filter: blur(3px);
+    align-items: center; justify-content: center; padding: 20px;
 }
 .db-modal__box {
-    background: #fff;
-    border-radius: 20px;
-    box-shadow: 0 24px 64px rgba(13,27,54,.28);
-    width: 100%;
-    max-height: 90vh;
-    overflow-y: auto;
+    background: #fff; border-radius: 20px;
+    box-shadow: 0 24px 64px rgba(13,27,54,.28); width: 100%;
+    max-height: 90vh; overflow-y: auto;
     animation: attModalIn .22s cubic-bezier(.34,1.56,.64,1);
 }
 @keyframes attModalIn {
@@ -538,17 +459,15 @@ textarea.att-input { resize: vertical; min-height: 80px; }
         </div>
     </div>
 </div>
-<!-- Clock starts here immediately after the element is rendered -->
 <script>
 (function(){
-    function attTick(){
+    function tick(){
         var n=new Date(),h=n.getHours(),m=n.getMinutes(),s=n.getSeconds();
         var ap=h>=12?'PM':'AM'; h=h%12||12;
         var el=document.getElementById('att-live-time');
         if(el) el.textContent=h+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0')+' '+ap;
     }
-    attTick();
-    setInterval(attTick,1000);
+    tick(); setInterval(tick,1000);
 })();
 </script>
 
@@ -571,9 +490,7 @@ textarea.att-input { resize: vertical; min-height: 80px; }
 <!-- ─── STAT CARDS ────────────────────────────────────────────────────────── -->
 <div class="db-stats-row">
     <div class="db-stat-card">
-        <div class="db-stat-card__icon db-stat-card__icon--blue">
-            <i class="fas fa-users"></i>
-        </div>
+        <div class="db-stat-card__icon db-stat-card__icon--blue"><i class="fas fa-users"></i></div>
         <div class="db-stat-card__body">
             <div class="db-stat-card__num"><?php echo $total_users; ?></div>
             <div class="db-stat-card__label">Total Staff</div>
@@ -581,9 +498,7 @@ textarea.att-input { resize: vertical; min-height: 80px; }
         <div class="db-stat-card__sparkline db-stat-card__sparkline--blue"></div>
     </div>
     <div class="db-stat-card">
-        <div class="db-stat-card__icon" style="background:#d1fae5;color:#10b981;">
-            <i class="fas fa-check-circle"></i>
-        </div>
+        <div class="db-stat-card__icon" style="background:#d1fae5;color:#10b981;"><i class="fas fa-check-circle"></i></div>
         <div class="db-stat-card__body">
             <div class="db-stat-card__num" style="color:#10b981;"><?php echo $stats['present'] ?? 0; ?></div>
             <div class="db-stat-card__label">Present</div>
@@ -591,9 +506,7 @@ textarea.att-input { resize: vertical; min-height: 80px; }
         <div class="db-stat-card__sparkline" style="background:linear-gradient(90deg,#10b981,transparent)"></div>
     </div>
     <div class="db-stat-card">
-        <div class="db-stat-card__icon db-stat-card__icon--amber">
-            <i class="fas fa-clock"></i>
-        </div>
+        <div class="db-stat-card__icon db-stat-card__icon--amber"><i class="fas fa-clock"></i></div>
         <div class="db-stat-card__body">
             <div class="db-stat-card__num" style="color:#f59e0b;"><?php echo $stats['late'] ?? 0; ?></div>
             <div class="db-stat-card__label">Late</div>
@@ -601,9 +514,7 @@ textarea.att-input { resize: vertical; min-height: 80px; }
         <div class="db-stat-card__sparkline db-stat-card__sparkline--amber"></div>
     </div>
     <div class="db-stat-card">
-        <div class="db-stat-card__icon db-stat-card__icon--rose">
-            <i class="fas fa-times-circle"></i>
-        </div>
+        <div class="db-stat-card__icon db-stat-card__icon--rose"><i class="fas fa-times-circle"></i></div>
         <div class="db-stat-card__body">
             <div class="db-stat-card__num" style="color:#e11d48;"><?php echo $stats['absent'] ?? 0; ?></div>
             <div class="db-stat-card__label">Absent</div>
@@ -611,9 +522,7 @@ textarea.att-input { resize: vertical; min-height: 80px; }
         <div class="db-stat-card__sparkline db-stat-card__sparkline--rose"></div>
     </div>
     <div class="db-stat-card">
-        <div class="db-stat-card__icon db-stat-card__icon--indigo">
-            <i class="fas fa-calendar-check"></i>
-        </div>
+        <div class="db-stat-card__icon db-stat-card__icon--indigo"><i class="fas fa-calendar-check"></i></div>
         <div class="db-stat-card__body">
             <div class="db-stat-card__num" style="color:#6366f1;"><?php echo $stats['on_leave'] ?? 0; ?></div>
             <div class="db-stat-card__label">On Leave</div>
@@ -621,9 +530,7 @@ textarea.att-input { resize: vertical; min-height: 80px; }
         <div class="db-stat-card__sparkline db-stat-card__sparkline--indigo"></div>
     </div>
     <div class="db-stat-card">
-        <div class="db-stat-card__icon" style="background:#f1f5f9;color:#94a3b8;">
-            <i class="fas fa-question-circle"></i>
-        </div>
+        <div class="db-stat-card__icon" style="background:#f1f5f9;color:#94a3b8;"><i class="fas fa-question-circle"></i></div>
         <div class="db-stat-card__body">
             <div class="db-stat-card__num" style="color:#94a3b8;"><?php echo $unmarked; ?></div>
             <div class="db-stat-card__label">Unmarked</div>
@@ -632,23 +539,13 @@ textarea.att-input { resize: vertical; min-height: 80px; }
     </div>
 </div>
 
-<!-- ─── QUICK ACTION BUTTONS ─────────────────────────────────────────────── -->
+<!-- ─── QUICK ACTIONS ─────────────────────────────────────────────────────── -->
 <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;">
-    <a href="generate-payslip.php" class="db-btn db-btn--ghost">
-        <i class="fas fa-file-invoice-dollar"></i> Generate Payslip
-    </a>
-    <a href="duty-schedule.php" class="db-btn db-btn--ghost">
-        <i class="fas fa-calendar-week"></i> Duty Schedule
-    </a>
-    <a href="special-schedule.php" class="db-btn db-btn--ghost">
-        <i class="fas fa-calendar-alt"></i> Special Schedules
-    </a>
-    <a href="manage-leaves.php" class="db-btn db-btn--ghost">
-        <i class="fas fa-calendar-check"></i> Manage Leaves
-    </a>
-    <a href="attendance-reports.php" class="db-btn db-btn--ghost">
-        <i class="fas fa-chart-bar"></i> Reports
-    </a>
+    <a href="generate-payslip.php" class="db-btn db-btn--ghost"><i class="fas fa-file-invoice-dollar"></i> Generate Payslip</a>
+    <a href="duty-schedule.php" class="db-btn db-btn--ghost"><i class="fas fa-calendar-week"></i> Duty Schedule</a>
+    <a href="special-schedule.php" class="db-btn db-btn--ghost"><i class="fas fa-calendar-alt"></i> Special Schedules</a>
+    <a href="manage-leaves.php" class="db-btn db-btn--ghost"><i class="fas fa-calendar-check"></i> Manage Leaves</a>
+    <a href="attendance-reports.php" class="db-btn db-btn--ghost"><i class="fas fa-chart-bar"></i> Reports</a>
     <button type="button" id="btnSelectAllBulk" class="db-btn" style="background:linear-gradient(135deg,#059669,#10b981);color:#fff;border:none;">
         <i class="fas fa-check-double"></i> Select All &amp; Bulk Mark
     </button>
@@ -667,11 +564,15 @@ textarea.att-input { resize: vertical; min-height: 80px; }
             <div class="att-filter-group">
                 <label><i class="fas fa-user-tag me-1"></i>Role</label>
                 <select name="role" class="db-input" onchange="this.form.submit()">
-                    <option value="all"   <?php echo $selected_role==='all'   ?'selected':''; ?>>All Roles</option>
-                    <option value="Admin"  <?php echo $selected_role==='Admin'  ?'selected':''; ?>>Admin</option>
-                    <option value="Staff"  <?php echo $selected_role==='Staff'  ?'selected':''; ?>>Staff</option>
-                    <option value="Tanod"  <?php echo $selected_role==='Tanod'  ?'selected':''; ?>>Tanod</option>
-                    <option value="Driver" <?php echo $selected_role==='Driver' ?'selected':''; ?>>Driver</option>
+                    <option value="all"             <?php echo $selected_role==='all'             ?'selected':''; ?>>All Roles</option>
+                    <option value="Admin"            <?php echo $selected_role==='Admin'           ?'selected':''; ?>>Admin</option>
+                    <option value="Barangay Captain" <?php echo $selected_role==='Barangay Captain'?'selected':''; ?>>Barangay Captain</option>
+                    <option value="Secretary"        <?php echo $selected_role==='Secretary'       ?'selected':''; ?>>Secretary</option>
+                    <option value="Treasurer"        <?php echo $selected_role==='Treasurer'       ?'selected':''; ?>>Treasurer</option>
+                    <option value="Staff"            <?php echo $selected_role==='Staff'           ?'selected':''; ?>>Staff</option>
+                    <option value="Tanod"            <?php echo $selected_role==='Tanod'           ?'selected':''; ?>>Tanod</option>
+                    <option value="Barangay Tanod"   <?php echo $selected_role==='Barangay Tanod'  ?'selected':''; ?>>Barangay Tanod</option>
+                    <option value="Driver"           <?php echo $selected_role==='Driver'          ?'selected':''; ?>>Driver</option>
                 </select>
             </div>
             <div class="att-filter-group">
@@ -688,15 +589,13 @@ textarea.att-input { resize: vertical; min-height: 80px; }
             </div>
             <div class="att-filter-group" style="flex:0 0 auto;">
                 <label>&nbsp;</label>
-                <a href="index.php" class="db-btn db-btn--ghost" style="white-space:nowrap;">
-                    <i class="fas fa-times"></i> Reset
-                </a>
+                <a href="index.php" class="db-btn db-btn--ghost" style="white-space:nowrap;"><i class="fas fa-times"></i> Reset</a>
             </div>
         </div>
     </form>
 </div>
 
-<!-- ─── MAIN ATTENDANCE PANEL ────────────────────────────────────────────── -->
+<!-- ─── MAIN PANEL ───────────────────────────────────────────────────────── -->
 <div class="db-panel">
     <div class="db-panel__header">
         <div class="db-panel__title">
@@ -732,6 +631,18 @@ textarea.att-input { resize: vertical; min-height: 80px; }
             </thead>
             <tbody>
             <?php
+            // Role → pill CSS class map (covers all 8 roles)
+            $rolePillMap = [
+                'Admin'            => 'role-pill--admin',
+                'Barangay Captain' => 'role-pill--captain',
+                'Secretary'        => 'role-pill--secretary',
+                'Treasurer'        => 'role-pill--treasurer',
+                'Staff'            => 'role-pill--staff',
+                'Tanod'            => 'role-pill--tanod',
+                'Barangay Tanod'   => 'role-pill--tanod',
+                'Driver'           => 'role-pill--driver',
+            ];
+
             $filtered_count = 0;
             foreach ($users as $user):
                 $attendance = $attendance_records[$user['user_id']] ?? null;
@@ -741,16 +652,10 @@ textarea.att-input { resize: vertical; min-height: 80px; }
                 }
                 $filtered_count++;
 
-                // Avatar initials
-                $displayName = $user['full_name'] ?? $user['username'];
+                $displayName = trim($user['full_name'] ?? '') ?: $user['username'];
                 $initials    = strtoupper(substr($displayName, 0, 1));
-
-                // Role pill class
-                $rolePillMap = ['Admin'=>'role-pill--admin','Staff'=>'role-pill--staff','Tanod'=>'role-pill--tanod','Driver'=>'role-pill--driver'];
                 $rolePill    = $rolePillMap[$user['role']] ?? 'role-pill--staff';
 
-                // Status badge
-                $statusBadge = '';
                 if ($attendance) {
                     $badgeMap = ['Present'=>'att-badge--present','Late'=>'att-badge--late','Absent'=>'att-badge--absent','On Leave'=>'att-badge--leave','Half Day'=>'att-badge--halfday'];
                     $iconMap  = ['Present'=>'fa-check-circle','Late'=>'fa-clock','Absent'=>'fa-times-circle','On Leave'=>'fa-calendar-times','Half Day'=>'fa-adjust'];
@@ -770,7 +675,7 @@ textarea.att-input { resize: vertical; min-height: 80px; }
                     <div class="staff-info">
                         <div class="staff-avatar">
                             <?php if (!empty($user['profile_photo']) && file_exists('../../../uploads/profiles/'.$user['profile_photo'])): ?>
-                                <img src="../../../uploads/profiles/<?php echo $user['profile_photo']; ?>" alt="">
+                                <img src="../../../uploads/profiles/<?php echo htmlspecialchars($user['profile_photo']); ?>" alt="">
                             <?php else: ?>
                                 <?php echo $initials; ?>
                             <?php endif; ?>
@@ -781,20 +686,16 @@ textarea.att-input { resize: vertical; min-height: 80px; }
                         </div>
                     </div>
                 </td>
-                <td><span class="role-pill <?php echo $rolePill; ?>"><?php echo $user['role']; ?></span></td>
+                <td><span class="role-pill <?php echo $rolePill; ?>"><?php echo htmlspecialchars($user['role']); ?></span></td>
                 <td>
                     <?php if ($attendance && $attendance['time_in']): ?>
                         <span class="time-in"><i class="fas fa-sign-in-alt me-1"></i><?php echo date('h:i A', strtotime($attendance['time_in'])); ?></span>
-                    <?php else: ?>
-                        <span style="color:#cbd5e1;font-size:13px;">—</span>
-                    <?php endif; ?>
+                    <?php else: ?><span style="color:#cbd5e1;font-size:13px;">—</span><?php endif; ?>
                 </td>
                 <td>
                     <?php if ($attendance && $attendance['time_out']): ?>
                         <span class="time-out"><i class="fas fa-sign-out-alt me-1"></i><?php echo date('h:i A', strtotime($attendance['time_out'])); ?></span>
-                    <?php else: ?>
-                        <span style="color:#cbd5e1;font-size:13px;">—</span>
-                    <?php endif; ?>
+                    <?php else: ?><span style="color:#cbd5e1;font-size:13px;">—</span><?php endif; ?>
                 </td>
                 <td><?php echo $statusBadge; ?></td>
                 <td>
@@ -802,16 +703,12 @@ textarea.att-input { resize: vertical; min-height: 80px; }
                         <span style="font-size:12px;color:#64748b;" title="<?php echo htmlspecialchars($attendance['notes']); ?>">
                             <?php echo htmlspecialchars(substr($attendance['notes'],0,22).(strlen($attendance['notes'])>22?'…':'')); ?>
                         </span>
-                    <?php else: ?>
-                        <span style="color:#cbd5e1;">—</span>
-                    <?php endif; ?>
+                    <?php else: ?><span style="color:#cbd5e1;">—</span><?php endif; ?>
                 </td>
                 <td>
                     <?php if ($attendance && !empty($attendance['marked_by_name'])): ?>
                         <span style="font-size:11.5px;color:#64748b;"><?php echo htmlspecialchars($attendance['marked_by_name']); ?></span>
-                    <?php else: ?>
-                        <span style="color:#cbd5e1;">—</span>
-                    <?php endif; ?>
+                    <?php else: ?><span style="color:#cbd5e1;">—</span><?php endif; ?>
                 </td>
                 <td>
                     <button type="button" class="btn-mark"
@@ -823,26 +720,21 @@ textarea.att-input { resize: vertical; min-height: 80px; }
                 </td>
             </tr>
             <?php endforeach; ?>
-
             <?php if ($filtered_count === 0): ?>
-            <tr>
-                <td colspan="9">
-                    <div class="att-empty">
-                        <i class="fas fa-inbox"></i>
-                        <p>No records found for the selected filters</p>
-                    </div>
-                </td>
-            </tr>
+            <tr><td colspan="9">
+                <div class="att-empty">
+                    <i class="fas fa-inbox"></i>
+                    <p>No records found for the selected filters</p>
+                </div>
+            </td></tr>
             <?php endif; ?>
             </tbody>
         </table>
     </div>
-</div><!-- /db-panel -->
+</div>
 
 
-<!-- ═══════════════════════════════════════════════════════════════════
-     MARK ATTENDANCE MODAL
-═══════════════════════════════════════════════════════════════════ -->
+<!-- ═══ MARK ATTENDANCE MODAL ═══ -->
 <div id="markAttModal" class="db-modal">
     <div class="db-modal__box" style="max-width:560px;">
         <form method="POST">
@@ -850,13 +742,10 @@ textarea.att-input { resize: vertical; min-height: 80px; }
                 <h3><i class="fas fa-user-clock"></i> Mark Attendance</h3>
                 <button type="button" id="btnMarkClose" class="att-modal-close">×</button>
             </div>
-
             <div class="att-modal-body">
                 <input type="hidden" name="mark_attendance" value="1">
                 <input type="hidden" name="user_id" id="ma_user_id">
                 <input type="hidden" name="attendance_date" value="<?php echo $selected_date; ?>">
-
-                <!-- Staff Info Box -->
                 <div class="att-staff-info-box">
                     <div class="big-avatar" id="ma_avatar_initial">?</div>
                     <div>
@@ -864,8 +753,6 @@ textarea.att-input { resize: vertical; min-height: 80px; }
                         <div class="info-date"><i class="fas fa-calendar me-1"></i><?php echo date('F j, Y', strtotime($selected_date)); ?></div>
                     </div>
                 </div>
-
-                <!-- Status -->
                 <div class="att-field">
                     <label>Attendance Status <span class="req">*</span></label>
                     <div class="status-select-wrap">
@@ -880,8 +767,6 @@ textarea.att-input { resize: vertical; min-height: 80px; }
                     </div>
                     <div id="ma_status_hint" style="font-size:11.5px;color:#94a3b8;margin-top:5px;">Staff member was present for their full shift</div>
                 </div>
-
-                <!-- Time Card -->
                 <div class="att-time-card">
                     <div class="att-time-card-header"><i class="fas fa-clock me-1" style="color:#0ea5e9;"></i> Duty Time</div>
                     <div class="att-time-row">
@@ -910,18 +795,13 @@ textarea.att-input { resize: vertical; min-height: 80px; }
                             <button type="button" class="att-preset-btn mark-preset-btn" data-in="06:00" data-out="14:00">6AM–2PM</button>
                         </div>
                     </div>
-                    <div class="att-hours-box" id="ma_hours_box">
-                        Total Duty: <span id="ma_hours_val">—</span>
-                    </div>
+                    <div class="att-hours-box" id="ma_hours_box">Total Duty: <span id="ma_hours_val">—</span></div>
                 </div>
-
-                <!-- Notes -->
                 <div class="att-field">
                     <label>Notes <span style="color:#94a3b8;font-weight:400;">(Optional)</span></label>
                     <textarea name="notes" id="ma_notes" class="att-input" rows="3" placeholder="Any remarks or additional notes…"></textarea>
                 </div>
             </div>
-
             <div class="att-modal-footer">
                 <button type="button" id="btnMarkCancel" class="att-cancel-btn">Cancel</button>
                 <button type="submit" class="att-save-btn"><i class="fas fa-save"></i> Save Attendance</button>
@@ -931,9 +811,7 @@ textarea.att-input { resize: vertical; min-height: 80px; }
 </div>
 
 
-<!-- ═══════════════════════════════════════════════════════════════════
-     BULK MARK MODAL
-═══════════════════════════════════════════════════════════════════ -->
+<!-- ═══ BULK MARK MODAL ═══ -->
 <div id="bulkMarkModal" class="db-modal">
     <div class="db-modal__box" style="max-width:560px;">
         <form method="POST" id="bulkForm">
@@ -941,18 +819,13 @@ textarea.att-input { resize: vertical; min-height: 80px; }
                 <h3><i class="fas fa-users-cog"></i> Bulk Mark Attendance</h3>
                 <button type="button" id="btnBulkClose" class="att-modal-close">×</button>
             </div>
-
             <div class="att-modal-body">
                 <input type="hidden" name="bulk_mark" value="1">
                 <input type="hidden" name="bulk_date" value="<?php echo $selected_date; ?>">
-
-                <!-- Instructions -->
                 <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:12.5px;color:#1e40af;display:flex;gap:8px;align-items:flex-start;">
                     <i class="fas fa-info-circle" style="margin-top:2px;flex-shrink:0;"></i>
                     <span>Select the staff you want to mark, then choose their status and click <strong>Mark Attendance</strong>.</span>
                 </div>
-
-                <!-- Selection Controls -->
                 <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
                     <div class="att-selected-pill">
                         <i class="fas fa-users"></i>
@@ -965,14 +838,10 @@ textarea.att-input { resize: vertical; min-height: 80px; }
                         <i class="fas fa-square"></i> Clear
                     </button>
                 </div>
-
-                <!-- Selected Staff Preview -->
                 <div id="bulk_staff_preview" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 14px;margin-bottom:14px;max-height:110px;overflow-y:auto;display:none;">
                     <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px;">Selected Staff</div>
                     <div id="bulk_staff_list" style="display:flex;flex-wrap:wrap;gap:5px;"></div>
                 </div>
-
-                <!-- Status -->
                 <div class="att-field">
                     <label>Attendance Status <span class="req">*</span></label>
                     <select name="bulk_status" class="att-input" required>
@@ -982,11 +851,9 @@ textarea.att-input { resize: vertical; min-height: 80px; }
                         <option value="On Leave">📅 On Leave</option>
                     </select>
                 </div>
-
-                <!-- Time Toggle -->
                 <div class="att-check-card">
                     <label>
-                        <input type="checkbox" id="bulk_times_toggle" onchange="toggleBulkTimes()">
+                        <input type="checkbox" id="bulk_times_toggle">
                         <span><i class="fas fa-clock me-1" style="color:#0ea5e9;"></i> Set Time In/Out for all selected staff</span>
                     </label>
                     <div class="att-check-body" id="bulk_times_body">
@@ -1013,55 +880,31 @@ textarea.att-input { resize: vertical; min-height: 80px; }
                         </div>
                     </div>
                 </div>
-
-                <!-- Overwrite Existing -->
                 <div class="att-check-card">
                     <label>
                         <input type="checkbox" name="overwrite_existing">
                         <span><i class="fas fa-redo me-1" style="color:#f59e0b;"></i> Overwrite existing records</span>
                     </label>
                 </div>
-
-                <!-- Warning -->
                 <div class="overwrite-warn">
                     <i class="fas fa-exclamation-triangle" style="flex-shrink:0;margin-top:1px;"></i>
-                    <span>By default, staff who already have attendance marked for this date will be skipped. Enable overwrite to update them.</span>
+                    <span>By default, staff already marked for this date will be skipped. Enable overwrite to update them.</span>
                 </div>
             </div>
-
             <div class="att-modal-footer">
                 <button type="button" id="btnBulkCancel" class="att-cancel-btn">Cancel</button>
-                <button type="button" id="btnSubmitBulk" class="att-save-btn">
-                    <i class="fas fa-check"></i> Mark Attendance
-                </button>
+                <button type="button" id="btnSubmitBulk" class="att-save-btn"><i class="fas fa-check"></i> Mark Attendance</button>
             </div>
         </form>
     </div>
 </div>
 
 
-<!-- ─── SCRIPTS ───────────────────────────────────────────────────────────── -->
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-
-    /* ── helpers ── */
     function pad(v) { return String(v).padStart(2, '0'); }
     function nowHHMM() { var n = new Date(); return pad(n.getHours()) + ':' + pad(n.getMinutes()); }
 
-    /* ── Live clock ── */
-    function attTick() {
-        var n = new Date(), h = n.getHours(), m = n.getMinutes(), s = n.getSeconds();
-        var ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12;
-        var el = document.getElementById('att-live-time');
-        if (el) el.textContent = h + ':' + pad(m) + ':' + pad(s) + ' ' + ap;
-    }
-    attTick();
-    setInterval(attTick, 1000);
-
-    /* ── Modal helpers — use style.display, NOT class toggling ─────────────
-       Reason: Bootstrap CSS can override .db-modal--open { display:flex }
-       with higher-specificity rules. Direct style assignment always wins.
-    ── */
     function openModal(id) {
         var el = document.getElementById(id);
         if (!el) return;
@@ -1074,70 +917,38 @@ document.addEventListener('DOMContentLoaded', function () {
         el.style.display = 'none';
         document.body.style.overflow = '';
     }
-
-    /* close on backdrop click */
     document.querySelectorAll('.db-modal').forEach(function (m) {
-        m.addEventListener('click', function (e) {
-            if (e.target === m) closeModal(m.id);
+        m.addEventListener('click', function (e) { if (e.target === m) closeModal(m.id); });
+    });
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') document.querySelectorAll('.db-modal').forEach(function (m) {
+            if (m.style.display === 'flex') closeModal(m.id);
         });
     });
-    /* close on Escape */
-    document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape') {
-            document.querySelectorAll('.db-modal').forEach(function (m) {
-                if (m.style.display === 'flex') closeModal(m.id);
-            });
-        }
-    });
 
-    /* ── Checkbox helpers ── */
     function updateCount() {
         var checked = document.querySelectorAll('.att-user-cb:checked').length;
         var total   = document.querySelectorAll('.att-user-cb').length;
         var el = document.getElementById('bulk_count');
         if (el) el.textContent = checked;
         var hdr = document.getElementById('attSelectAllCb');
-        if (hdr) {
-            hdr.indeterminate = checked > 0 && checked < total;
-            hdr.checked       = total > 0 && checked === total;
-        }
+        if (hdr) { hdr.indeterminate = checked > 0 && checked < total; hdr.checked = total > 0 && checked === total; }
     }
     window.attUpdateCount = updateCount;
 
-    function selectAll() {
-        document.querySelectorAll('.att-user-cb').forEach(function (c) { c.checked = true; });
-        var hdr = document.getElementById('attSelectAllCb');
-        if (hdr) { hdr.checked = true; hdr.indeterminate = false; }
-        updateCount();
-    }
-    function deselectAll() {
-        document.querySelectorAll('.att-user-cb').forEach(function (c) { c.checked = false; });
-        var hdr = document.getElementById('attSelectAllCb');
-        if (hdr) { hdr.checked = false; hdr.indeterminate = false; }
-        updateCount();
-    }
+    function selectAll()   { document.querySelectorAll('.att-user-cb').forEach(function(c){c.checked=true;}); var h=document.getElementById('attSelectAllCb'); if(h){h.checked=true;h.indeterminate=false;} updateCount(); }
+    function deselectAll() { document.querySelectorAll('.att-user-cb').forEach(function(c){c.checked=false;}); var h=document.getElementById('attSelectAllCb'); if(h){h.checked=false;h.indeterminate=false;} updateCount(); }
     window.attSelectAll   = selectAll;
     window.attDeselectAll = deselectAll;
 
-    /* header checkbox */
     var hdrCb = document.getElementById('attSelectAllCb');
-    if (hdrCb) hdrCb.addEventListener('change', function () {
-        if (this.checked) selectAll(); else deselectAll();
-    });
+    if (hdrCb) hdrCb.addEventListener('change', function () { if (this.checked) selectAll(); else deselectAll(); });
 
-    /* row checkboxes — delegate via table tbody */
     var tbody = document.querySelector('.db-table tbody');
-    if (tbody) tbody.addEventListener('change', function (e) {
-        if (e.target.classList.contains('att-user-cb')) updateCount();
-    });
+    if (tbody) tbody.addEventListener('change', function (e) { if (e.target.classList.contains('att-user-cb')) updateCount(); });
 
-    /* ── Action bar + panel buttons ── */
-    function btn(id, fn) {
-        var el = document.getElementById(id);
-        if (el) el.addEventListener('click', fn);
-    }
+    function btn(id, fn) { var el = document.getElementById(id); if (el) el.addEventListener('click', fn); }
 
-    btn('btnBulkMark',       function () { openBulkModalFn(); });
     btn('btnSelectAllBulk',  function () { selectAll(); openBulkModalFn(); });
     btn('btnPanelSelectAll', selectAll);
     btn('btnPanelDeselect',  deselectAll);
@@ -1148,68 +959,51 @@ document.addEventListener('DOMContentLoaded', function () {
     btn('btnModalSelAll',    function () { selectAll();   refreshChips(); });
     btn('btnModalClear',     function () { deselectAll(); refreshChips(); });
 
-    /* ── Bulk modal ── */
     function refreshChips() {
-        var list    = document.getElementById('bulk_staff_list');
-        var preview = document.getElementById('bulk_staff_preview');
-        if (!list || !preview) return;
+        var list = document.getElementById('bulk_staff_list');
+        var prev = document.getElementById('bulk_staff_preview');
+        if (!list || !prev) return;
         list.innerHTML = '';
         var checked = document.querySelectorAll('.att-user-cb:checked');
         if (checked.length > 0) {
             checked.forEach(function (cb) {
-                var row    = cb.closest('tr');
-                var nameEl = row ? row.querySelector('.staff-name') : null;
-                var chip   = document.createElement('span');
-                chip.className   = 'bulk-staff-chip';
-                chip.textContent = nameEl ? nameEl.textContent.trim() : 'User #' + cb.value;
+                var row = cb.closest('tr');
+                var nm  = row ? row.querySelector('.staff-name') : null;
+                var chip = document.createElement('span');
+                chip.className = 'bulk-staff-chip';
+                chip.textContent = nm ? nm.textContent.trim() : 'User #' + cb.value;
                 list.appendChild(chip);
             });
-            preview.style.display = 'block';
-        } else {
-            preview.style.display = 'none';
-        }
+            prev.style.display = 'block';
+        } else { prev.style.display = 'none'; }
     }
-    function openBulkModalFn() {
-        updateCount();
-        refreshChips();
-        openModal('bulkMarkModal');
-    }
+    function openBulkModalFn() { updateCount(); refreshChips(); openModal('bulkMarkModal'); }
     window.openBulkModal = openBulkModalFn;
 
-    /* bulk time toggle */
+    // bulk times toggle
     var timesToggle = document.getElementById('bulk_times_toggle');
     if (timesToggle) timesToggle.addEventListener('change', function () {
         var body = document.getElementById('bulk_times_body');
         body.classList.toggle('open', this.checked);
-        if (!this.checked) {
-            document.getElementById('bulk_time_in').value  = '';
-            document.getElementById('bulk_time_out').value = '';
-        }
+        if (!this.checked) { document.getElementById('bulk_time_in').value = ''; document.getElementById('bulk_time_out').value = ''; }
     });
 
-    /* bulk submit */
     btn('btnSubmitBulk', function () {
         var checked = document.querySelectorAll('.att-user-cb:checked');
-        if (checked.length === 0) {
-            alert('Please select at least one staff member.\nUse \'Select All\' inside this modal or close and check rows.');
-            return;
-        }
+        if (checked.length === 0) { alert('Please select at least one staff member.'); return; }
         var form = document.getElementById('bulkForm');
         form.querySelectorAll('.bulk-user-input').forEach(function (i) { i.remove(); });
         checked.forEach(function (cb) {
             var inp = document.createElement('input');
-            inp.type = 'hidden'; inp.name = 'selected_users[]';
-            inp.value = cb.value; inp.className = 'bulk-user-input';
+            inp.type = 'hidden'; inp.name = 'selected_users[]'; inp.value = cb.value; inp.className = 'bulk-user-input';
             form.appendChild(inp);
         });
         form.submit();
     });
 
-    /* bulk Now buttons */
     btn('btnBulkNowIn',  function () { document.getElementById('bulk_time_in').value  = nowHHMM(); });
     btn('btnBulkNowOut', function () { document.getElementById('bulk_time_out').value = nowHHMM(); });
 
-    /* bulk preset buttons */
     document.querySelectorAll('.bulk-preset-btn').forEach(function (b) {
         b.addEventListener('click', function () {
             document.getElementById('bulk_time_in').value  = b.dataset.in;
@@ -1219,25 +1013,24 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
-    /* ── Mark modal ── */
     function calcHours() {
         var ti = document.getElementById('ma_time_in').value;
         var to = document.getElementById('ma_time_out').value;
         var box = document.getElementById('ma_hours_box');
         if (ti && to) {
             var a = ti.split(':').map(Number), b = to.split(':').map(Number);
-            var diff = (b[0] * 60 + b[1]) - (a[0] * 60 + a[1]);
+            var diff = (b[0]*60+b[1]) - (a[0]*60+a[1]);
             if (diff < 0) diff += 1440;
-            document.getElementById('ma_hours_val').textContent = Math.floor(diff / 60) + 'h ' + (diff % 60) + 'm';
+            document.getElementById('ma_hours_val').textContent = Math.floor(diff/60) + 'h ' + (diff%60) + 'm';
             box.style.display = 'block';
         } else { box.style.display = 'none'; }
     }
     window.maCalcHours = calcHours;
 
     function updateStatusHint() {
-        var s = (document.getElementById('ma_status') || {}).value;
-        var hints = { Present: 'Staff was present for their full shift.', Late: 'Staff arrived late.', Absent: 'Staff did not report for duty.', 'On Leave': 'Staff is on approved leave.', 'Half Day': 'Staff worked half of their shift.' };
-        var icons = { Present: '\u2713', Late: '\u23f0', Absent: '\u2717', 'On Leave': '\ud83d\udcc5', 'Half Day': '\u25d0' };
+        var s = (document.getElementById('ma_status')||{}).value;
+        var hints = {Present:'Staff was present for their full shift.',Late:'Staff arrived late.',Absent:'Staff did not report for duty.','On Leave':'Staff is on approved leave.','Half Day':'Staff worked half of their shift.'};
+        var icons = {Present:'\u2713',Late:'\u23f0',Absent:'\u2717','On Leave':'\ud83d\udcc5','Half Day':'\u25d0'};
         var hint = document.getElementById('ma_status_hint');
         var icon = document.getElementById('ma_status_icon');
         if (hint) hint.textContent = hints[s] || '';
@@ -1247,7 +1040,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
     var maStatus = document.getElementById('ma_status');
     if (maStatus) maStatus.addEventListener('change', updateStatusHint);
-
     var maTimeIn  = document.getElementById('ma_time_in');
     var maTimeOut = document.getElementById('ma_time_out');
     if (maTimeIn)  maTimeIn.addEventListener('change',  calcHours);
@@ -1264,26 +1056,19 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
-    /* ── Auto-dismiss alerts ── */
     setTimeout(function () {
         document.querySelectorAll('.db-alert').forEach(function (a) {
-            a.style.transition = 'opacity .4s';
-            a.style.opacity = '0';
+            a.style.transition = 'opacity .4s'; a.style.opacity = '0';
             setTimeout(function () { try { a.remove(); } catch(e) {} }, 400);
         });
     }, 5000);
+});
 
-}); /* end DOMContentLoaded */
-
-/* ──────────────────────────────────────────────────────────────────────────
-   GLOBAL FUNCTIONS — must be outside DOMContentLoaded so PHP-generated
-   onclick= attributes on table rows can reach them.
-────────────────────────────────────────────────────────────────────────── */
+/* Global — called from PHP-generated onclick= attributes */
 function openMarkModal(btn) {
     try {
         var user       = JSON.parse(btn.dataset.user);
-        var attendance = (btn.dataset.attendance && btn.dataset.attendance !== 'null')
-                          ? JSON.parse(btn.dataset.attendance) : null;
+        var attendance = (btn.dataset.attendance && btn.dataset.attendance !== 'null') ? JSON.parse(btn.dataset.attendance) : null;
         var name = (user.full_name && user.full_name.trim()) ? user.full_name : user.username;
 
         document.getElementById('ma_user_id').value              = user.user_id;
@@ -1292,8 +1077,8 @@ function openMarkModal(btn) {
 
         if (attendance) {
             document.getElementById('ma_status').value   = attendance.status   || 'Present';
-            document.getElementById('ma_time_in').value  = attendance.time_in  ? attendance.time_in.substring(0, 5)  : '';
-            document.getElementById('ma_time_out').value = attendance.time_out ? attendance.time_out.substring(0, 5) : '';
+            document.getElementById('ma_time_in').value  = attendance.time_in  ? attendance.time_in.substring(0,5)  : '';
+            document.getElementById('ma_time_out').value = attendance.time_out ? attendance.time_out.substring(0,5) : '';
             document.getElementById('ma_notes').value    = attendance.notes    || '';
         } else {
             document.getElementById('ma_status').value   = 'Present';
@@ -1307,9 +1092,7 @@ function openMarkModal(btn) {
         var modal = document.getElementById('markAttModal');
         modal.style.display = 'flex';
         document.body.style.overflow = 'hidden';
-    } catch (err) {
-        console.error('openMarkModal error:', err);
-    }
+    } catch (err) { console.error('openMarkModal error:', err); }
 }
 
 function attToggleAll() {
@@ -1317,6 +1100,17 @@ function attToggleAll() {
     if (!hdr) return;
     if (hdr.checked) { if (window.attSelectAll) window.attSelectAll(); }
     else             { if (window.attDeselectAll) window.attDeselectAll(); }
+}
+
+function toggleBulkTimes() {
+    var toggle = document.getElementById('bulk_times_toggle');
+    var body   = document.getElementById('bulk_times_body');
+    if (!toggle || !body) return;
+    body.classList.toggle('open', toggle.checked);
+    if (!toggle.checked) {
+        document.getElementById('bulk_time_in').value  = '';
+        document.getElementById('bulk_time_out').value = '';
+    }
 }
 </script>
 

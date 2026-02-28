@@ -495,6 +495,11 @@ $current_path = $_SERVER['PHP_SELF'];
                 <i class="fas fa-users-cog"></i><span>Officials</span>
             </a>
         </div>
+        <div class="nav-item">
+                <a href="<?php echo $base_url; ?>/modules/attendance/my-schedule.php" class="nav-link <?php echo strpos($current_path,'attendance')!==false?'active':''; ?>">
+                    <i class="fas fa-clipboard-check"></i><span>Attendance</span>
+                </a>
+            </div>
     <?php navSectionEnd(); ?>
 
     <?php navSectionStart('tres-financial', 'Financial Management', ['financial']); ?>
@@ -786,7 +791,7 @@ $current_path = $_SERVER['PHP_SELF'];
                 </a>
             </div>
             <div class="nav-item">
-               <a href="<?php echo $base_url; ?>/modules/officials/index.php"class="nav-link <?php echo strpos($current_path,'officials')!==false?'active':''; ?>">
+               <a href="<?php echo $base_url; ?>/modules/officials/manage.php"class="nav-link <?php echo strpos($current_path,'officials')!==false?'active':''; ?>">
                     <i class="fas fa-users-cog"></i><span>Officials</span>
                 </a>
             </div>

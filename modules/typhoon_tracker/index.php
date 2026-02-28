@@ -1,440 +1,428 @@
 <?php
 /**
- * ENHANCED AI Disaster Safety Assistant v3.0
- * Now with advanced conversational intelligence and context awareness
+ * ENHANCED AI Disaster Safety Assistant v4.0
+ * Now with PERSISTENT DATABASE CHAT STORAGE
+ * AI recalls previous conversations and generates new insights
  */
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SERVER['CONTENT_TYPE']) && 
+// ============================================================
+// CONFIG LOADER — walks up directory tree to find config.ini
+// ============================================================
+function findConfig() {
+    static $cfg = null;
+    if ($cfg !== null) return $cfg;
+    $dir = dirname(__FILE__);
+    for ($i = 0; $i < 6; $i++) {
+        $candidate = $dir . '/config.ini';
+        if (file_exists($candidate)) {
+            $cfg = parse_ini_file($candidate);
+            return $cfg;
+        }
+        $dir = dirname($dir);
+    }
+    $cfg = [];
+    return $cfg;
+}
+
+
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SERVER['CONTENT_TYPE']) &&
     strpos($_SERVER['CONTENT_TYPE'], 'application/json') !== false) {
-    
+
     header('Content-Type: application/json');
     $data = json_decode(file_get_contents('php://input'), true);
-    
+
     if (!$data || !isset($data['message'])) {
         echo json_encode(['success' => false, 'error' => 'Invalid request']);
         exit();
     }
-    
-    $userMessage = trim($data['message']);
-    $weatherData = $data['weatherData'] ?? null;
-    $typhoonData = $data['typhoonData'] ?? [];
-    $userLocation = $data['userLocation'] ?? 'Philippines';
-    $currentDateTime = $data['currentDateTime'] ?? null;
-    $forecastData = $data['forecastData'] ?? null;
-    $conversationHistory = $data['conversationHistory'] ?? [];
-    
-    $config = parse_ini_file(dirname(__FILE__) . '/../../config.ini');
-$GROQ_API_KEY = $config['GROQ_API_KEY'];
-    
-    $aiResponse = callGroqAPI($GROQ_API_KEY, $userMessage, $weatherData, $typhoonData, $userLocation, $currentDateTime, $forecastData, $conversationHistory);
-    
+
+    $userMessage      = trim($data['message']);
+    $weatherData      = $data['weatherData']      ?? null;
+    $typhoonData      = $data['typhoonData']       ?? [];
+    $userLocation     = $data['userLocation']      ?? 'Philippines';
+    $currentDateTime  = $data['currentDateTime']   ?? null;
+    $forecastData     = $data['forecastData']      ?? null;
+    $sessionId        = $data['session_id']        ?? ($data['resident_id'] ?? 'anonymous');
+    if (!empty($data['resident_id'])) $sessionId = 'resident_' . $data['resident_id'];
+
+    $config       = findConfig();
+    $GROQ_API_KEY = $config['GROQ_API_KEY'] ?? $config['groq_api_key'] ?? '';
+
+    // ── 1. Load DB conversation history ──────────────────────────────────────
+    $dbHistory = loadDBHistory($sessionId);
+
+    // ── 2. Save the incoming user message to DB ───────────────────────────────
+    saveMessageToDB($sessionId, 'user', $userMessage, $weatherData, $typhoonData, $userLocation);
+
+    // ── 3. Call AI with full history ──────────────────────────────────────────
+    $aiResponse = callGroqAPI(
+        $GROQ_API_KEY, $userMessage,
+        $weatherData, $typhoonData, $userLocation,
+        $currentDateTime, $forecastData,
+        $dbHistory   // ← pass DB history instead of client history
+    );
+
     if ($aiResponse['success']) {
-        echo json_encode(['success' => true, 'response' => $aiResponse['text'], 'model' => 'llama-3.3-70b']);
-    } else {
-        $fallbackResponse = getFallbackResponse($userMessage, $weatherData, $typhoonData, $forecastData);
+        $responseText = $aiResponse['text'];
+        // ── 4. Save assistant reply to DB ─────────────────────────────────────
+        saveMessageToDB($sessionId, 'assistant', $responseText, $weatherData, $typhoonData, $userLocation);
+
         echo json_encode([
-            'success' => true, 
-            'response' => $fallbackResponse,
-            'fallback' => true,
-            'api_error' => $aiResponse['error'] ?? 'Service unavailable'
+            'success'      => true,
+            'response'     => $responseText,
+            'model'        => 'llama-3.3-70b',
+            'session_id'   => $sessionId,
+            'history_used' => count($dbHistory),
+        ]);
+    } else {
+        $fallback = getFallbackResponse($userMessage, $weatherData, $typhoonData, $forecastData);
+        saveMessageToDB($sessionId, 'assistant', $fallback, null, null, $userLocation);
+
+        echo json_encode([
+            'success'    => true,
+            'response'   => $fallback,
+            'fallback'   => true,
+            'api_error'  => $aiResponse['error'] ?? 'Service unavailable',
+            'session_id' => $sessionId,
         ]);
     }
     exit();
 }
 
-function callGroqAPI($apiKey, $message, $weatherData, $typhoonData, $userLocation, $currentDateTime = null, $forecastData = null, $conversationHistory = []) {
-    if (empty($apiKey)) return ['success' => false, 'error' => 'API key not configured'];
-    
-    // ============================================================================
-    // ENHANCED CONVERSATIONAL AI SYSTEM PROMPT
-    // ============================================================================
-    
-    $context = "You are an advanced AI weather assistant specializing in Philippine tropical weather and disaster preparedness. ";
-    $context .= "Think of yourself as a knowledgeable meteorologist who can explain complex weather patterns in an accessible, conversational way.\n\n";
-    
-    $context .= "User location: {$userLocation}.\n";
-    if ($currentDateTime) {
-        $context .= "Current date and time: {$currentDateTime}\n\n";
+// ============================================================================
+// DATABASE HELPERS
+// ============================================================================
+
+function getDB() {
+    static $pdo = null;
+    if ($pdo) return $pdo;
+
+    $config = findConfig();
+    $host   = $config['DB_HOST']      ?? $config['db_host']      ?? 'localhost';
+    $db     = $config['DB_NAME']      ?? $config['db_name']      ?? '';
+    $user   = $config['DB_USER']      ?? $config['db_user']      ?? '';
+    $pass   = $config['DB_PASS']      ?? $config['db_pass']      ?? $config['DB_PASSWORD'] ?? '';
+
+    try {
+        $pdo = new PDO("mysql:host=$host;dbname=$db;charset=utf8mb4", $user, $pass);
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+        // Auto-create table if missing
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS typhoon_chat_history (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                session_id VARCHAR(128) NOT NULL,
+                resident_id INT NULL,
+                role ENUM('user','assistant') NOT NULL,
+                content TEXT NOT NULL,
+                weather_context JSON NULL,
+                typhoon_context JSON NULL,
+                location_context VARCHAR(255) NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_session (session_id),
+                INDEX idx_created (created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (PDOException $e) {
+        // Return null — app degrades gracefully without DB
+        return null;
     }
-    
+    return $pdo;
+}
+
+/**
+ * Load last N message pairs from DB for this session.
+ * Returns array of ['role' => ..., 'content' => ...] suitable for Groq.
+ */
+function loadDBHistory($sessionId, $pairs = 15) {
+    $pdo = getDB();
+    if (!$pdo) return [];
+
+    $limit = $pairs * 2; // each "pair" = 1 user + 1 assistant message
+    $stmt = $pdo->prepare("
+        SELECT role, content, weather_context, created_at
+        FROM typhoon_chat_history
+        WHERE session_id = :sid
+        ORDER BY created_at DESC
+        LIMIT :lim
+    ");
+    $stmt->bindValue(':sid', $sessionId, PDO::PARAM_STR);
+    $stmt->bindValue(':lim', $limit,     PDO::PARAM_INT);
+    $stmt->execute();
+
+    $rows = array_reverse($stmt->fetchAll(PDO::FETCH_ASSOC));
+
+    $history = [];
+    foreach ($rows as $row) {
+        $history[] = [
+            'role'    => $row['role'],
+            'content' => $row['content'],
+        ];
+    }
+    return $history;
+}
+
+/**
+ * Persist one message (user or assistant) to DB.
+ */
+function saveMessageToDB($sessionId, $role, $content, $weatherData = null, $typhoonData = null, $location = null) {
+    $pdo = getDB();
+    if (!$pdo) return;
+
+    // Extract numeric resident_id if session_id looks like "resident_123"
+    $residentId = null;
+    if (preg_match('/^resident_(\d+)$/', $sessionId, $m)) {
+        $residentId = (int)$m[1];
+    }
+
+    $stmt = $pdo->prepare("
+        INSERT INTO typhoon_chat_history
+            (session_id, resident_id, role, content, weather_context, typhoon_context, location_context)
+        VALUES
+            (:sid, :rid, :role, :content, :weather, :typhoon, :loc)
+    ");
+    $stmt->execute([
+        ':sid'     => $sessionId,
+        ':rid'     => $residentId,
+        ':role'    => $role,
+        ':content' => $content,
+        ':weather' => $weatherData  ? json_encode($weatherData)  : null,
+        ':typhoon' => $typhoonData  ? json_encode($typhoonData)   : null,
+        ':loc'     => $location,
+    ]);
+}
+
+// ============================================================================
+// GROQ API  (same as before but uses DB history)
+// ============================================================================
+
+function callGroqAPI($apiKey, $message, $weatherData, $typhoonData, $userLocation,
+                     $currentDateTime = null, $forecastData = null, $conversationHistory = []) {
+
+    if (empty($apiKey)) return ['success' => false, 'error' => 'API key not configured'];
+
+    // ── SYSTEM PROMPT ─────────────────────────────────────────────────────────
+    $context  = "You are an advanced AI weather assistant specializing in Philippine tropical weather and disaster preparedness.\n";
+    $context .= "Think of yourself as a knowledgeable meteorologist who can explain complex weather patterns in an accessible, conversational way.\n\n";
+    $context .= "User location: {$userLocation}.\n";
+    if ($currentDateTime) $context .= "Current date and time: {$currentDateTime}\n\n";
+
     $context .= "=== YOUR PERSONALITY AND APPROACH ===\n";
-    $context .= "• Be conversational and natural - talk like a helpful expert, not a robot\n";
+    $context .= "• Be conversational and natural — talk like a helpful expert, not a robot\n";
     $context .= "• Show understanding and empathy when people are concerned about weather\n";
     $context .= "• Explain the 'why' behind weather phenomena when relevant\n";
     $context .= "• Use analogies and examples to make complex weather concepts clear\n";
-    $context .= "• Remember context from previous messages in the conversation\n";
-    $context .= "• Be honest about uncertainty - if you're not certain, say so\n";
+    $context .= "• IMPORTANT: You have access to this resident's FULL conversation history stored in the database.\n";
+    $context .= "  Reference past conversations naturally — e.g., 'Last time you asked about...' or 'Compared to when we last spoke...'\n";
+    $context .= "• Generate NEW INSIGHTS by comparing current conditions to previous conversations\n";
+    $context .= "• If weather has changed since last conversation, proactively highlight what changed\n";
+    $context .= "• Be honest about uncertainty — if you're not certain, say so\n";
     $context .= "• Prioritize safety always, but don't be alarmist about normal conditions\n\n";
-    
+
     $context .= "=== RESPONSE GUIDELINES ===\n";
     $context .= "• For simple questions: Give concise, direct answers (2-3 sentences)\n";
     $context .= "• For complex questions: Provide detailed explanations with context\n";
     $context .= "• For follow-up questions: Reference previous context naturally\n";
-    $context .= "• When explaining weather: Break down the atmospheric processes happening\n";
-    $context .= "• When giving safety advice: Explain why certain actions are recommended\n";
     $context .= "• Use first-person perspective ('I'm analyzing...', 'I'm seeing...') to be more personal\n\n";
-    
-    $context .= "=== CONVERSATIONAL INTELLIGENCE ===\n";
-    $context .= "• Track the conversation flow - if someone asks 'what about tomorrow?' understand they mean the weather\n";
-    $context .= "• Pick up on emotional cues - if someone seems worried, be reassuring while being truthful\n";
-    $context .= "• Anticipate follow-up questions and sometimes address them preemptively\n";
-    $context .= "• Use natural transitions: 'Building on that...', 'To add to what I mentioned...', 'You're right to ask about...'\n";
-    $context .= "• Acknowledge good questions: 'That's an excellent question...', 'I'm glad you asked...'\n\n";
-    
-    // ============================================================================
-    // WEATHER DATA ANALYSIS (Enhanced with intelligent interpretation)
-    // ============================================================================
-    
+
+    $context .= "=== CONVERSATIONAL MEMORY INSTRUCTIONS ===\n";
+    $context .= "• You have access to this resident's PAST CONVERSATIONS from the database\n";
+    $context .= "• When the resident returns after a gap, acknowledge it: 'Welcome back! Since we last spoke...'\n";
+    $context .= "• If their location or situation has changed, note it\n";
+    $context .= "• Generate insights by comparing: 'Last week the pressure was X, now it's Y — this suggests...'\n";
+    $context .= "• Proactively offer insights: 'Based on our conversation history, I notice...'\n";
+    $context .= "• If they seem to be checking regularly during a storm, acknowledge their vigilance\n\n";
+
+    // ── WEATHER DATA ──────────────────────────────────────────────────────────
     if ($weatherData) {
-        $wind = floatval($weatherData['windSpeed']);
+        $wind     = floatval($weatherData['windSpeed']);
         $pressure = floatval($weatherData['pressure']);
         $humidity = floatval($weatherData['humidity']);
-        $temp = floatval($weatherData['temperature']);
-        
-        $context .= "=== CURRENT WEATHER CONDITIONS (Real-Time Analysis) ===\n";
+        $temp     = floatval($weatherData['temperature']);
+
+        $context .= "=== CURRENT WEATHER CONDITIONS ===\n";
         $context .= "Wind Speed: {$weatherData['windSpeed']} km/h\n";
         $context .= "Temperature: {$weatherData['temperature']}°C\n";
         $context .= "Atmospheric Pressure: {$weatherData['pressure']} hPa\n";
         $context .= "Humidity: {$weatherData['humidity']}%\n\n";
-        
+
         $context .= "=== INTELLIGENT WEATHER INTERPRETATION ===\n";
-        
-        // Advanced humidity analysis with context
+
         if ($humidity >= 95) {
-            $context .= "🌧️ CRITICAL HUMIDITY ANALYSIS:\n";
-            $context .= "• Current: {$humidity}% - Atmosphere is completely saturated\n";
-            $context .= "• What this means: Air can't hold any more moisture - rain is forming or imminent\n";
-            $context .= "• Physical process: When humidity reaches this level in tropical regions, condensation is active\n";
-            $context .= "• Expected outcome: Heavy rainfall very likely or already occurring\n\n";
-        } else if ($humidity >= 90) {
-            $context .= "⚠️ VERY HIGH HUMIDITY ANALYSIS:\n";
-            $context .= "• Current: {$humidity}% - Near saturation point\n";
-            $context .= "• Interpretation: The atmosphere is holding maximum moisture for current temperature\n";
-            $context .= "• Implication: Small pressure/temperature changes will trigger significant rainfall\n\n";
-        } else if ($humidity >= 85) {
-            $context .= "💧 HIGH HUMIDITY ANALYSIS:\n";
-            $context .= "• Current: {$humidity}% - Moisture-laden atmosphere\n";
-            $context .= "• Context: This level typically precedes rain formation in the Philippines\n";
-            $context .= "• Probability: Rain is probable, especially with any pressure changes\n\n";
-        } else if ($humidity >= 75) {
-            $context .= "Normal tropical humidity: {$humidity}% - Typical for your region\n\n";
+            $context .= "🌧️ CRITICAL HUMIDITY: {$humidity}% — Atmosphere at saturation, heavy rain forming\n";
+        } elseif ($humidity >= 90) {
+            $context .= "⚠️ VERY HIGH HUMIDITY: {$humidity}% — Near saturation\n";
+        } elseif ($humidity >= 85) {
+            $context .= "💧 HIGH HUMIDITY: {$humidity}% — Rain probable\n";
         }
-        
-        // Advanced pressure analysis with meteorological context
+
         if ($pressure < 1005) {
-            $context .= "📉 CRITICAL PRESSURE ANALYSIS:\n";
-            $context .= "• Current: {$pressure} hPa - Significantly below normal (1012 hPa)\n";
-            $context .= "• What's happening: A strong low-pressure system is present\n";
-            $context .= "• Atmospheric dynamics: Low pressure creates rising air motion → cooling → condensation → heavy rain\n";
-            $context .= "• Weather expectation: Active weather system producing or about to produce heavy rainfall\n\n";
-        } else if ($pressure < 1009) {
-            $context .= "⚠️ LOW PRESSURE ANALYSIS:\n";
-            $context .= "• Current: {$pressure} hPa - Below normal range\n";
-            $context .= "• Meteorological significance: Unsettled weather pattern established\n";
-            $context .= "• Combined with high humidity: Creates ideal rain-producing conditions\n\n";
-        } else if ($pressure < 1012) {
-            $context .= "Pressure slightly below normal: {$pressure} hPa - Minor weather activity possible\n\n";
-        } else {
-            $context .= "Pressure normal to high: {$pressure} hPa - Generally stable atmospheric conditions\n\n";
+            $context .= "📉 CRITICAL PRESSURE: {$pressure} hPa — Active storm system present\n";
+        } elseif ($pressure < 1009) {
+            $context .= "⚠️ LOW PRESSURE: {$pressure} hPa — Unsettled weather\n";
+        } elseif ($pressure < 1012) {
+            $context .= "Pressure slightly below normal: {$pressure} hPa\n";
         }
-        
-        // Intelligent combined analysis (this is what makes it smart)
+
         if ($humidity >= 88 && $pressure < 1010) {
-            $context .= "🌧️💧 CRITICAL COMBINED ANALYSIS:\n";
-            $context .= "I'm detecting a powerful rain-producing weather pattern:\n";
-            $context .= "1. High humidity ({$humidity}%) = Maximum atmospheric moisture\n";
-            $context .= "2. Low pressure ({$pressure} hPa) = Rising air motion\n";
-            $context .= "3. Combination effect = Perfect conditions for sustained heavy rainfall\n\n";
-            $context .= "Scientific explanation: The low pressure forces moist air upward. As it rises and cools, ";
-            $context .= "the near-saturated air ({$humidity}%) rapidly condenses into heavy rain. This is the classic ";
-            $context .= "heavy rainfall mechanism in tropical regions.\n\n";
-            $context .= "IMPORTANT: This isn't just prediction - these conditions are ACTIVELY producing rain right now ";
-            $context .= "or will very soon (within hours).\n\n";
+            $context .= "🌧️💧 CRITICAL COMBINED: High humidity ({$humidity}%) + Low pressure ({$pressure} hPa) = Active heavy rain conditions\n";
         }
-        
-        // Wind analysis with context
-        if ($wind > 118) {
-            $context .= "🌪️ TYPHOON-FORCE WINDS: {$wind} km/h (PAGASA Signal #4+)\n";
-            $context .= "This represents extreme danger. Structural damage is expected.\n\n";
-        } elseif ($wind > 88) {
-            $context .= "⚠️ STORM-FORCE WINDS: {$wind} km/h (PAGASA Signal #3)\n";
-            $context .= "Severe weather conditions. Widespread damage to light structures possible.\n\n";
-        } elseif ($wind > 62) {
-            $context .= "⚠️ STRONG WINDS: {$wind} km/h (PAGASA Signal #2)\n";
-            $context .= "Potentially dangerous for outdoor activities. Secure loose objects.\n\n";
-        } elseif ($wind > 39) {
-            $context .= "Moderate winds: {$wind} km/h (PAGASA Signal #1) - Minor impacts possible\n\n";
-        } else if ($wind < 10 && $humidity > 90) {
-            $context .= "⚠️ CALM WINDS + HIGH HUMIDITY PATTERN:\n";
-            $context .= "• This combination is typical of heavy rain conditions\n";
-            $context .= "• The calm winds allow moisture to concentrate rather than disperse\n";
-            $context .= "• Often seen in convergence zones that produce sustained rainfall\n\n";
-        }
-        
+
+        if ($wind > 118) $context .= "🌪️ TYPHOON-FORCE WINDS: {$wind} km/h (Signal #4+)\n";
+        elseif ($wind > 88) $context .= "⚠️ STORM-FORCE WINDS: {$wind} km/h (Signal #3)\n";
+        elseif ($wind > 62) $context .= "⚠️ STRONG WINDS: {$wind} km/h (Signal #2)\n";
+        elseif ($wind > 39) $context .= "Moderate winds: {$wind} km/h (Signal #1)\n";
+
         $context .= "\n";
     }
-    
-    // ============================================================================
-    // TYPHOON DATA (if present)
-    // ============================================================================
-    
+
+    // ── TYPHOON DATA ──────────────────────────────────────────────────────────
     if (!empty($typhoonData)) {
         $context .= "=== ACTIVE TYPHOON INFORMATION ===\n";
         foreach ($typhoonData as $idx => $t) {
-            $context .= ($idx + 1) . ". {$t['name']}\n";
-            $context .= "   - Wind Speed: {$t['windSpeed']} km/h\n";
-            $context .= "   - Distance from user: {$t['distance']} km\n";
-            
-            if ($t['distance'] < 300) {
-                $context .= "   - ⚠️ IMMEDIATE DANGER: Direct impact likely\n";
-            } elseif ($t['distance'] < 600) {
-                $context .= "   - ⚠️ HIGH ALERT: Significant impact expected\n";
-            } else {
-                $context .= "   - ℹ️ MONITORING: Indirect effects possible\n";
-            }
-            $context .= "\n";
-        }
-    }
-    
-    // ============================================================================
-    // REFERENCE INFORMATION
-    // ============================================================================
-    
-    $context .= "=== PAGASA WIND SIGNAL REFERENCE ===\n";
-    $context .= "Signal #1: 39-61 km/h → Minimal to minor threat\n";
-    $context .= "Signal #2: 62-88 km/h → Minor to moderate threat\n";
-    $context .= "Signal #3: 89-117 km/h → Moderate to significant threat\n";
-    $context .= "Signal #4: 118-184 km/h → Significant to severe threat\n";
-    $context .= "Signal #5: 185+ km/h → Extreme catastrophic threat\n\n";
-    
-    $context .= "=== RAINFALL INTENSITY THRESHOLDS ===\n";
-    $context .= "Light: 15-35 mm/24h → Minor impacts, travel disruption\n";
-    $context .= "Moderate: 35-65 mm/24h → Flooding in poor drainage areas\n";
-    $context .= "Heavy: 65-100 mm/24h → Serious flooding, travel dangerous\n";
-    $context .= "Intense: 100-150 mm/24h → Major flooding, evacuations likely\n";
-    $context .= "Torrential: 150+ mm/24h → Catastrophic flooding, life-threatening\n\n";
-    
-    $context .= "=== HUMIDITY-RAINFALL RELATIONSHIP ===\n";
-    $context .= "95%+ humidity → Atmosphere at saturation, heavy rain forming\n";
-    $context .= "88-95% humidity → Very high moisture, heavy rain likely\n";
-    $context .= "80-88% humidity → High moisture, rain probable\n";
-    $context .= "Pressure <1009 hPa → Low pressure system, expect rain\n";
-    $context .= "Combined (high humidity + low pressure) → Heavy rainfall conditions\n\n";
-    
-    $context .= "=== EMERGENCY CONTACTS ===\n";
-    $context .= "NDRRMC Hotline: 911\n";
-    $context .= "PAGASA Weather: (02) 8284-0800\n";
-    $context .= "Red Cross: 143\n\n";
-    
-    // ============================================================================
-    // CONVERSATIONAL CONTEXT MEMORY
-    // ============================================================================
-    
-    if (!empty($conversationHistory)) {
-        $context .= "=== RECENT CONVERSATION CONTEXT ===\n";
-        $context .= "Remember these recent exchanges to maintain conversation flow:\n";
-        
-        // Include last 3 exchanges for context
-        $recentHistory = array_slice($conversationHistory, -6); // Last 3 user + 3 assistant messages
-        foreach ($recentHistory as $msg) {
-            $role = ucfirst($msg['role']);
-            $content = substr($msg['content'], 0, 200); // Limit length
-            $context .= "{$role}: {$content}\n";
+            $context .= ($idx + 1) . ". {$t['name']} — Wind: {$t['windSpeed']} km/h, Distance: {$t['distance']} km\n";
+            if ($t['distance'] < 300)       $context .= "   ⚠️ IMMEDIATE DANGER\n";
+            elseif ($t['distance'] < 600)   $context .= "   ⚠️ HIGH ALERT\n";
+            else                            $context .= "   ℹ️ MONITORING\n";
         }
         $context .= "\n";
     }
-    
-    // ============================================================================
-    // SPECIAL INSTRUCTIONS
-    // ============================================================================
-    
-    $context .= "=== SPECIAL HANDLING INSTRUCTIONS ===\n";
-    $context .= "• NO HISTORICAL DATA: You don't have access to weather from yesterday/last week. ";
-    $context .= "If asked about past weather, politely explain you only have current conditions, then analyze what the current conditions suggest.\n\n";
-    
-    $context .= "• FOLLOW-UP QUESTIONS: When someone asks a follow-up like 'what about tomorrow?' or 'and the wind?', ";
-    $context .= "understand the context from previous messages. Don't ask 'what about tomorrow?' - infer they mean weather.\n\n";
-    
-    $context .= "• EMOTIONAL INTELLIGENCE: If someone sounds worried (e.g., 'am I safe?', 'should I be concerned?'), ";
-    $context .= "acknowledge their concern, give honest assessment, explain why, then provide clear actionable guidance.\n\n";
-    
-    $context .= "• EXPLAINING COMPLEX CONCEPTS: When explaining meteorology, use everyday analogies:\n";
-    $context .= "  - Low pressure = vacuum effect pulling air upward\n";
-    $context .= "  - High humidity = sponge that's completely full, one more drop causes overflow (rain)\n";
-    $context .= "  - Typhoon = giant spinning engine powered by warm ocean water\n\n";
-    
-    $context .= "• CONVERSATIONAL FLOW: Use transitions naturally:\n";
-    $context .= "  - 'Building on what I mentioned about the humidity...'\n";
-    $context .= "  - 'To add more context to that...'\n";
-    $context .= "  - 'You're absolutely right to ask about...'\n";
-    $context .= "  - 'That's a great follow-up question...'\n\n";
-    
-    $context .= "Remember: You're not just providing data - you're helping someone understand and prepare for weather. ";
-    $context .= "Be their knowledgeable, trustworthy weather expert who explains things clearly and cares about their safety.\n\n";
-    
-    // ============================================================================
-    // BUILD MESSAGES ARRAY WITH CONVERSATION HISTORY
-    // ============================================================================
-    
-    $messages = [
-        ['role' => 'system', 'content' => $context]
-    ];
-    
-    // Add conversation history
+
+    // ── REFERENCE DATA ────────────────────────────────────────────────────────
+    $context .= "=== PAGASA WIND SIGNAL REFERENCE ===\n";
+    $context .= "Signal #1: 39-61 km/h | #2: 62-88 km/h | #3: 89-117 km/h | #4: 118-184 km/h | #5: 185+ km/h\n\n";
+    $context .= "=== EMERGENCY CONTACTS ===\n";
+    $context .= "NDRRMC: 911 | PAGASA: (02) 8284-0800 | Red Cross: 143\n\n";
+    $context .= "=== SPECIAL HANDLING ===\n";
+    $context .= "• NO HISTORICAL DATA access beyond what's in conversation history\n";
+    $context .= "• If asked about past weather, reference the conversation history context\n";
+    $context .= "• EMOTIONAL INTELLIGENCE: Acknowledge concern, give honest assessment, provide clear guidance\n\n";
+
+    // ── BUILD MESSAGES ARRAY WITH DB HISTORY ─────────────────────────────────
+    $messages = [['role' => 'system', 'content' => $context]];
+
     if (!empty($conversationHistory)) {
         foreach ($conversationHistory as $msg) {
-            $messages[] = [
-                'role' => $msg['role'],
-                'content' => $msg['content']
-            ];
+            $messages[] = ['role' => $msg['role'], 'content' => $msg['content']];
         }
     }
-    
-    // Add current user message
+
     $messages[] = ['role' => 'user', 'content' => $message];
-    
-    // ============================================================================
-    // MAKE API CALL
-    // ============================================================================
-    
+
+    // ── GROQ API CALL ─────────────────────────────────────────────────────────
     $payload = json_encode([
-        'model' => 'llama-3.3-70b-versatile',
-        'messages' => $messages,
+        'model'       => 'llama-3.3-70b-versatile',
+        'messages'    => $messages,
         'temperature' => 0.7,
-        'max_tokens' => 800,
-        'top_p' => 0.9
+        'max_tokens'  => 800,
+        'top_p'       => 0.9,
     ]);
-    
+
     $ch = curl_init("https://api.groq.com/openai/v1/chat/completions");
     curl_setopt_array($ch, [
-        CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => $payload,
-        CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Authorization: Bearer ' . $apiKey],
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => $payload,
+        CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'Authorization: Bearer ' . $apiKey],
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 30
+        CURLOPT_TIMEOUT        => 30,
     ]);
-    
+
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $curlError = curl_error($ch);
+    $curlErr  = curl_error($ch);
     curl_close($ch);
-    
+
     if ($httpCode === 200 && $response) {
         $result = json_decode($response, true);
         if (isset($result['choices'][0]['message']['content'])) {
             return ['success' => true, 'text' => trim($result['choices'][0]['message']['content'])];
         }
     }
-    
+
     $errorMsg = 'AI service error';
     if ($response) {
         $result = json_decode($response, true);
         if (isset($result['error']['message'])) {
             $apiError = $result['error']['message'];
-            
-            if (strpos($apiError, 'Rate limit') !== false || strpos($apiError, 'TPD') !== false) {
-                $errorMsg = 'Rate limit reached. Please wait a few minutes and try again.';
-            } else {
-                $errorMsg = $apiError;
-            }
+            $errorMsg = (strpos($apiError, 'Rate limit') !== false || strpos($apiError, 'TPD') !== false)
+                ? 'Rate limit reached. Please wait a few minutes and try again.'
+                : $apiError;
         }
-    } elseif ($curlError) {
-        $errorMsg = 'Connection error: ' . $curlError;
+    } elseif ($curlErr) {
+        $errorMsg = 'Connection error: ' . $curlErr;
     }
-    
+
     return ['success' => false, 'error' => $errorMsg];
 }
 
+// ============================================================================
+// FALLBACK (unchanged from v3)
+// ============================================================================
+
 function getFallbackResponse($message, $weatherData, $typhoonData, $forecastData) {
     $msgLower = strtolower($message);
-    
-    // Historical weather questions
-    if (strpos($msgLower, 'yesterday') !== false || strpos($msgLower, 'last night') !== false || 
-        strpos($msgLower, 'last week') !== false || strpos($msgLower, 'past') !== false) {
-        
+
+    if (strpos($msgLower, 'yesterday') !== false || strpos($msgLower, 'last night') !== false ||
+        strpos($msgLower, 'last week')  !== false || strpos($msgLower, 'past')       !== false) {
         if ($weatherData) {
             $humidity = floatval($weatherData['humidity']);
             $pressure = floatval($weatherData['pressure']);
-            
             $response = "I don't have access to historical weather data from previous days. However, let me analyze your current conditions to provide context:\n\n";
-            $response .= "🌡️ Current Conditions:\n";
-            $response .= "• Humidity: {$weatherData['humidity']}%\n";
-            $response .= "• Pressure: {$weatherData['pressure']} hPa\n\n";
-            
+            $response .= "🌡️ Current Conditions:\n• Humidity: {$weatherData['humidity']}%\n• Pressure: {$weatherData['pressure']} hPa\n\n";
             if ($humidity >= 90 && $pressure < 1010) {
-                $response .= "What I can tell you is that right now, you have conditions ({$humidity}% humidity with {$pressure} hPa pressure) that typically produce heavy rain. ";
-                $response .= "If you experienced heavy rain recently, it was likely due to similar atmospheric patterns - high moisture combined with low pressure.";
-            } else if ($humidity >= 85) {
-                $response .= "Your current high humidity levels ({$humidity}%) suggest wet weather patterns. For historical data, I'd recommend checking PAGASA's website.";
+                $response .= "Right now you have conditions ({$humidity}% humidity with {$pressure} hPa pressure) that typically produce heavy rain. If you experienced heavy rain recently, it was likely due to similar atmospheric patterns.";
+            } elseif ($humidity >= 85) {
+                $response .= "Your current high humidity levels ({$humidity}%) suggest wet weather patterns. For historical data, check PAGASA's website.";
             }
-            
             return $response;
         }
     }
-    
-    // Rain forecast
+
     if (strpos($msgLower, 'rain') !== false || strpos($msgLower, 'tomorrow') !== false) {
         if ($forecastData && isset($forecastData['tomorrow'])) {
             $tmrw = $forecastData['tomorrow'];
-            $response = "🌤️ Tomorrow's Forecast:\n\n";
-            $response .= "• Temperature: {$tmrw['minTemp']}°C - {$tmrw['maxTemp']}°C\n";
-            $response .= "• Rain Probability: {$tmrw['precipProb']}%\n";
-            $response .= "• Expected Rainfall: {$tmrw['precip']}mm\n\n";
-            
+            $response = "🌤️ Tomorrow's Forecast:\n• Temperature: {$tmrw['minTemp']}°C - {$tmrw['maxTemp']}°C\n";
+            $response .= "• Rain Probability: {$tmrw['precipProb']}%\n• Expected Rainfall: {$tmrw['precip']}mm\n\n";
             if ($tmrw['precipProb'] > 70 || $tmrw['precip'] > 10) {
-                $response .= "☔ Yes, I'm seeing a high likelihood of rain tomorrow. The forecast indicates significant precipitation, so definitely bring an umbrella and plan accordingly.";
+                $response .= "☔ High likelihood of rain tomorrow. Bring an umbrella!";
             } elseif ($tmrw['precipProb'] > 40 || $tmrw['precip'] > 5) {
-                $response .= "🌦️ There's a moderate chance of rain. I'd suggest having an umbrella handy - better prepared than caught in a downpour!";
+                $response .= "🌦️ Moderate chance of rain. Have an umbrella handy.";
             } else {
-                $response .= "☀️ Looking fairly clear! Low chance of rain tomorrow based on current forecasts.";
+                $response .= "☀️ Low chance of rain tomorrow.";
             }
-            
             return $response;
         }
     }
-    
-    // Current weather
+
     if ($weatherData && (strpos($msgLower, 'weather') !== false || strpos($msgLower, 'current') !== false)) {
         $humidity = floatval($weatherData['humidity']);
         $pressure = floatval($weatherData['pressure']);
-        $wind = floatval($weatherData['windSpeed']);
-        
-        $response = "Let me break down your current weather situation:\n\n";
-        $response .= "📊 Conditions Right Now:\n";
+        $wind     = floatval($weatherData['windSpeed']);
+        $response = "📊 Conditions Right Now:\n";
         $response .= "• Humidity: {$weatherData['humidity']}% | Pressure: {$weatherData['pressure']} hPa\n";
         $response .= "• Wind: {$weatherData['windSpeed']} km/h | Temp: {$weatherData['temperature']}°C\n\n";
-        
         if ($humidity >= 95 && $pressure < 1010) {
-            $response .= "🌧️ HEAVY RAIN CONDITIONS: I'm seeing a critical combination here - extremely high humidity ({$humidity}%) with low pressure ({$pressure} hPa). ";
-            $response .= "This is the classic setup for heavy rainfall in the Philippines. The atmosphere is saturated and the low pressure is forcing that moisture upward, causing it to condense into rain. ";
-            $response .= "If it's not raining yet where you are, it very likely will be soon. Stay alert for flooding in low-lying areas.";
-        } else if ($humidity >= 90 && $pressure < 1010) {
-            $response .= "⚠️ Active Rain Pattern: The combination of high humidity ({$humidity}%) and below-normal pressure ({$pressure} hPa) means your area is under an active weather system. Heavy rain is likely or already occurring.";
-        } else if ($wind > 60) {
-            $response .= "💨 Strong Winds Alert: {$wind} km/h winds require caution. Secure loose objects and avoid unnecessary outdoor activities.";
+            $response .= "🌧️ HEAVY RAIN CONDITIONS: Critical combination of extreme humidity and low pressure.";
+        } elseif ($humidity >= 90 && $pressure < 1010) {
+            $response .= "⚠️ Active Rain Pattern: High humidity and below-normal pressure — heavy rain likely.";
+        } elseif ($wind > 60) {
+            $response .= "💨 Strong Winds Alert: {$wind} km/h. Secure loose objects.";
         } else {
-            $response .= "✓ Conditions are within normal range for a tropical region. Stay weather-aware as always.";
+            $response .= "✓ Conditions within normal range for a tropical region.";
         }
-        
         return $response;
     }
-    
-    // Safety questions
-    if (strpos($msgLower, 'safe') !== false) {
-        if (!empty($typhoonData)) {
-            $closest = $typhoonData[0];
-            if ($closest['distance'] < 300) {
-                return "⚠️ SAFETY ALERT: I need to be direct with you - Typhoon {$closest['name']} is only {$closest['distance']}km away with {$closest['windSpeed']} km/h winds. This is very close and represents a direct threat. Please follow any evacuation orders from local authorities immediately. If you haven't already, secure your property and prepare your emergency supplies. Monitor PAGASA updates constantly at (02) 8284-0800 or call 911 for emergencies.";
-            } else {
-                return "Currently monitoring: Typhoon {$closest['name']} is {$closest['distance']}km away. While not in immediate danger zone, I recommend completing your typhoon preparations and staying informed through PAGASA bulletins.";
-            }
-        } else {
-            return "✓ Good news - no active typhoons are threatening your area right now. However, this is typhoon season in the Philippines, so it's always smart to have your emergency kit ready and know your evacuation routes. Stay weather-aware!";
+
+    if (strpos($msgLower, 'safe') !== false && !empty($typhoonData)) {
+        $t = $typhoonData[0];
+        if ($t['distance'] < 300) {
+            return "⚠️ SAFETY ALERT: Typhoon {$t['name']} is only {$t['distance']}km away with {$t['windSpeed']} km/h winds. Follow evacuation orders. Call 911 for emergencies.";
         }
+        return "Currently monitoring Typhoon {$t['name']} at {$t['distance']}km. Prepare emergency kit and monitor PAGASA.";
     }
-    
-    // Default
-    return "I'm here to help with weather and safety information. Right now, I can tell you about:\n\n• Current weather conditions and what they mean\n• Typhoon threats and safety guidance\n• How to prepare and stay safe\n\nWhat would you like to know?";
+
+    return "I'm here to help with weather and safety information. Ask me about current conditions, typhoon threats, or emergency preparedness. NDRRMC: 911 | PAGASA: (02) 8284-0800";
 }
 ?>
 <!DOCTYPE html>
@@ -462,7 +450,7 @@ function getFallbackResponse($message, $weatherData, $typhoonData, $forecastData
             </div>
         </div>
     </div>
-    
+
     <div class="container">
         <div class="card">
             <div class="card-header">
@@ -477,7 +465,7 @@ function getFallbackResponse($message, $weatherData, $typhoonData, $forecastData
                     <div>Scanning for typhoons...</div>
                 </div>
             </div>
-            
+
             <div class="weather-section">
                 <div class="weather-header">
                     <h3>Real-Time Weather</h3>
@@ -492,14 +480,10 @@ function getFallbackResponse($message, $weatherData, $typhoonData, $forecastData
                         </div>
                         <div class="weather-info">
                             <div class="weather-label">Wind Speed</div>
-                            <div class="weather-value" id="windSpeed">
-                                <span class="value-number">--</span>
-                                <span class="value-unit">km/h</span>
-                            </div>
+                            <div class="weather-value" id="windSpeed"><span class="value-number">--</span><span class="value-unit">km/h</span></div>
                             <div class="weather-status" id="windStatus">Checking...</div>
                         </div>
                     </div>
-                    
                     <div class="weather-card temp">
                         <div class="weather-icon-animated">
                             <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
@@ -508,14 +492,10 @@ function getFallbackResponse($message, $weatherData, $typhoonData, $forecastData
                         </div>
                         <div class="weather-info">
                             <div class="weather-label">Temperature</div>
-                            <div class="weather-value" id="temperature">
-                                <span class="value-number">--</span>
-                                <span class="value-unit">°C</span>
-                            </div>
+                            <div class="weather-value" id="temperature"><span class="value-number">--</span><span class="value-unit">°C</span></div>
                             <div class="weather-status" id="tempStatus">Checking...</div>
                         </div>
                     </div>
-                    
                     <div class="weather-card pressure">
                         <div class="weather-icon-animated">
                             <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
@@ -525,14 +505,10 @@ function getFallbackResponse($message, $weatherData, $typhoonData, $forecastData
                         </div>
                         <div class="weather-info">
                             <div class="weather-label">Pressure</div>
-                            <div class="weather-value" id="pressure">
-                                <span class="value-number">--</span>
-                                <span class="value-unit">hPa</span>
-                            </div>
+                            <div class="weather-value" id="pressure"><span class="value-number">--</span><span class="value-unit">hPa</span></div>
                             <div class="weather-status" id="pressureStatus">Checking...</div>
                         </div>
                     </div>
-                    
                     <div class="weather-card humidity">
                         <div class="weather-icon-animated">
                             <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
@@ -541,15 +517,11 @@ function getFallbackResponse($message, $weatherData, $typhoonData, $forecastData
                         </div>
                         <div class="weather-info">
                             <div class="weather-label">Humidity</div>
-                            <div class="weather-value" id="humidity">
-                                <span class="value-number">--</span>
-                                <span class="value-unit">%</span>
-                            </div>
+                            <div class="weather-value" id="humidity"><span class="value-number">--</span><span class="value-unit">%</span></div>
                             <div class="weather-status" id="humidityStatus">Checking...</div>
                         </div>
                     </div>
                 </div>
-                
                 <div class="location-badge">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="display:inline-block;vertical-align:middle;margin-right:6px">
                         <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z" stroke="currentColor" stroke-width="2"/>
@@ -559,60 +531,61 @@ function getFallbackResponse($message, $weatherData, $typhoonData, $forecastData
                 </div>
             </div>
         </div>
-        
+
         <div class="card">
             <div class="card-header">
                 <span class="card-title">🗺️ Typhoon Map</span>
             </div>
-            <div id="map" style="height: 500px; width: 100%;"></div>
+            <div id="map" style="height:500px;width:100%;"></div>
         </div>
-        
-<div class="chat-bubble-container" id="chatBubbleContainer">
-    <button class="chat-bubble-button" onclick="toggleChatBubble()">
-        <span class="chat-bubble-icon">💬</span>
-        <span class="chat-bubble-text">AI Assistant</span>
-    </button>
-    
-    <div class="chat-bubble-window" id="chatBubbleWindow" style="overflow: visible !important;">
-        <div style="background: #374151; color: white; padding: 1.5rem; display: flex; justify-content: space-between; align-items: center; min-height: 85px; flex-shrink: 0; border-radius: 16px 16px 0 0;">
-            <div style="display: flex; flex-direction: column; gap: 0.75rem; flex: 1;">
-                <div style="font-size: 1.25rem; font-weight: 700; color: #ffffff; margin: 0; padding: 0; line-height: 1.2;">
-                    🤖 AI Safety Assistant
+
+        <div class="chat-bubble-container" id="chatBubbleContainer">
+            <button class="chat-bubble-button" onclick="toggleChatBubble()">
+                <span class="chat-bubble-icon">💬</span>
+                <span class="chat-bubble-text">AI Assistant</span>
+            </button>
+
+            <div class="chat-bubble-window" id="chatBubbleWindow" style="overflow:visible!important">
+                <div style="background:#374151;color:white;padding:1.5rem;display:flex;justify-content:space-between;align-items:center;min-height:85px;flex-shrink:0;border-radius:16px 16px 0 0">
+                    <div style="display:flex;flex-direction:column;gap:0.75rem;flex:1">
+                        <div style="font-size:1.25rem;font-weight:700;color:#ffffff">🤖 AI Safety Assistant</div>
+                        <div style="font-size:0.875rem;color:#e5e7eb;display:flex;align-items:center;gap:0.5rem">
+                            <span style="color:#10b981">●</span>
+                            <span id="chatStatus">Online &amp; Ready</span>
+                            <span id="historyBadge" style="display:none;background:rgba(255,255,255,0.15);padding:2px 8px;border-radius:10px;font-size:0.75rem"></span>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:0.5rem">
+                        <button onclick="clearChatHistory()" title="Clear chat" style="background:rgba(255,255,255,0.1);border:none;color:white;width:36px;height:36px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center">🗑️</button>
+                        <button onclick="toggleChatBubble()" title="Close" style="background:rgba(255,255,255,0.1);border:none;color:white;width:36px;height:36px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center">✕</button>
+                    </div>
                 </div>
-                <div style="font-size: 0.875rem; color: #e5e7eb; font-weight: 500; display: flex; align-items: center; gap: 0.5rem;">
-                    <span style="color: #10b981;">●</span>
-                    <span>Online & Ready</span>
+
+                <div class="chat-container" id="chatContainer" style="flex:1;overflow-y:auto;padding:1.5rem;background:#f9fafb"></div>
+
+                <div class="input-area" style="padding:1rem 1.5rem;background:white;border-top:1px solid #e5e7eb;flex-shrink:0">
+                    <div class="quick-questions" style="margin-bottom:0.75rem">
+                        <div class="quick-btns" style="display:flex;gap:0.5rem;flex-wrap:wrap">
+                            <button class="quick-btn" onclick="askQuestion('Am I safe from typhoons?')">Am I safe?</button>
+                            <button class="quick-btn" onclick="askQuestion('What should be in my emergency kit?')">Emergency kit</button>
+                            <button class="quick-btn" onclick="askQuestion('Should I evacuate?')">Evacuate?</button>
+                            <button class="quick-btn" onclick="askQuestion('What insights do you have from our previous conversations?')">💡 Recall insights</button>
+                        </div>
+                    </div>
+                    <div class="input-group" style="display:flex;gap:0.5rem">
+                        <input type="text" id="messageInput" placeholder="Ask about typhoons, safety, weather..." autocomplete="off"
+                               onkeypress="if(event.key==='Enter')sendMessage()"
+                               style="flex:1;padding:0.875rem 1.25rem;border:2px solid #e5e7eb;border-radius:25px;font-size:0.9375rem;outline:none;background:#f9fafb">
+                        <button id="sendBtn" onclick="sendMessage()" style="width:48px;height:48px;background:#374151;color:white;border:none;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
-            </div>
-            <div style="display: flex; gap: 0.5rem;">
-                <button onclick="clearChatHistory()" title="Clear chat" style="background: rgba(255,255,255,0.1); border: none; color: white; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center;">🗑️</button>
-                <button onclick="toggleChatBubble()" title="Close" style="background: rgba(255,255,255,0.1); border: none; color: white; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center;">✕</button>
             </div>
         </div>
-        
-        <div class="chat-container" id="chatContainer" style="flex: 1; overflow-y: auto; padding: 1.5rem; background: #f9fafb;"></div>
-        
-        <div class="input-area" style="padding: 1rem 1.5rem; background: white; border-top: 1px solid #e5e7eb; flex-shrink: 0;">
-            <div class="quick-questions" style="margin-bottom: 0.75rem;">
-                <div class="quick-btns" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                    <button class="quick-btn" onclick="askQuestion('Am I safe from typhoons?')">Am I safe?</button>
-                    <button class="quick-btn" onclick="askQuestion('What should be in my emergency kit?')">Emergency kit</button>
-                    <button class="quick-btn" onclick="askQuestion('Should I evacuate?')">Evacuate?</button>
-                    <button class="quick-btn" onclick="askQuestion('Explain PAGASA signals')">Signals</button>
-                </div>
-            </div>
-            <div class="input-group" style="display: flex; gap: 0.5rem;">
-                <input type="text" id="messageInput" placeholder="Ask about typhoons, safety, weather..." autocomplete="off" onkeypress="if(event.key==='Enter')sendMessage()" style="flex: 1; padding: 0.875rem 1.25rem; border: 2px solid #e5e7eb; border-radius: 25px; font-size: 0.9375rem; outline: none; background: #f9fafb;">
-                <button id="sendBtn" onclick="sendMessage()" style="width: 48px; height: 48px; background: #374151; color: white; border: none; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center;">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
-                    </svg>
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
-        
+
         <div class="card forecast-full">
             <div class="card-header">
                 <span class="card-title">📅 7-Day Weather Forecast</span>
@@ -622,40 +595,41 @@ function getFallbackResponse($message, $weatherData, $typhoonData, $forecastData
             </div>
         </div>
     </div>
-    
-<div id="forecastModal" class="modal">
-    <div class="modal-content">
-        <span class="modal-close" onclick="closeForecastModal()">&times;</span>
-        <h2 id="modalDayName">Weather Details</h2>
-        <div id="modalContent"></div>
-    </div>
-</div>
 
-<div id="clearChatModal" class="modal">
-    <div class="modal-content clear-chat-modal">
-        <div class="modal-icon-header">
-            <div class="modal-icon-circle">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-                </svg>
+    <div id="forecastModal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closeForecastModal()">&times;</span>
+            <h2 id="modalDayName">Weather Details</h2>
+            <div id="modalContent"></div>
+        </div>
+    </div>
+
+    <div id="clearChatModal" class="modal">
+        <div class="modal-content clear-chat-modal" style="padding:2rem">
+            <div class="modal-icon-header">
+                <div class="modal-icon-circle">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                    </svg>
+                </div>
+            </div>
+            <h2 class="modal-title-center">Clear Chat History?</h2>
+            <p class="modal-description">This will permanently delete all your conversation history from the database. The AI will no longer be able to recall past conversations. This action cannot be undone.</p>
+            <div class="modal-actions">
+                <button class="modal-btn modal-btn-cancel" onclick="closeClearChatModal()">Cancel</button>
+                <button class="modal-btn modal-btn-danger" onclick="confirmClearChat()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:0.5rem">
+                        <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                    </svg>
+                    Clear History
+                </button>
             </div>
         </div>
-        <h2 class="modal-title-center">Clear Chat History?</h2>
-        <p class="modal-description">This will permanently delete all your conversation history with the AI assistant. This action cannot be undone.</p>
-        <div class="modal-actions">
-            <button class="modal-btn modal-btn-cancel" onclick="closeClearChatModal()">Cancel</button>
-            <button class="modal-btn modal-btn-danger" onclick="confirmClearChat()">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.5rem;">
-                    <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-                </svg>
-                Clear History
-            </button>
-        </div>
     </div>
-</div>
-    
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="typhoon_ml_system.js"></script>
-<script src="script.js"></script>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="typhoon_ml_system.js"></script>
+    <script src="script.js"></script>
+    <script src="chat_db.js"></script>
 </body>
 </html>

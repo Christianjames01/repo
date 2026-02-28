@@ -189,8 +189,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['resolution_action']))
             }
             if (empty($residents_list)) { $res_error = 'No recipients found.'; $active_tab = 'resolution'; }
             else {
-                $sent = 0; $fails = 0; $fail_list = [];
+               $sent = 0; $fails = 0; $fail_list = [];
                 foreach ($residents_list as $r) {
+                        $body_html = getEmailTemplate([
+                            'title'       => htmlspecialchars($res_subject),
+                            'greeting'    => 'Dear ' . htmlspecialchars($r['full_name'] ?: 'Resident') . ',',
+                            'message'     => nl2br(htmlspecialchars(preg_replace('/^Dear\s+Resident,?\s*/i', '', $res_body_raw))),
+                            'footer_text' => (defined('APP_NAME') ? APP_NAME : 'Barangay System') . ' — Barangay Office'
+                        ]);
                     try { $ok = sendEmail($r['email'], $res_subject, $body_html, $r['full_name']); } catch (Throwable $e) { error_log("Res sendEmail: " . $e->getMessage()); $ok = false; }
                     if ($ok) {
                         $sent++;
