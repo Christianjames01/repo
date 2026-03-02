@@ -6,7 +6,7 @@ requireLogin();
 $page_title = 'Revenue Management';
 $user_role = getCurrentUserRole();
 
-if (!in_array($user_role, ['Super Admin', 'Treasurer', 'Admin'])) {
+if (!in_array($user_role, ['Super Admin', 'Treasurer'])) {
     header('Location: ../../modules/dashboard/index.php');
     exit();
 }

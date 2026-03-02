@@ -210,8 +210,31 @@
     position: relative;
 }
 
-.calendar-day:hover {
-    background: #f7fafc;
+/* ── Day hover: highlighted border + glow ── */
+.cal-day:hover {
+    background: var(--db-surf2);
+    outline: 2px solid var(--db-navy-light);
+    outline-offset: -2px;
+    box-shadow: inset 0 0 0 2px rgba(28, 52, 97, 0.08),
+        0 0 12px rgba(28, 52, 97, 0.12);
+    z-index: 1;
+    transition: background .15s, outline .15s, box-shadow .15s;
+}
+
+/* Today hover gets amber glow instead */
+.cal-day--today:hover {
+    background: #dbeafe;
+    outline: 2px solid var(--db-navy);
+    outline-offset: -2px;
+    box-shadow: inset 0 0 0 2px rgba(28, 52, 97, 0.1),
+        0 0 14px rgba(28, 52, 97, 0.18);
+}
+
+/* Empty leading cells never glow */
+.cal-day--empty:hover {
+    background: #f8fafc;
+    outline: none;
+    box-shadow: none;
 }
 
 .calendar-day.other-month {
@@ -351,7 +374,9 @@
     line-height: 1.3;
 }
 
-.event-date, .event-time, .event-location {
+.event-date,
+.event-time,
+.event-location {
     font-size: 0.85rem;
     color: #718096;
     display: flex;
@@ -360,7 +385,9 @@
     margin-bottom: 0.4rem;
 }
 
-.event-date i, .event-time i, .event-location i {
+.event-date i,
+.event-time i,
+.event-location i {
     color: #4a5568;
     width: 14px;
 }
@@ -378,11 +405,35 @@
     border: 1px solid #cbd5e0;
 }
 
-.type-meeting { background: #cbd5e0; color: #2d3748; border-color: #a0aec0; }
-.type-activity { background: #e2e8f0; color: #4a5568; border-color: #cbd5e0; }
-.type-holiday { background: #f7fafc; color: #4a5568; border-color: #cbd5e0; }
-.type-announcement { background: #f7fafc; color: #4a5568; border-color: #cbd5e0; }
-.type-other { background: #e2e8f0; color: #4a5568; border-color: #cbd5e0; }
+.type-meeting {
+    background: #cbd5e0;
+    color: #2d3748;
+    border-color: #a0aec0;
+}
+
+.type-activity {
+    background: #e2e8f0;
+    color: #4a5568;
+    border-color: #cbd5e0;
+}
+
+.type-holiday {
+    background: #f7fafc;
+    color: #4a5568;
+    border-color: #cbd5e0;
+}
+
+.type-announcement {
+    background: #f7fafc;
+    color: #4a5568;
+    border-color: #cbd5e0;
+}
+
+.type-other {
+    background: #e2e8f0;
+    color: #4a5568;
+    border-color: #cbd5e0;
+}
 
 /* Modal */
 .modal {
@@ -420,6 +471,7 @@
         opacity: 0;
         transform: translateY(-20px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
@@ -564,13 +616,13 @@ textarea.form-control {
     margin-bottom: 1.25rem;
 }
 
-.view-event-body > div {
+.view-event-body>div {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
 }
 
-.view-event-body > div > div {
+.view-event-body>div>div {
     display: flex;
     align-items: center;
     gap: 0.6rem;
@@ -594,7 +646,8 @@ textarea.form-control {
     border-top: 1px solid #e2e8f0;
 }
 
-.btn-edit, .btn-delete {
+.btn-edit,
+.btn-delete {
     padding: 0.75rem 1.25rem;
     border: 1px solid;
     border-radius: 4px;
@@ -650,6 +703,7 @@ textarea.form-control {
         opacity: 0;
         transform: translateY(-10px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
@@ -686,7 +740,7 @@ textarea.form-control {
     .calendar-layout {
         grid-template-columns: 1fr;
     }
-    
+
     .calendar-sidebar {
         max-height: 450px;
     }
@@ -696,45 +750,45 @@ textarea.form-control {
     .calendar-container {
         padding: 1rem;
     }
-    
+
     .page-header {
         padding: 1.25rem;
     }
-    
+
     .page-title {
         font-size: 1.35rem;
     }
-    
+
     .page-title i {
         font-size: 1.75rem;
     }
-    
+
     .calendar-day {
         min-height: 75px;
         padding: 0.4rem;
     }
-    
+
     .day-number {
         font-size: 0.85rem;
     }
-    
+
     .day-event {
         font-size: 0.65rem;
         padding: 0.2rem 0.35rem;
     }
-    
+
     .form-row {
         grid-template-columns: 1fr;
     }
-    
+
     .current-month {
         font-size: 1.2rem;
     }
-    
+
     .calendar-nav {
         flex-wrap: wrap;
     }
-    
+
     .nav-btn {
         font-size: 0.8rem;
         padding: 0.45rem 0.85rem;

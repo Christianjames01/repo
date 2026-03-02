@@ -1,8 +1,4 @@
 <?php
-/**
- * Admin Attendance Management — Dashboard UI Edition
- * modules/attendance/admin/index.php
- */
 
 require_once __DIR__ . '/../../../config/config.php';
 require_once __DIR__ . '/../../../includes/functions.php';
@@ -16,7 +12,7 @@ if (!isLoggedIn()) {
 }
 
 $user_role = getCurrentUserRole();
-if (!in_array($user_role, ['Admin', 'Super Admin', 'Staff'])) {
+if (!in_array($user_role, ['Super Admin', 'Staff'])) {
     redirect('/barangaylink/modules/dashboard/index.php', 'Access denied', 'error');
 }
 
