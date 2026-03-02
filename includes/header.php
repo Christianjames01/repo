@@ -882,16 +882,7 @@ $current_path = $_SERVER['PHP_SELF'];
                     <i class="fas fa-award"></i><span>Scholarships</span>
                 </a>
             </div>
-            <div class="nav-item">
-                <a href="<?php echo $base_url; ?>/modules/education/student-records.php" class="nav-link <?php echo basename($current_path)=='student-records.php'?'active':''; ?>">
-                    <i class="fas fa-notes-medical"></i><span>Student Records</span>
-                </a>
-            </div>
-            <div class="nav-item">
-                <a href="<?php echo $base_url; ?>/modules/education/view-application.php" class="nav-link <?php echo basename($current_path)=='view-application.php'?'active':''; ?>">
-                    <i class="fas fa-clipboard-check"></i><span>View Applications</span>
-                </a>
-            </div>
+
             <div class="nav-item">
                 <a href="<?php echo $base_url; ?>/modules/education/view-student.php" class="nav-link <?php echo basename($current_path)=='view-student.php'?'active':''; ?>">
                     <i class="fas fa-eye"></i><span>View Student</span>

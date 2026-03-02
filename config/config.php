@@ -64,7 +64,7 @@ define('MUNICIPALITY', 'Davao City');
 define('PROVINCE', 'Davao del Sur');
 define('BARANGAY_ADDRESS', 'San Juan, Brgy Centro, Agdao, Davao City, Philippines');
 define('BARANGAY_CONTACT', '+63 9487970726');
-define('BARANGAY_EMAIL', 'barangay.centro@gmail.com');
+define('BARANGAY_EMAIL', 'sanjuanbrgycentro@gmail.com');
 define('BARANGAY_LOGO', '/barangaylink1/assets/images/brgy.png');
 define('BASE_URL', '/barangaylink1');
 $base_url = '/barangaylink1';

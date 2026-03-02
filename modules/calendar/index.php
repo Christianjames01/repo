@@ -260,7 +260,30 @@ include '../../includes/header.php';
     position: relative;
 }
 .cal-day:nth-child(7n) { border-right: none; }
-.cal-day:hover { background: var(--db-surf2); }
+.cal-day:hover {
+    background: #eef2f7;
+    outline: 2px solid #3b5998;
+    outline-offset: -2px;
+    box-shadow: inset 0 0 0 2px rgba(28,52,97,.08),
+                0 0 12px rgba(28,52,97,.14);
+    z-index: 1;
+    transition: background .15s, outline .15s, box-shadow .15s;
+}
+
+.cal-day--today:hover {
+    background: #dbeafe;
+    outline: 2px solid #1c3461;
+    outline-offset: -2px;
+    box-shadow: inset 0 0 0 2px rgba(28,52,97,.12),
+                0 0 16px rgba(28,52,97,.2);
+}
+
+.cal-day--empty:hover {
+    background: #f8fafc;
+    outline: none;
+    box-shadow: none;
+    cursor: default;
+}
 
 .cal-day--empty {
     background: #f8fafc;
