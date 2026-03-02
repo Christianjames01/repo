@@ -934,11 +934,15 @@ const typeColors = {
 };
 
 /* ── Add event ── */
-function openAddEventModal() {
+function openAddEventModal(date = '') {
     document.getElementById('modalTitle').innerHTML = '<i class="fas fa-calendar-plus"></i> Add Event';
     document.getElementById('formAction').value = 'add';
     document.getElementById('eventForm').reset();
     document.getElementById('deleteSection').style.display = 'none';
+    // Pre-fill date if provided
+    if (date) {
+        document.getElementById('eventDate').value = date;
+    }
     openModal('eventModal');
 }
 
@@ -992,7 +996,12 @@ function viewEvent(id) {
 
 /* ── View day (multiple events) ── */
 function viewDayEvents(date) {
-    if (!events[date] || !events[date].length) return;
+    // Empty day → open Add Event with date pre-filled (managers only)
+    if (!events[date] || !events[date].length) {
+        if (canManage) openAddEventModal(date);
+        return;
+    }
+
     const dayEvs = events[date];
 
     let html = `<p style="font-family:'DM Mono',monospace;font-size:10.5px;color:var(--db-muted);margin-bottom:14px;">${formatDate(date)}</p>
@@ -1011,7 +1020,20 @@ function viewDayEvents(date) {
         </div>`;
     });
 
-    html += `</div><button onclick="closeModal('viewEventModal')" class="db-btn db-btn--ghost" style="width:100%;margin-top:16px;">Close</button>`;
+    html += `</div>`;
+
+    // Buttons row
+    if (canManage) {
+        html += `<div style="display:flex;gap:8px;margin-top:16px;">
+            <button onclick="closeModal('viewEventModal');openAddEventModal('${date}')" class="db-btn db-btn--primary" style="flex:1;">
+                <i class="fas fa-plus"></i> Add Event
+            </button>
+            <button onclick="closeModal('viewEventModal')" class="db-btn db-btn--ghost" style="flex:1;">Close</button>
+        </div>`;
+    } else {
+        html += `<button onclick="closeModal('viewEventModal')" class="db-btn db-btn--ghost" style="width:100%;margin-top:16px;">Close</button>`;
+    }
+
     document.getElementById('eventDetailsContainer').innerHTML = html;
     openModal('viewEventModal');
 }
