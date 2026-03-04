@@ -1,33 +1,26 @@
 <?php
 require_once '../../../config/config.php';
-
 requireLogin();
 $user_role = getCurrentUserRole();
-$user_id = getCurrentUserId();
+$user_id   = getCurrentUserId();
 $page_title = 'Recycling Programs';
 
-// Handle program enrollment
+// Handle enrollment POST (unchanged logic)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['enroll_program'])) {
-    $program_id = (int)$_POST['program_id'];
+    $program_id  = (int)$_POST['program_id'];
     $resident_id = fetchOne($conn, "SELECT resident_id FROM tbl_users WHERE user_id = ?", [$user_id], 'i')['resident_id'] ?? null;
-    
     if ($resident_id) {
-        // Check if already enrolled
-        $existing = fetchOne($conn, 
-            "SELECT participant_id FROM tbl_recycling_participants 
-             WHERE program_id = ? AND resident_id = ?",
+        $existing = fetchOne($conn,
+            "SELECT participant_id FROM tbl_recycling_participants WHERE program_id = ? AND resident_id = ?",
             [$program_id, $resident_id], 'ii'
         );
-        
         if ($existing) {
             setMessage('You are already enrolled in this program!', 'warning');
         } else {
             $result = executeQuery($conn,
-                "INSERT INTO tbl_recycling_participants (program_id, resident_id, enrollment_date, status) 
-                 VALUES (?, ?, NOW(), 'active')",
+                "INSERT INTO tbl_recycling_participants (program_id, resident_id, enrollment_date, status) VALUES (?, ?, NOW(), 'active')",
                 [$program_id, $resident_id], 'ii'
             );
-            
             if ($result) {
                 setMessage('Successfully enrolled in the recycling program!', 'success');
                 logActivity($conn, $user_id, "Enrolled in recycling program ID: $program_id", 'tbl_recycling_participants', $conn->insert_id);
@@ -36,24 +29,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['enroll_program'])) {
             }
         }
     }
-    
     header('Location: recycling.php');
     exit();
 }
 
-// Get all active programs
-$programs = fetchAll($conn, 
-    "SELECT * FROM tbl_recycling_programs 
-     WHERE status = 'active' 
-     ORDER BY created_at DESC"
-);
-
-// Get user's enrolled programs
+$programs = fetchAll($conn, "SELECT * FROM tbl_recycling_programs WHERE status = 'active' ORDER BY created_at DESC");
 $resident_id = fetchOne($conn, "SELECT resident_id FROM tbl_users WHERE user_id = ?", [$user_id], 'i')['resident_id'] ?? null;
 $enrolled_programs = [];
 if ($resident_id) {
     $enrolled_programs = fetchAll($conn,
-        "SELECT rp.*, p.program_name, p.program_type 
+        "SELECT rp.*, p.program_name, p.program_type
          FROM tbl_recycling_participants rp
          JOIN tbl_recycling_programs p ON rp.program_id = p.program_id
          WHERE rp.resident_id = ? AND rp.status = 'active'
@@ -62,276 +47,286 @@ if ($resident_id) {
     );
 }
 
+$extra_css = '<link rel="stylesheet" href="../../../assets/css/waste-pages.css?v=' . time() . '">';
 include '../../../includes/header.php';
+
+// Enrolled set for quick lookup
+$enrolled_ids = array_column($enrolled_programs, 'program_id');
+
+// Type icons map
+$type_icons = [
+    'Paper'    => ['fa-newspaper',     'wp-badge--info'],
+    'Plastic'  => ['fa-recycle',       'wp-badge--primary'],
+    'Metal'    => ['fa-cog',           'wp-badge--muted'],
+    'Glass'    => ['fa-wine-bottle',   'wp-badge--info'],
+    'E-Waste'  => ['fa-laptop',        'wp-badge--danger'],
+    'Organic'  => ['fa-leaf',          'wp-badge--success'],
+    'General'  => ['fa-recycle',       'wp-badge--teal'],
+];
 ?>
 
-<style>
-.program-card {
-    border-left: 4px solid #28a745;
-    transition: all 0.3s;
-    height: 100%;
-}
-.program-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 8px 16px rgba(0,0,0,0.1);
-}
-.badge-program {
-    font-size: 0.75rem;
-    padding: 0.35em 0.65em;
-}
-.enrolled-badge {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    z-index: 1;
-}
-.incentive-item {
-    background: #f8f9fa;
-    padding: 0.5rem;
-    border-radius: 0.25rem;
-    margin-bottom: 0.5rem;
-}
-</style>
+<!-- ── PAGE HERO ── -->
+<div class="wp-hero">
+    <div class="wp-hero__ring wp-hero__ring--1"></div>
+    <div class="wp-hero__ring wp-hero__ring--2"></div>
+    <div class="wp-hero__ring wp-hero__ring--3"></div>
+    <div class="wp-hero__inner">
+        <div class="wp-hero__left">
+            <div class="wp-hero__icon wp-hero__icon--teal">
+                <i class="fas fa-recycle"></i>
+            </div>
+            <div>
+                <h1 class="wp-hero__title">Recycling Programs</h1>
+                <p class="wp-hero__sub">Join our programs and help build a cleaner, greener barangay</p>
+            </div>
+        </div>
+        <?php if (!empty($enrolled_programs)): ?>
+        <div class="wp-hero__actions">
+            <span class="wp-badge wp-badge--success" style="padding:6px 14px;font-size:12px;">
+                <i class="fas fa-check-circle"></i> Enrolled in <?php echo count($enrolled_programs); ?> program<?php echo count($enrolled_programs) > 1 ? 's' : ''; ?>
+            </span>
+        </div>
+        <?php endif; ?>
+    </div>
+</div>
 
-<div class="container-fluid py-4">
-    <!-- Header -->
-    <div class="row mb-4">
-        <div class="col-md-12">
-            <div class="d-flex justify-content-between align-items-center">
+<?php if ($msg = displayMessage()): ?>
+<div style="margin-bottom:16px"><?php echo $msg; ?></div>
+<?php endif; ?>
+
+<!-- ── STAT CARDS ── -->
+<div class="wp-stats-row">
+    <div class="wp-stat-card">
+        <div class="wp-stat-card__icon wp-stat-card__icon--teal"><i class="fas fa-recycle"></i></div>
+        <div>
+            <div class="wp-stat-card__num"><?php echo count($programs); ?></div>
+            <div class="wp-stat-card__label">Active Programs</div>
+        </div>
+        <div class="wp-stat-card__sparkline wp-stat-card__sparkline--teal"></div>
+    </div>
+    <div class="wp-stat-card">
+        <div class="wp-stat-card__icon wp-stat-card__icon--success"><i class="fas fa-user-check"></i></div>
+        <div>
+            <div class="wp-stat-card__num"><?php echo count($enrolled_programs); ?></div>
+            <div class="wp-stat-card__label">My Enrollments</div>
+        </div>
+        <div class="wp-stat-card__sparkline wp-stat-card__sparkline--success"></div>
+    </div>
+    <?php
+    $total_kg    = array_sum(array_column($enrolled_programs, 'total_weight_kg'));
+    $total_pts   = array_sum(array_column($enrolled_programs, 'points_earned'));
+    $total_items = array_sum(array_column($enrolled_programs, 'total_items'));
+    ?>
+    <div class="wp-stat-card">
+        <div class="wp-stat-card__icon wp-stat-card__icon--amber"><i class="fas fa-weight"></i></div>
+        <div>
+            <div class="wp-stat-card__num"><?php echo number_format($total_kg, 1); ?><small style="font-size:14px;font-weight:600"> kg</small></div>
+            <div class="wp-stat-card__label">Total Contributed</div>
+        </div>
+        <div class="wp-stat-card__sparkline wp-stat-card__sparkline--amber"></div>
+    </div>
+    <div class="wp-stat-card">
+        <div class="wp-stat-card__icon wp-stat-card__icon--indigo"><i class="fas fa-star"></i></div>
+        <div>
+            <div class="wp-stat-card__num"><?php echo number_format($total_pts); ?></div>
+            <div class="wp-stat-card__label">Points Earned</div>
+        </div>
+        <div class="wp-stat-card__sparkline wp-stat-card__sparkline--indigo"></div>
+    </div>
+</div>
+
+<!-- ── MY ENROLLED PROGRAMS ── -->
+<?php if (!empty($enrolled_programs)): ?>
+<div class="wp-enrolled-panel">
+    <div class="wp-enrolled-panel__header">
+        <i class="fas fa-check-circle"></i>
+        <h2>My Enrolled Programs</h2>
+    </div>
+    <div class="wp-enrolled-panel__body">
+        <div class="wp-table-wrap">
+            <table class="wp-table">
+                <thead>
+                    <tr>
+                        <th>Program</th>
+                        <th>Type</th>
+                        <th>Enrolled Since</th>
+                        <th>Contribution (kg)</th>
+                        <th>Items</th>
+                        <th>Points</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($enrolled_programs as $ep): ?>
+                <tr>
+                    <td><strong><?php echo htmlspecialchars($ep['program_name']); ?></strong></td>
+                    <td><span class="wp-badge wp-badge--teal"><?php echo htmlspecialchars($ep['program_type']); ?></span></td>
+                    <td><span class="wp-text-sm"><?php echo date('M d, Y', strtotime($ep['enrollment_date'])); ?></span></td>
+                    <td><strong><?php echo number_format($ep['total_weight_kg'], 2); ?> kg</strong></td>
+                    <td><?php echo $ep['total_items']; ?></td>
+                    <td>
+                        <span class="wp-badge wp-badge--warning"><i class="fas fa-star"></i> <?php echo $ep['points_earned']; ?></span>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
+<!-- ── AVAILABLE PROGRAMS HEADER ── -->
+<div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
+    <div style="font-size:16px;font-weight:800;color:var(--db-text)">Available Programs</div>
+    <div style="flex:1;height:1px;background:var(--db-border)"></div>
+    <span class="wp-badge wp-badge--muted"><?php echo count($programs); ?> active</span>
+</div>
+
+<?php if (empty($programs)): ?>
+<div class="wp-panel">
+    <div class="wp-empty">
+        <i class="fas fa-inbox"></i>
+        <p>No recycling programs available at the moment. Check back later.</p>
+    </div>
+</div>
+<?php else: ?>
+
+<!-- ── PROGRAM CARDS GRID ── -->
+<div class="wp-program-grid">
+    <?php foreach ($programs as $prog):
+        $is_enrolled = in_array($prog['program_id'], $enrolled_ids);
+        $pt = $prog['program_type'] ?? 'General';
+        [$ico, $badge_cls] = $type_icons[$pt] ?? ['fa-recycle', 'wp-badge--teal'];
+    ?>
+    <div class="wp-program-card">
+        <?php if ($is_enrolled): ?>
+        <span class="wp-enrolled-badge"><i class="fas fa-check-circle"></i> Enrolled</span>
+        <?php endif; ?>
+
+        <div class="wp-program-card__accent"></div>
+        <div class="wp-program-card__body">
+            <div class="wp-program-card__head">
                 <div>
-                    <h2 class="mb-1">
-                        <i class="fas fa-recycle me-2 text-success"></i>Recycling Programs
-                    </h2>
-                    <p class="text-muted mb-0">Join our recycling programs and help save the environment</p>
+                    <div class="wp-program-card__title"><?php echo htmlspecialchars($prog['program_name']); ?></div>
+                    <span class="wp-badge <?php echo $badge_cls; ?>"><i class="fas <?php echo $ico; ?>"></i> <?php echo htmlspecialchars($pt); ?></span>
+                </div>
+                <div class="wp-program-card__icon-wrap">
+                    <i class="fas <?php echo $ico; ?>"></i>
                 </div>
             </div>
-        </div>
-    </div>
 
-    <?php echo displayMessage(); ?>
+            <?php if (!empty($prog['description'])): ?>
+            <p class="wp-program-card__desc"><?php echo nl2br(htmlspecialchars($prog['description'])); ?></p>
+            <?php endif; ?>
 
-    <!-- My Enrolled Programs -->
-    <?php if (!empty($enrolled_programs)): ?>
-        <div class="row mb-4">
-            <div class="col-md-12">
-                <div class="card border-0 shadow-sm">
-                    <div class="card-header bg-success text-white py-3">
-                        <h5 class="mb-0">
-                            <i class="fas fa-check-circle me-2"></i>My Enrolled Programs
-                        </h5>
+            <div class="wp-program-card__meta">
+                <?php if (!empty($prog['recyclable_items'])): ?>
+                <div class="wp-program-card__meta-row">
+                    <div class="wp-program-card__meta-icon" style="background:var(--db-success-light);color:var(--db-success)">
+                        <i class="fas fa-box-open"></i>
                     </div>
-                    <div class="card-body">
-                        <div class="table-responsive">
-                            <table class="table table-hover">
-                                <thead>
-                                    <tr>
-                                        <th>Program</th>
-                                        <th>Type</th>
-                                        <th>Enrolled Since</th>
-                                        <th>Contribution</th>
-                                        <th>Points</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php foreach ($enrolled_programs as $enrolled): ?>
-                                        <tr>
-                                            <td>
-                                                <strong><?php echo htmlspecialchars($enrolled['program_name']); ?></strong>
-                                            </td>
-                                            <td>
-                                                <span class="badge bg-info"><?php echo htmlspecialchars($enrolled['program_type']); ?></span>
-                                            </td>
-                                            <td><?php echo formatDate($enrolled['enrollment_date']); ?></td>
-                                            <td>
-                                                <strong><?php echo number_format($enrolled['total_weight_kg'], 2); ?> kg</strong>
-                                                <br><small class="text-muted"><?php echo $enrolled['total_items']; ?> items</small>
-                                            </td>
-                                            <td>
-                                                <span class="badge bg-warning text-dark">
-                                                    <i class="fas fa-star me-1"></i><?php echo $enrolled['points_earned']; ?> points
-                                                </span>
-                                            </td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                </tbody>
-                            </table>
-                        </div>
+                    <div>
+                        <div class="wp-program-card__meta-label">Accepted Materials</div>
+                        <div class="wp-program-card__meta-val"><?php echo htmlspecialchars($prog['recyclable_items']); ?></div>
                     </div>
                 </div>
+                <?php endif; ?>
+
+                <?php if (!empty($prog['collection_points'])): ?>
+                <div class="wp-program-card__meta-row">
+                    <div class="wp-program-card__meta-icon" style="background:var(--db-rose-light);color:var(--db-rose)">
+                        <i class="fas fa-map-marker-alt"></i>
+                    </div>
+                    <div>
+                        <div class="wp-program-card__meta-label">Collection Points</div>
+                        <div class="wp-program-card__meta-val"><?php echo htmlspecialchars($prog['collection_points']); ?></div>
+                    </div>
+                </div>
+                <?php endif; ?>
+
+                <?php if (!empty($prog['schedule'])): ?>
+                <div class="wp-program-card__meta-row">
+                    <div class="wp-program-card__meta-icon" style="background:var(--db-info-light);color:var(--db-info)">
+                        <i class="fas fa-calendar-alt"></i>
+                    </div>
+                    <div>
+                        <div class="wp-program-card__meta-label">Schedule</div>
+                        <div class="wp-program-card__meta-val"><?php echo htmlspecialchars($prog['schedule']); ?></div>
+                    </div>
+                </div>
+                <?php endif; ?>
+
+                <?php if (!empty($prog['incentive_type'])): ?>
+                <div class="wp-program-card__meta-row">
+                    <div class="wp-program-card__meta-icon" style="background:var(--db-amber-light);color:var(--db-amber-dark)">
+                        <i class="fas fa-gift"></i>
+                    </div>
+                    <div>
+                        <div class="wp-program-card__meta-label">Incentives</div>
+                        <div class="wp-program-card__meta-val"><?php echo htmlspecialchars($prog['incentive_type']); ?></div>
+                    </div>
+                </div>
+                <?php endif; ?>
             </div>
         </div>
-    <?php endif; ?>
 
-    <!-- Available Programs -->
-    <div class="row mb-4">
-        <div class="col-md-12">
-            <h4 class="mb-3">
-                <i class="fas fa-list me-2"></i>Available Programs
-            </h4>
+        <div class="wp-program-card__footer">
+            <div style="font-size:11.5px;color:var(--db-muted)">
+                <?php if (!empty($prog['contact_person'])): ?>
+                <div><i class="fas fa-user" style="width:14px;margin-right:4px"></i><?php echo htmlspecialchars($prog['contact_person']); ?></div>
+                <?php endif; ?>
+                <?php if (!empty($prog['contact_number'])): ?>
+                <div><i class="fas fa-phone" style="width:14px;margin-right:4px"></i><?php echo htmlspecialchars($prog['contact_number']); ?></div>
+                <?php endif; ?>
+            </div>
+            <?php if (!$is_enrolled): ?>
+            <form method="POST" style="margin:0">
+                <input type="hidden" name="program_id" value="<?php echo $prog['program_id']; ?>">
+                <button type="submit" name="enroll_program" class="wp-btn wp-btn--success wp-btn--sm">
+                    <i class="fas fa-user-plus"></i> Enroll Now
+                </button>
+            </form>
+            <?php else: ?>
+            <span class="wp-badge wp-badge--success" style="padding:6px 12px">
+                <i class="fas fa-check-circle"></i> Enrolled
+            </span>
+            <?php endif; ?>
         </div>
     </div>
+    <?php endforeach; ?>
+</div>
+<?php endif; ?>
 
-    <?php if (empty($programs)): ?>
-        <div class="text-center py-5">
-            <i class="fas fa-inbox fa-4x text-muted mb-3"></i>
-            <h4 class="text-muted">No programs available</h4>
-            <p class="text-muted">Check back later for new recycling programs.</p>
+<!-- ── BENEFITS PANEL ── -->
+<div class="wp-panel">
+    <div class="wp-panel__header">
+        <div class="wp-panel__title">
+            <span class="wp-panel__icon wp-panel__icon--success"><i class="fas fa-seedling"></i></span>
+            <h2>Benefits of Recycling</h2>
         </div>
-    <?php else: ?>
-        <div class="row">
-            <?php foreach ($programs as $program): 
-                // Check if user is enrolled
-                $is_enrolled = false;
-                if ($resident_id) {
-                    $check = fetchOne($conn,
-                        "SELECT participant_id FROM tbl_recycling_participants 
-                         WHERE program_id = ? AND resident_id = ? AND status = 'active'",
-                        [$program['program_id'], $resident_id], 'ii'
-                    );
-                    $is_enrolled = !empty($check);
-                }
+    </div>
+    <div class="wp-panel__body">
+        <div style="display:flex;gap:14px;flex-wrap:wrap">
+            <?php
+            $benefits = [
+                ['fas fa-globe-asia',  'var(--db-info)',    'Protects Environment', 'Reduces pollution and conserves natural resources'],
+                ['fas fa-bolt',        'var(--db-amber)',   'Saves Energy',         'Recycling uses far less energy than producing new materials'],
+                ['fas fa-coins',       'var(--db-success)', 'Earn Incentives',      'Get rewards and points for your recycling contributions'],
+                ['fas fa-users',       'var(--db-teal)',    'Community Impact',     'Help build a cleaner, greener barangay for everyone'],
+            ];
+            foreach ($benefits as [$icon, $color, $title, $desc]):
             ?>
-                <div class="col-md-6 mb-4">
-                    <div class="card program-card border-0 shadow-sm position-relative">
-                        <?php if ($is_enrolled): ?>
-                            <span class="badge bg-success enrolled-badge">
-                                <i class="fas fa-check-circle me-1"></i>Enrolled
-                            </span>
-                        <?php endif; ?>
-                        
-                        <div class="card-body">
-                            <div class="d-flex justify-content-between align-items-start mb-3">
-                                <div>
-                                    <h5 class="card-title mb-1">
-                                        <?php echo htmlspecialchars($program['program_name']); ?>
-                                    </h5>
-                                    <span class="badge badge-program bg-primary">
-                                        <?php echo htmlspecialchars($program['program_type']); ?>
-                                    </span>
-                                </div>
-                                <div class="text-success" style="font-size: 2rem;">
-                                    <i class="fas fa-recycle"></i>
-                                </div>
-                            </div>
-
-                            <p class="text-muted">
-                                <?php echo nl2br(htmlspecialchars($program['description'])); ?>
-                            </p>
-
-                            <!-- FIX 1: accepted_materials -> recyclable_items -->
-                            <div class="mb-3">
-                                <h6 class="mb-2"><i class="fas fa-box-open me-2 text-success"></i>Accepted Materials</h6>
-                                <p class="mb-0"><?php echo nl2br(htmlspecialchars($program['recyclable_items'])); ?></p>
-                            </div>
-
-                            <?php if ($program['collection_points']): ?>
-                                <div class="mb-3">
-                                    <h6 class="mb-2"><i class="fas fa-map-marker-alt me-2 text-danger"></i>Collection Points</h6>
-                                    <p class="mb-0"><?php echo nl2br(htmlspecialchars($program['collection_points'])); ?></p>
-                                </div>
-                            <?php endif; ?>
-
-                            <?php if ($program['schedule']): ?>
-                                <div class="mb-3">
-                                    <h6 class="mb-2"><i class="fas fa-calendar-alt me-2 text-primary"></i>Schedule</h6>
-                                    <p class="mb-0"><?php echo htmlspecialchars($program['schedule']); ?></p>
-                                </div>
-                            <?php endif; ?>
-
-                            <!-- FIX 2: incentives -> incentive_type -->
-                            <?php if ($program['incentive_type']): ?>
-                                <div class="mb-3">
-                                    <h6 class="mb-2"><i class="fas fa-gift me-2 text-warning"></i>Incentives</h6>
-                                    <div class="incentive-item">
-                                        <small><?php echo nl2br(htmlspecialchars($program['incentive_type'])); ?></small>
-                                    </div>
-                                </div>
-                            <?php endif; ?>
-
-                            <!-- FIX 3: Removed the entire 'requirements' block (column does not exist) -->
-
-                            <div class="d-flex justify-content-between align-items-center mt-3 pt-3 border-top">
-                                <div>
-                                    <?php if ($program['contact_person']): ?>
-                                        <small class="text-muted d-block">
-                                            <i class="fas fa-user me-1"></i>
-                                            <?php echo htmlspecialchars($program['contact_person']); ?>
-                                        </small>
-                                    <?php endif; ?>
-                                    <?php if ($program['contact_number']): ?>
-                                        <small class="text-muted d-block">
-                                            <i class="fas fa-phone me-1"></i>
-                                            <?php echo htmlspecialchars($program['contact_number']); ?>
-                                        </small>
-                                    <?php endif; ?>
-                                </div>
-                                <div>
-                                    <?php if (!$is_enrolled): ?>
-                                        <form method="POST" class="d-inline">
-                                            <input type="hidden" name="program_id" value="<?php echo $program['program_id']; ?>">
-                                            <button type="submit" name="enroll_program" class="btn btn-success">
-                                                <i class="fas fa-user-plus me-1"></i>Enroll Now
-                                            </button>
-                                        </form>
-                                    <?php else: ?>
-                                        <span class="badge bg-success p-2">
-                                            <i class="fas fa-check-circle me-1"></i>You're Enrolled
-                                        </span>
-                                    <?php endif; ?>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            <?php endforeach; ?>
-        </div>
-    <?php endif; ?>
-
-    <!-- Benefits of Recycling -->
-    <div class="row mt-4">
-        <div class="col-md-12">
-            <div class="card border-0 shadow-sm bg-light">
-                <div class="card-body">
-                    <h5 class="card-title mb-4">
-                        <i class="fas fa-seedling me-2 text-success"></i>Benefits of Recycling
-                    </h5>
-                    <div class="row">
-                        <div class="col-md-3">
-                            <div class="text-center p-3">
-                                <i class="fas fa-globe-asia fa-3x text-primary mb-3"></i>
-                                <h6>Protects Environment</h6>
-                                <small class="text-muted">Reduces pollution and conserves natural resources</small>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="text-center p-3">
-                                <i class="fas fa-bolt fa-3x text-warning mb-3"></i>
-                                <h6>Saves Energy</h6>
-                                <small class="text-muted">Recycling uses less energy than producing new materials</small>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="text-center p-3">
-                                <i class="fas fa-coins fa-3x text-success mb-3"></i>
-                                <h6>Earn Incentives</h6>
-                                <small class="text-muted">Get rewards and points for your contributions</small>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="text-center p-3">
-                                <i class="fas fa-users fa-3x text-info mb-3"></i>
-                                <h6>Community Impact</h6>
-                                <small class="text-muted">Help build a cleaner, greener barangay</small>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+            <div class="wp-benefit-item">
+                <i class="<?php echo $icon; ?>" style="color:<?php echo $color; ?>"></i>
+                <div class="wp-benefit-item__title"><?php echo $title; ?></div>
+                <div class="wp-benefit-item__desc"><?php echo $desc; ?></div>
             </div>
+            <?php endforeach; ?>
         </div>
     </div>
 </div>
 
-<?php 
+<?php
 $conn->close();
-include '../../../includes/footer.php'; 
+include '../../../includes/footer.php';
 ?>

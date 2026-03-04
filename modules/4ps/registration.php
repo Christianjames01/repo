@@ -1,20 +1,16 @@
 <?php
-// Include config which handles session, database, and functions
 require_once __DIR__ . '/../../config/config.php';
 
-// Check if user is logged in and is Super Admin
 if (!isLoggedIn() || $_SESSION['role_name'] !== 'Super Admin') {
     header('Location: ' . BASE_URL . '/modules/auth/login.php');
     exit();
 }
 
 $current_user_id = getCurrentUserId();
-
 $page_title = '4Ps Registration';
 $success_message = '';
 $error_message = '';
 
-// Fetch VERIFIED residents only (not yet in 4Ps program)
 $residents_query = "SELECT 
     r.resident_id,
     r.first_name,
@@ -34,113 +30,72 @@ $residents_query = "SELECT
     r.birthplace,
     r.address,
     CONCAT(r.last_name, ', ', r.first_name, 
-           CASE 
-               WHEN r.middle_name IS NOT NULL AND r.middle_name != '' 
+           CASE WHEN r.middle_name IS NOT NULL AND r.middle_name != '' 
                THEN CONCAT(' ', SUBSTRING(r.middle_name, 1, 1), '.') 
-               ELSE '' 
-           END,
-           ' ✓') as full_name_display,
-    CASE 
-        WHEN b.beneficiary_id IS NOT NULL THEN 1
-        ELSE 0
-    END as already_in_4ps
+               ELSE '' END, ' \u2713') as full_name_display,
+    CASE WHEN b.beneficiary_id IS NOT NULL THEN 1 ELSE 0 END as already_in_4ps
 FROM tbl_residents r
 LEFT JOIN tbl_4ps_beneficiaries b ON r.resident_id = b.resident_id
 WHERE r.is_verified = 1
 ORDER BY r.last_name, r.first_name";
 
 $residents_result = $conn->query($residents_query);
+if (!$residents_result) die("Error fetching residents: " . $conn->error);
 
-if (!$residents_result) {
-    die("Error fetching residents: " . $conn->error);
+// Build rows array for the dropdown
+$residents_rows = [];
+while ($r = $residents_result->fetch_assoc()) {
+    $residents_rows[] = $r;
 }
 
-// Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Personal Information
-    $resident_id = !empty($_POST['resident_id']) ? intval($_POST['resident_id']) : NULL;
-    $last_name = trim($_POST['last_name']);
-    $first_name = trim($_POST['first_name']);
-    $middle_name = trim($_POST['middle_name']);
-    $ext = trim($_POST['ext']);
-    $permanent_address = trim($_POST['permanent_address']);
-    $street = trim($_POST['street']);
-    $brgy = trim($_POST['brgy']);
-    $town = trim($_POST['town']);
-    $province = trim($_POST['province']);
-    $birthplace = trim($_POST['birthplace']);
-    $mobile_phone = trim($_POST['mobile_phone']);
-    $birthday = $_POST['birthday'];
-    $civil_status = $_POST['civil_status'];
-    $gender = $_POST['gender'];
-    
-    // Family Background - Father
-    $father_full_name = trim($_POST['father_full_name']);
-    $father_address = trim($_POST['father_address']);
-    $father_education = $_POST['father_education'];
-    $father_income = !empty($_POST['father_income']) ? floatval($_POST['father_income']) : 0.0;
-    
-    // Family Background - Mother
-    $mother_full_name = trim($_POST['mother_full_name']);
-    $mother_address = trim($_POST['mother_address']);
-    $mother_education = $_POST['mother_education'];
-    $mother_income = !empty($_POST['mother_income']) ? floatval($_POST['mother_income']) : 0.0;
-    
-    // Academic Information
-    $secondary_school = trim($_POST['secondary_school']);
-    $degree_program = trim($_POST['degree_program']);
-    $year_level = $_POST['year_level'];
-    
-    // Personal References
-    $reference_1 = trim($_POST['reference_1']);
-    $reference_2 = trim($_POST['reference_2']);
-    $reference_3 = trim($_POST['reference_3']);
-    
-    // 4Ps Specific
-    $household_id = trim($_POST['household_id']);
-    $grantee_name = trim($_POST['grantee_name']);
-    $date_registered = $_POST['date_registered'];
-    $status = $_POST['status'];
-    $set_number = trim($_POST['set_number']);
-    $compliance_status = $_POST['compliance_status'];
-    $monthly_grant = floatval($_POST['monthly_grant']);
-    $remarks = trim($_POST['remarks']);
-    
-    // Handle photo upload
+    // Explicitly set to NULL (not 0) when not provided — intval(NULL)=0 which breaks PK
+    $resident_id = (isset($_POST['resident_id']) && $_POST['resident_id'] !== '' && intval($_POST['resident_id']) > 0)
+                   ? intval($_POST['resident_id'])
+                   : null;
+    $last_name         = trim($_POST['last_name']);         $first_name    = trim($_POST['first_name']);
+    $middle_name       = trim($_POST['middle_name']);       $ext           = trim($_POST['ext']);
+    $permanent_address = trim($_POST['permanent_address']); $street        = trim($_POST['street']);
+    $brgy              = trim($_POST['brgy']);               $town          = trim($_POST['town']);
+    $province          = trim($_POST['province']);          $birthplace    = trim($_POST['birthplace']);
+    $mobile_phone      = trim($_POST['mobile_phone']);      $birthday      = $_POST['birthday'];
+    $civil_status      = $_POST['civil_status'];            $gender        = $_POST['gender'];
+    $father_full_name  = trim($_POST['father_full_name']);  $father_address   = trim($_POST['father_address']);
+    $father_education  = $_POST['father_education'];        $father_income    = !empty($_POST['father_income']) ? floatval($_POST['father_income']) : 0.0;
+    $mother_full_name  = trim($_POST['mother_full_name']);  $mother_address   = trim($_POST['mother_address']);
+    $mother_education  = $_POST['mother_education'];        $mother_income    = !empty($_POST['mother_income']) ? floatval($_POST['mother_income']) : 0.0;
+    $secondary_school  = trim($_POST['secondary_school']);  $degree_program   = trim($_POST['degree_program']);
+    $year_level        = $_POST['year_level'];
+    $reference_1       = trim($_POST['reference_1']);       $reference_2   = trim($_POST['reference_2']);
+    $reference_3       = trim($_POST['reference_3']);
+    $household_id      = trim($_POST['household_id']);      $grantee_name  = trim($_POST['grantee_name']);
+    $date_registered   = $_POST['date_registered'];         $status        = $_POST['status'];
+    $set_number        = trim($_POST['set_number']);         $compliance_status = $_POST['compliance_status'];
+    $monthly_grant     = floatval($_POST['monthly_grant']); $remarks       = trim($_POST['remarks']);
+
     $photo_filename = null;
     if (isset($_FILES['id_picture']) && $_FILES['id_picture']['error'] == 0) {
         $upload_dir = __DIR__ . '/../../uploads/4ps/';
-        if (!file_exists($upload_dir)) {
-            mkdir($upload_dir, 0755, true);
-        }
-        
+        if (!file_exists($upload_dir)) mkdir($upload_dir, 0755, true);
         $file_extension = pathinfo($_FILES['id_picture']['name'], PATHINFO_EXTENSION);
         $photo_filename = 'applicant_' . time() . '_' . uniqid() . '.' . $file_extension;
-        
         if (!move_uploaded_file($_FILES['id_picture']['tmp_name'], $upload_dir . $photo_filename)) {
             $error_message = "Error uploading photo file.";
             $photo_filename = null;
         }
     }
-    
-    // Check if resident already exists in 4Ps (only if resident_id is provided)
+
     if (!empty($resident_id)) {
-        $check_query = "SELECT * FROM tbl_4ps_beneficiaries WHERE resident_id = ?";
-        $check_stmt = $conn->prepare($check_query);
+        $check_stmt = $conn->prepare("SELECT * FROM tbl_4ps_beneficiaries WHERE resident_id = ?");
         $check_stmt->bind_param("i", $resident_id);
         $check_stmt->execute();
-        $check_result = $check_stmt->get_result();
-        
-        if ($check_result->num_rows > 0) {
+        if ($check_stmt->get_result()->num_rows > 0) {
             $error_message = "This resident is already registered in the 4Ps program.";
-            $check_stmt->close();
         } else {
             $check_stmt->close();
-            // Proceed with registration
             processRegistration();
         }
     } else {
-        // No resident selected - register as new
         processRegistration();
     }
 }
@@ -155,367 +110,254 @@ function processRegistration() {
     global $secondary_school, $degree_program, $year_level;
     global $reference_1, $reference_2, $reference_3, $photo_filename;
     global $success_message, $error_message;
-    
-    // Generate control number
+
+    // Re-evaluate resident_id inside function scope to guarantee it's truly null or a positive int
+    $rid = (isset($resident_id) && is_int($resident_id) && $resident_id > 0) ? $resident_id : null;
+
     $ctrl_no = 'CTRL-' . date('Y') . '-' . str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT);
-    
-    // Start transaction
     $conn->begin_transaction();
-    
     try {
-        // Step 1: Insert main 4Ps beneficiary record
-        $insert_query = "INSERT INTO tbl_4ps_beneficiaries 
-                        (resident_id, household_id, grantee_name, date_registered, status, 
-                         set_number, compliance_status, monthly_grant, remarks, created_at) 
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
-        
-        $stmt = $conn->prepare($insert_query);
-        if (!$stmt) {
-            throw new Exception("Error preparing main query: " . $conn->error);
+        // Use PDO-style: omit resident_id column entirely when null to avoid binding NULL as 0
+        if ($rid !== null) {
+            $stmt = $conn->prepare("INSERT INTO tbl_4ps_beneficiaries (resident_id, household_id, grantee_name, date_registered, status, set_number, compliance_status, monthly_grant, remarks, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
+            if (!$stmt) throw new Exception("Prepare failed: " . $conn->error);
+            $stmt->bind_param("issssssds", $rid, $household_id, $grantee_name, $date_registered, $status, $set_number, $compliance_status, $monthly_grant, $remarks);
+        } else {
+            $stmt = $conn->prepare("INSERT INTO tbl_4ps_beneficiaries (household_id, grantee_name, date_registered, status, set_number, compliance_status, monthly_grant, remarks, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())");
+            if (!$stmt) throw new Exception("Prepare failed: " . $conn->error);
+            $stmt->bind_param("ssssssds", $household_id, $grantee_name, $date_registered, $status, $set_number, $compliance_status, $monthly_grant, $remarks);
         }
-        
-        $stmt->bind_param("issssssds", 
-            $resident_id,
-            $household_id,
-            $grantee_name,
-            $date_registered,
-            $status,
-            $set_number,
-            $compliance_status,
-            $monthly_grant,
-            $remarks
-        );
-        
-        if (!$stmt->execute()) {
-            throw new Exception("Error inserting beneficiary: " . $stmt->error);
-        }
-        
+        if (!$stmt->execute()) throw new Exception("Insert beneficiary failed: " . $stmt->error);
         $beneficiary_id = $stmt->insert_id;
+        if (!$beneficiary_id) throw new Exception("Insert succeeded but returned no ID — check table structure");
         $stmt->close();
-        
-        error_log("SUCCESS: Main beneficiary inserted with ID: " . $beneficiary_id);
-        
-        // Step 2: Insert extended details
-        $ext_query = "INSERT INTO tbl_4ps_extended_details 
-                      (beneficiary_id, last_name, first_name, middle_name, ext_name,
-                       permanent_address, street, barangay, town, province,
-                       birthplace, mobile_phone, birthday, civil_status, gender,
-                       father_full_name, father_address, father_education, father_income,
-                       mother_full_name, mother_address, mother_education, mother_income,
-                       secondary_school, degree_program, year_level,
-                       reference_1, reference_2, reference_3,
-                       id_picture, ctrl_no) 
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        
-        $ext_stmt = $conn->prepare($ext_query);
-        
-        if (!$ext_stmt) {
-            throw new Exception("Error preparing extended details query: " . $conn->error);
-        }
-        
-        // Debug log
-        error_log("DEBUG: Preparing to insert extended details for beneficiary_id: " . $beneficiary_id);
-        error_log("DEBUG: Name: $last_name, $first_name $middle_name");
-        error_log("DEBUG: Birthday: $birthday, Mobile: $mobile_phone");
-        
-      $ext_stmt->bind_param("issssssssssssssssdssssdssssssss",
-    $beneficiary_id,        // 1  - i (integer)
-    $last_name,             // 2  - s (string)
-    $first_name,            // 3  - s
-    $middle_name,           // 4  - s
-    $ext,                   // 5  - s
-    $permanent_address,     // 6  - s
-    $street,                // 7  - s
-    $brgy,                  // 8  - s
-    $town,                  // 9  - s
-    $province,              // 10 - s
-    $birthplace,            // 11 - s
-    $mobile_phone,          // 12 - s
-    $birthday,              // 13 - s
-    $civil_status,          // 14 - s
-    $gender,                // 15 - s
-    $father_full_name,      // 16 - s
-    $father_address,        // 17 - s
-    $father_education,      // 18 - s
-    $father_income,         // 19 - d (double/float)
-    $mother_full_name,      // 20 - s
-    $mother_address,        // 21 - s
-    $mother_education,      // 22 - s
-    $mother_income,         // 23 - d (double/float)
-    $secondary_school,      // 24 - s
-    $degree_program,        // 25 - s
-    $year_level,            // 26 - s
-    $reference_1,           // 27 - s
-    $reference_2,           // 28 - s
-    $reference_3,           // 29 - s
-    $photo_filename,        // 30 - s
-    $ctrl_no                // 31 - s
-);
-        
-        if (!$ext_stmt->execute()) {
-            throw new Exception("Error inserting extended details: " . $ext_stmt->error);
-        }
-        
-        $affected = $ext_stmt->affected_rows;
-        error_log("SUCCESS: Extended details inserted. Affected rows: " . $affected);
-        
-        if ($affected === 0) {
-            throw new Exception("Extended details insert returned 0 affected rows");
-        }
-        
+
+        $ext_stmt = $conn->prepare("INSERT INTO tbl_4ps_extended_details (beneficiary_id, last_name, first_name, middle_name, ext_name, permanent_address, street, barangay, town, province, birthplace, mobile_phone, birthday, civil_status, gender, father_full_name, father_address, father_education, father_income, mother_full_name, mother_address, mother_education, mother_income, secondary_school, degree_program, year_level, reference_1, reference_2, reference_3, id_picture, ctrl_no) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $ext_stmt->bind_param("issssssssssssssssdssssdssssssss", $beneficiary_id, $last_name, $first_name, $middle_name, $ext, $permanent_address, $street, $brgy, $town, $province, $birthplace, $mobile_phone, $birthday, $civil_status, $gender, $father_full_name, $father_address, $father_education, $father_income, $mother_full_name, $mother_address, $mother_education, $mother_income, $secondary_school, $degree_program, $year_level, $reference_1, $reference_2, $reference_3, $photo_filename, $ctrl_no);
+        if (!$ext_stmt->execute()) throw new Exception("Error inserting extended details: " . $ext_stmt->error);
         $ext_stmt->close();
-        
-        // Verify insertion (optional debug check)
-        $verify_query = "SELECT * FROM tbl_4ps_extended_details WHERE beneficiary_id = ?";
-        $verify_stmt = $conn->prepare($verify_query);
-        $verify_stmt->bind_param("i", $beneficiary_id);
-        $verify_stmt->execute();
-        $verify_result = $verify_stmt->get_result();
-        
-        error_log("DEBUG: Extended details count for beneficiary $beneficiary_id: " . $verify_result->num_rows);
-        if ($verify_result->num_rows > 0) {
-            $verify_data = $verify_result->fetch_assoc();
-            error_log("DEBUG: Extended details data: " . print_r($verify_data, true));
-        }
-        $verify_stmt->close();
-        
-        // Commit transaction
+
         $conn->commit();
-        
-        error_log("SUCCESS: Transaction committed successfully for control no: " . $ctrl_no);
-        
-        $success_message = "4Ps beneficiary registered successfully! Control No: " . $ctrl_no;
-        
-        // Clear POST data
-        $_POST = array();
-        
-        // Redirect
-        header("Location: beneficiaries-debug.php?success=" . urlencode($success_message));
+        header("Location: beneficiaries.php?success=" . urlencode("4Ps beneficiary registered successfully! Control No: " . $ctrl_no));
         exit();
-        
     } catch (Exception $e) {
         $conn->rollback();
         $error_message = "Registration failed: " . $e->getMessage();
-        error_log("ERROR during registration: " . $e->getMessage());
-        error_log("ERROR Stack trace: " . $e->getTraceAsString());
     }
 }
 
 include __DIR__ . '/../../includes/header.php';
 ?>
 
-<div class="container-fluid py-4">
-    <div class="row mb-4">
-        <div class="col-12">
-            <h2><i class="fas fa-user-plus me-2"></i>4Ps Educational Assistance Application Form</h2>
-            <p class="text-muted">Pantawid Pamilyang Pilipino Program - Educational Assistance Registration</p>
+<!-- PAGE HERO -->
+<div class="bps-hero">
+    <div class="bps-hero__ring bps-hero__ring--1"></div>
+    <div class="bps-hero__ring bps-hero__ring--2"></div>
+    <div class="bps-hero__ring bps-hero__ring--3"></div>
+    <div class="bps-hero__inner">
+        <div class="bps-hero__left">
+            <div class="bps-hero__icon" style="background:linear-gradient(135deg,#0d9488,#0f766e);">
+                <i class="fas fa-user-plus"></i>
+            </div>
+            <div>
+                <h1 class="bps-hero__title">4Ps Educational Assistance Application</h1>
+                <p class="bps-hero__sub">Pantawid Pamilyang Pilipino Program &mdash; Register a new beneficiary</p>
+            </div>
         </div>
+        <a href="beneficiaries.php" class="btn btn-secondary">
+            <i class="fas fa-arrow-left"></i> Back to List
+        </a>
     </div>
+</div>
+
+<div class="container-fluid">
 
     <?php if ($success_message): ?>
-    <div class="alert alert-success alert-dismissible fade show" role="alert">
-        <i class="fas fa-check-circle me-2"></i><?php echo $success_message; ?>
+    <div class="alert alert-success alert-dismissible fade show">
+        <i class="fas fa-check-circle me-2"></i><?php echo htmlspecialchars($success_message); ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
     <?php endif; ?>
-
     <?php if ($error_message): ?>
-    <div class="alert alert-danger alert-dismissible fade show" role="alert">
-        <i class="fas fa-exclamation-circle me-2"></i><?php echo $error_message; ?>
+    <div class="alert alert-danger alert-dismissible fade show">
+        <i class="fas fa-exclamation-circle me-2"></i><?php echo htmlspecialchars($error_message); ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
     <?php endif; ?>
 
-    <div class="row">
-        <div class="col-12">
-            <form method="POST" action="" id="4psForm" enctype="multipart/form-data">
-                <!-- Application Header Card -->
-                <div class="card shadow mb-4">
-                    <div class="card-header bg-primary text-white">
-                        <h5 class="mb-0">
-                            <i class="fas fa-file-alt me-2"></i>APPLICATION FORM
-                        </h5>
+    <form method="POST" id="4psForm" enctype="multipart/form-data">
+
+        <!-- Resident Lookup -->
+        <div class="card shadow mb-4">
+            <div class="card-header">
+                <h5><i class="fas fa-search" style="opacity:.7"></i> Resident Lookup</h5>
+                <small><i class="fas fa-info-circle"></i> Select a verified resident to auto-fill personal info</small>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Select Verified Resident <span style="color:var(--db-teal)">&#10003;</span></label>
+                        <select class="form-select" id="resident_id" name="resident_id">
+                            <option value="">&#8212; Optional: Select a verified resident &#8212;</option>
+                            <?php foreach ($residents_rows as $resident): ?>
+                            <option value="<?php echo $resident['resident_id']; ?>"
+                                    data-already-in-4ps="<?php echo $resident['already_in_4ps']; ?>"
+                                    <?php echo $resident['already_in_4ps'] == 1 ? 'disabled' : ''; ?>>
+                                <?php echo htmlspecialchars($resident['full_name_display']); ?>
+                                <?php echo $resident['already_in_4ps'] == 1 ? ' (Already in 4Ps)' : ''; ?>
+                            </option>
+                            <?php endforeach; ?>
+                        </select>
                     </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Select Verified Resident ✓</label>
-                                <select class="form-select" id="resident_id" name="resident_id">
-                                    <option value="">-- Select Verified Resident (Optional) --</option>
-                                    <?php while ($resident = $residents_result->fetch_assoc()): ?>
-                                        <option value="<?php echo $resident['resident_id']; ?>" 
-                                                data-already-in-4ps="<?php echo $resident['already_in_4ps']; ?>"
-                                                <?php echo $resident['already_in_4ps'] == 1 ? 'disabled' : ''; ?>>
-                                            <?php echo htmlspecialchars($resident['full_name_display']); ?>
-                                            <?php echo $resident['already_in_4ps'] == 1 ? ' (Already in 4Ps)' : ''; ?>
-                                        </option>
-                                    <?php endwhile; ?>
-                                </select>
-                                <small class="text-muted">
-                                    <i class="fas fa-info-circle"></i> Only verified residents are shown. 
-                                    Selecting a resident will auto-fill their personal information.
-                                </small>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Control No.</label>
-                                <input type="text" class="form-control" value="Auto-generated" disabled>
-                            </div>
-                        </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Control No.</label>
+                        <input type="text" class="form-control" value="Auto-generated on submit" disabled>
                     </div>
                 </div>
+                <div id="autofill-notice" class="alert alert-success mt-3 mb-0" style="display:none;">
+                    <i class="fas fa-check-circle me-2"></i>
+                    Personal information loaded &mdash; fields are now read-only.
+                    <button type="button" class="btn-close float-end" onclick="clearResident()"></button>
+                </div>
+            </div>
+        </div>
+
+        <div class="form-masonry">
 
                 <!-- Personal Information -->
                 <div class="card shadow mb-4">
-                    <div class="card-header bg-info text-white">
-                        <h5 class="mb-0"><i class="fas fa-user me-2"></i>PERSONAL INFORMATION</h5>
+                    <div class="card-header">
+                        <h5><i class="fas fa-user" style="opacity:.7"></i> Personal Information</h5>
                     </div>
                     <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-3 mb-3">
-                                <label class="form-label">Last Name <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" name="last_name" required>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Last Name <span class="req">*</span></label>
+                                <input type="text" class="form-control autofill-field" name="last_name" required>
                             </div>
-                            <div class="col-md-3 mb-3">
-                                <label class="form-label">First Name <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" name="first_name" required>
+                            <div class="col-md-6">
+                                <label class="form-label">First Name <span class="req">*</span></label>
+                                <input type="text" class="form-control autofill-field" name="first_name" required>
                             </div>
-                            <div class="col-md-3 mb-3">
+                            <div class="col-md-6">
                                 <label class="form-label">Middle Name</label>
-                                <input type="text" class="form-control" name="middle_name">
+                                <input type="text" class="form-control autofill-field" name="middle_name">
                             </div>
-                            <div class="col-md-3 mb-3">
+                            <div class="col-md-6">
                                 <label class="form-label">Ext. (Jr., Sr., III)</label>
-                                <input type="text" class="form-control" name="ext">
+                                <input type="text" class="form-control autofill-field" name="ext">
                             </div>
-                        </div>
-
-                        <div class="row">
-                            <div class="col-md-12 mb-3">
-                                <label class="form-label">Permanent Address <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" name="permanent_address" required>
+                            <div class="col-12">
+                                <label class="form-label">Permanent Address <span class="req">*</span></label>
+                                <input type="text" class="form-control autofill-field" name="permanent_address" required>
                             </div>
-                        </div>
-
-                        <div class="row">
-                            <div class="col-md-3 mb-3">
+                            <div class="col-md-6">
                                 <label class="form-label">Street</label>
-                                <input type="text" class="form-control" name="street">
+                                <input type="text" class="form-control autofill-field" name="street">
                             </div>
-                            <div class="col-md-3 mb-3">
-                                <label class="form-label">Barangay <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" name="brgy" required>
+                            <div class="col-md-6">
+                                <label class="form-label">Barangay <span class="req">*</span></label>
+                                <input type="text" class="form-control autofill-field" name="brgy" required>
                             </div>
-                            <div class="col-md-3 mb-3">
-                                <label class="form-label">Town/City <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" name="town" required>
+                            <div class="col-md-6">
+                                <label class="form-label">Town/City <span class="req">*</span></label>
+                                <input type="text" class="form-control autofill-field" name="town" required>
                             </div>
-                            <div class="col-md-3 mb-3">
-                                <label class="form-label">Province <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" name="province" required>
+                            <div class="col-md-6">
+                                <label class="form-label">Province <span class="req">*</span></label>
+                                <input type="text" class="form-control autofill-field" name="province" required>
                             </div>
-                        </div>
-
-                        <div class="row">
-                            <div class="col-md-4 mb-3">
-                                <label class="form-label">Birthplace <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" name="birthplace" required>
+                            <div class="col-md-6">
+                                <label class="form-label">Birthplace <span class="req">*</span></label>
+                                <input type="text" class="form-control autofill-field" name="birthplace" required>
                             </div>
-                            <div class="col-md-4 mb-3">
-                                <label class="form-label">Mobile/Phone No. <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" name="mobile_phone" required>
+                            <div class="col-md-6">
+                                <label class="form-label">Mobile/Phone No. <span class="req">*</span></label>
+                                <input type="text" class="form-control autofill-field" name="mobile_phone" required>
                             </div>
-                        </div>
-
-                        <div class="row">
-                            <div class="col-md-3 mb-3">
-                                <label class="form-label">Birthday <span class="text-danger">*</span></label>
-                                <input type="date" class="form-control" name="birthday" required>
+                            <div class="col-md-4">
+                                <label class="form-label">Birthday <span class="req">*</span></label>
+                                <input type="date" class="form-control autofill-field" name="birthday" required>
                             </div>
-                            <div class="col-md-3 mb-3">
-                                <label class="form-label">Civil Status <span class="text-danger">*</span></label>
-                                <select class="form-select" name="civil_status" required>
-                                    <option value="">-- Select --</option>
+                            <div class="col-md-4">
+                                <label class="form-label">Gender <span class="req">*</span></label>
+                                <select class="form-select autofill-field" name="gender" required>
+                                    <option value="">&#8212; Select &#8212;</option>
+                                    <option value="Male">Male</option>
+                                    <option value="Female">Female</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Civil Status <span class="req">*</span></label>
+                                <select class="form-select autofill-field" name="civil_status" required>
+                                    <option value="">&#8212; Select &#8212;</option>
                                     <option value="Single">Single</option>
                                     <option value="Married">Married</option>
                                     <option value="Widowed">Widowed</option>
                                     <option value="Separated">Separated</option>
                                 </select>
                             </div>
-                            <div class="col-md-3 mb-3">
-                                <label class="form-label">Gender <span class="text-danger">*</span></label>
-                                <select class="form-select" name="gender" required>
-                                    <option value="">-- Select --</option>
-                                    <option value="Male">Male</option>
-                                    <option value="Female">Female</option>
-                                </select>
-                            </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Family Background - Father -->
+                <!-- Father -->
                 <div class="card shadow mb-4">
-                    <div class="card-header bg-success text-white">
-                        <h5 class="mb-0"><i class="fas fa-male me-2"></i>FAMILY BACKGROUND - FATHER</h5>
+                    <div class="card-header">
+                        <h5><i class="fas fa-male" style="opacity:.7"></i> Family Background &#8212; Father</h5>
                     </div>
                     <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-12 mb-3">
-                                <label class="form-label">Father's Full Name <span class="text-danger">*</span></label>
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label class="form-label">Father's Full Name <span class="req">*</span></label>
                                 <input type="text" class="form-control" name="father_full_name" required>
                             </div>
-                            <div class="col-md-12 mb-3">
-                                <label class="form-label">Address <span class="text-danger">*</span></label>
+                            <div class="col-12">
+                                <label class="form-label">Address <span class="req">*</span></label>
                                 <input type="text" class="form-control" name="father_address" required>
                             </div>
-                            <div class="col-md-6 mb-3">
+                            <div class="col-md-6">
                                 <label class="form-label">Educational Attainment</label>
                                 <select class="form-select" name="father_education">
-                                    <option value="">-- Select --</option>
-                                    <option value="Elementary">Elementary</option>
-                                    <option value="High School">High School</option>
-                                    <option value="College">College</option>
-                                    <option value="Vocational">Vocational</option>
-                                    <option value="Post Graduate">Post Graduate</option>
+                                    <option value="">&#8212; Select &#8212;</option>
+                                    <option>Elementary</option><option>High School</option>
+                                    <option>College</option><option>Vocational</option><option>Post Graduate</option>
                                 </select>
                             </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Monthly Income (₱)</label>
-                                <input type="number" class="form-control" name="father_income" step="0.01" min="0">
+                            <div class="col-md-6">
+                                <label class="form-label">Monthly Income (&#8369;)</label>
+                                <input type="number" class="form-control" name="father_income" step="0.01" min="0" placeholder="0.00">
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Family Background - Mother -->
+                <!-- Mother -->
                 <div class="card shadow mb-4">
-                    <div class="card-header bg-success text-white">
-                        <h5 class="mb-0"><i class="fas fa-female me-2"></i>FAMILY BACKGROUND - MOTHER</h5>
+                    <div class="card-header">
+                        <h5><i class="fas fa-female" style="opacity:.7"></i> Family Background &#8212; Mother</h5>
                     </div>
                     <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-12 mb-3">
-                                <label class="form-label">Mother's Full Maiden Name <span class="text-danger">*</span></label>
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label class="form-label">Mother's Full Maiden Name <span class="req">*</span></label>
                                 <input type="text" class="form-control" name="mother_full_name" required>
                             </div>
-                            <div class="col-md-12 mb-3">
-                                <label class="form-label">Address <span class="text-danger">*</span></label>
+                            <div class="col-12">
+                                <label class="form-label">Address <span class="req">*</span></label>
                                 <input type="text" class="form-control" name="mother_address" required>
                             </div>
-                            <div class="col-md-6 mb-3">
+                            <div class="col-md-6">
                                 <label class="form-label">Educational Attainment</label>
                                 <select class="form-select" name="mother_education">
-                                    <option value="">-- Select --</option>
-                                    <option value="Elementary">Elementary</option>
-                                    <option value="High School">High School</option>
-                                    <option value="College">College</option>
-                                    <option value="Vocational">Vocational</option>
-                                    <option value="Post Graduate">Post Graduate</option>
+                                    <option value="">&#8212; Select &#8212;</option>
+                                    <option>Elementary</option><option>High School</option>
+                                    <option>College</option><option>Vocational</option><option>Post Graduate</option>
                                 </select>
                             </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Monthly Income (₱)</label>
-                                <input type="number" class="form-control" name="mother_income" step="0.01" min="0">
+                            <div class="col-md-6">
+                                <label class="form-label">Monthly Income (&#8369;)</label>
+                                <input type="number" class="form-control" name="mother_income" step="0.01" min="0" placeholder="0.00">
                             </div>
                         </div>
                     </div>
@@ -523,52 +365,26 @@ include __DIR__ . '/../../includes/header.php';
 
                 <!-- Academic Information -->
                 <div class="card shadow mb-4">
-                    <div class="card-header bg-warning text-dark">
-                        <h5 class="mb-0"><i class="fas fa-graduation-cap me-2"></i>ACADEMIC INFORMATION</h5>
+                    <div class="card-header">
+                        <h5><i class="fas fa-graduation-cap" style="opacity:.7"></i> Academic Information</h5>
                     </div>
                     <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-12 mb-3">
-                                <label class="form-label">Secondary School Address <span class="text-danger">*</span></label>
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label class="form-label">Secondary School Address <span class="req">*</span></label>
                                 <input type="text" class="form-control" name="secondary_school" required>
                             </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Degree Program/Course Taken <span class="text-danger">*</span></label>
+                            <div class="col-md-8">
+                                <label class="form-label">Degree Program / Course <span class="req">*</span></label>
                                 <input type="text" class="form-control" name="degree_program" required>
                             </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Year Level <span class="text-danger">*</span></label>
+                            <div class="col-md-4">
+                                <label class="form-label">Year Level <span class="req">*</span></label>
                                 <select class="form-select" name="year_level" required>
-                                    <option value="">-- Select --</option>
-                                    <option value="1st Year">1st Year</option>
-                                    <option value="2nd Year">2nd Year</option>
-                                    <option value="3rd Year">3rd Year</option>
-                                    <option value="4th Year">4th Year</option>
-                                    <option value="5th Year">5th Year</option>
+                                    <option value="">&#8212; Select &#8212;</option>
+                                    <option>1st Year</option><option>2nd Year</option>
+                                    <option>3rd Year</option><option>4th Year</option><option>5th Year</option>
                                 </select>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Personal References -->
-                <div class="card shadow mb-4">
-                    <div class="card-header bg-secondary text-white">
-                        <h5 class="mb-0"><i class="fas fa-address-book me-2"></i>PERSONAL REFERENCES</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-12 mb-3">
-                                <label class="form-label">1. Name & Contact</label>
-                                <input type="text" class="form-control" name="reference_1" placeholder="Full Name, Contact Number">
-                            </div>
-                            <div class="col-md-12 mb-3">
-                                <label class="form-label">2. Name & Contact</label>
-                                <input type="text" class="form-control" name="reference_2" placeholder="Full Name, Contact Number">
-                            </div>
-                            <div class="col-md-12 mb-3">
-                                <label class="form-label">3. Name & Contact</label>
-                                <input type="text" class="form-control" name="reference_3" placeholder="Full Name, Contact Number">
                             </div>
                         </div>
                     </div>
@@ -576,51 +392,51 @@ include __DIR__ . '/../../includes/header.php';
 
                 <!-- 4Ps Program Details -->
                 <div class="card shadow mb-4">
-                    <div class="card-header bg-primary text-white">
-                        <h5 class="mb-0"><i class="fas fa-hands-helping me-2"></i>4Ps PROGRAM DETAILS</h5>
+                    <div class="card-header">
+                        <h5><i class="fas fa-hands-helping" style="opacity:.7"></i> 4Ps Program Details</h5>
                     </div>
                     <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Household ID <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" name="household_id" required placeholder="e.g., HH-2024-001">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Household ID <span class="req">*</span></label>
+                                <input type="text" class="form-control" name="household_id" required placeholder="e.g. HH-2024-001">
                             </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Grantee Name <span class="text-danger">*</span></label>
+                            <div class="col-md-6">
+                                <label class="form-label">Grantee Name <span class="req">*</span></label>
                                 <input type="text" class="form-control" name="grantee_name" required>
                             </div>
-                            <div class="col-md-4 mb-3">
-                                <label class="form-label">Date Registered <span class="text-danger">*</span></label>
+                            <div class="col-md-6">
+                                <label class="form-label">Date Registered <span class="req">*</span></label>
                                 <input type="date" class="form-control" name="date_registered" required max="<?php echo date('Y-m-d'); ?>">
                             </div>
-                            <div class="col-md-4 mb-3">
-                                <label class="form-label">Status <span class="text-danger">*</span></label>
+                            <div class="col-md-6">
+                                <label class="form-label">Set Number</label>
+                                <input type="text" class="form-control" name="set_number" placeholder="e.g. SET-01">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Status <span class="req">*</span></label>
                                 <select class="form-select" name="status" required>
-                                    <option value="">-- Select --</option>
+                                    <option value="">&#8212; Select &#8212;</option>
                                     <option value="Active">Active</option>
                                     <option value="Inactive">Inactive</option>
                                     <option value="Suspended">Suspended</option>
                                     <option value="Graduated">Graduated</option>
                                 </select>
                             </div>
-                            <div class="col-md-4 mb-3">
-                                <label class="form-label">Set Number</label>
-                                <input type="text" class="form-control" name="set_number" placeholder="e.g., SET-01">
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Compliance Status <span class="text-danger">*</span></label>
+                            <div class="col-md-6">
+                                <label class="form-label">Compliance Status <span class="req">*</span></label>
                                 <select class="form-select" name="compliance_status" required>
-                                    <option value="">-- Select --</option>
+                                    <option value="">&#8212; Select &#8212;</option>
                                     <option value="Compliant">Compliant</option>
                                     <option value="Non-Compliant">Non-Compliant</option>
                                     <option value="Partial">Partial</option>
                                 </select>
                             </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Monthly Grant (₱) <span class="text-danger">*</span></label>
+                            <div class="col-12">
+                                <label class="form-label">Monthly Grant (&#8369;) <span class="req">*</span></label>
                                 <input type="number" class="form-control" name="monthly_grant" required step="0.01" min="0" placeholder="0.00">
                             </div>
-                            <div class="col-md-12 mb-3">
+                            <div class="col-12">
                                 <label class="form-label">Remarks</label>
                                 <textarea class="form-control" name="remarks" rows="3"></textarea>
                             </div>
@@ -628,398 +444,365 @@ include __DIR__ . '/../../includes/header.php';
                     </div>
                 </div>
 
-                <!-- ID Picture Upload -->
+                <!-- Personal References -->
                 <div class="card shadow mb-4">
-                    <div class="card-header bg-info text-white">
-                        <h5 class="mb-0"><i class="fas fa-camera me-2"></i>ID PICTURE (2x2)</h5>
+                    <div class="card-header">
+                        <h5><i class="fas fa-address-book" style="opacity:.7"></i> Personal References</h5>
                     </div>
                     <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Upload Recent 2x2 ID Picture <span class="text-danger">*</span></label>
-                                <input type="file" class="form-control" name="id_picture" accept="image/*" required>
-                                <small class="text-muted">Accepted formats: JPG, PNG, GIF (Max 5MB)</small>
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label class="form-label">1. Name &amp; Contact</label>
+                                <input type="text" class="form-control" name="reference_1" placeholder="Full Name, Contact Number">
                             </div>
-                            <div class="col-md-6">
-                                <div class="id-picture-preview" id="imagePreview">
-                                    <i class="fas fa-user fa-3x text-muted"></i>
-                                    <p class="text-muted mt-2">Preview will appear here</p>
+                            <div class="col-12">
+                                <label class="form-label">2. Name &amp; Contact</label>
+                                <input type="text" class="form-control" name="reference_2" placeholder="Full Name, Contact Number">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">3. Name &amp; Contact</label>
+                                <input type="text" class="form-control" name="reference_3" placeholder="Full Name, Contact Number">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ID Picture -->
+                <div class="card shadow mb-4">
+                    <div class="card-header">
+                        <h5><i class="fas fa-camera" style="opacity:.7"></i> ID Picture (2&#215;2)</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-7">
+                                <label class="form-label">Upload Recent ID Photo <span class="req">*</span></label>
+                                <input type="file" class="form-control" name="id_picture" accept="image/*" required>
+                                <small class="text-muted d-block mt-1">
+                                    <i class="fas fa-info-circle"></i> JPG, PNG, GIF &middot; Max 5MB
+                                </small>
+                            </div>
+                            <div class="col-md-5">
+                                <label class="form-label">Preview</label>
+                                <div id="imagePreview" class="photo-preview-box">
+                                    <i class="fas fa-user"></i>
+                                    <p>Preview here</p>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Certification -->
+                <!-- Requirements -->
                 <div class="card shadow mb-4">
+                    <div class="card-header">
+                        <h5><i class="fas fa-clipboard-list" style="opacity:.7"></i> Requirements</h5>
+                    </div>
                     <div class="card-body">
-                        <div class="form-check mb-3">
-                            <input class="form-check-input" type="checkbox" id="certify" required>
-                            <label class="form-check-label" for="certify">
-                                <strong>I hereby certify that the foregoing statements are true and correct.</strong><br>
-                                <small class="text-muted">Any misrepresentation or withholding of information will automatically disqualify me from the educational assistance program.</small>
-                            </label>
+                        <ol class="req-list">
+                            <li>4Ps Application Form</li>
+                            <li>Certificate of Enrollment (Photocopy)</li>
+                            <li>Transcript of Records (previous school year)</li>
+                            <li>Student ID or any Government ID</li>
+                            <li>Barangay Clearance</li>
+                        </ol>
+                        <div class="alert alert-warning mb-0 mt-3">
+                            <strong><i class="fas fa-star me-1"></i> Qualifications:</strong>
+                            <ul class="mb-0 mt-1 ps-3">
+                                <li>Must be enrolled in the current semester</li>
+                                <li>No failing marks from the previous semester</li>
+                                <li>No grade lower than 2.5</li>
+                            </ul>
                         </div>
                     </div>
                 </div>
 
-                <!-- Form Actions -->
-                <div class="d-flex justify-content-between mb-5">
-                    <a href="beneficiaries-debug.php" class="btn btn-secondary btn-lg">
-                        <i class="fas fa-arrow-left me-2"></i>Cancel
+        </div><!-- /form-masonry -->
+
+        <!-- Certification + Submit -->
+        <div class="card shadow mb-5">
+            <div class="card-body">
+                <div class="certify-box mb-4">
+                    <input type="checkbox" id="certify" required>
+                    <label for="certify">
+                        <strong>I hereby certify that the foregoing statements are true and correct.</strong><br>
+                        <small class="text-muted">Any misrepresentation or withholding of information will automatically disqualify me from the educational assistance program.</small>
+                    </label>
+                </div>
+                <div class="d-flex justify-content-between align-items-center">
+                    <a href="beneficiaries.php" class="btn btn-secondary btn-lg">
+                        <i class="fas fa-times"></i> Cancel
                     </a>
-                    <button type="submit" class="btn btn-primary btn-lg">
-                        <i class="fas fa-save me-2"></i>Submit Application
+                    <button type="submit" class="btn btn-warning btn-lg" id="submitBtn">
+                        <i class="fas fa-paper-plane"></i> Submit Application
                     </button>
                 </div>
-
-                <!-- Requirements Section -->
-                <div class="card shadow mb-4">
-                    <div class="card-header bg-danger text-white">
-                        <h5 class="mb-0"><i class="fas fa-clipboard-list me-2"></i>REQUIREMENTS</h5>
-                    </div>
-                    <div class="card-body">
-                        <ol>
-                            <li>4Ps Party-List Educational Assistance Application Form</li>
-                            <li>Certificate of Enrollment (Photocopy)</li>
-                            <li>Transcript of Records (from previous school year)</li>
-                            <li>Student ID (or any government ID)</li>
-                            <li>Barangay Clearance</li>
-                        </ol>
-                        <h6 class="mt-4"><strong>Qualifications:</strong></h6>
-                        <ul>
-                            <li>Must be enrolled in the current semester</li>
-                            <li>No failing marks from the previous semester</li>
-                            <li>At least no lower grades than 2.5</li>
-                        </ul>
-                    </div>
-                </div>
-            </form>
+            </div>
         </div>
-    </div>
-</div>
+
+    </form>
+</div><!-- /container-fluid -->
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=DM+Mono:wght@300;400;500&display=swap');
+:root {
+    --db-navy:#0d1b36; --db-navy-mid:#152849; --db-navy-light:#1c3461;
+    --db-amber:#f59e0b; --db-amber-light:#fef3c7; --db-amber-dark:#b45309;
+    --db-teal:#0d9488; --db-teal-light:#ccfbf1;
+    --db-rose:#e11d48; --db-sky:#0ea5e9; --db-sky-light:#e0f2fe;
+    --db-indigo:#6366f1; --db-indigo-light:#e0e7ff;
+    --db-success:#10b981; --db-success-light:#d1fae5;
+    --db-warning:#f59e0b; --db-warning-light:#fef3c7;
+    --db-danger:#ef4444; --db-danger-light:#fee2e2;
+    --db-bg:#eef2f7; --db-surf:#ffffff; --db-surf2:#f8fafc;
+    --db-border:#e2e8f0; --db-text:#0f172a; --db-muted:#64748b;
+    --db-radius:14px; --db-radius-sm:8px; --db-radius-lg:20px;
+    --db-shadow:0 1px 3px rgba(13,27,54,.06),0 4px 16px rgba(13,27,54,.07);
+    --db-shadow-lg:0 8px 40px rgba(13,27,54,.14),0 2px 8px rgba(13,27,54,.06);
+}
+*,*::before,*::after{box-sizing:border-box}
+body{font-family:'Sora',sans-serif;background:var(--db-bg);color:var(--db-text);font-size:13.5px;line-height:1.6}
+
+/* Hero */
+.bps-hero{background:linear-gradient(135deg,var(--db-navy) 0%,var(--db-navy-light) 65%,#224090 100%);padding:28px 36px;margin-bottom:24px;border-radius:0 0 var(--db-radius-lg) var(--db-radius-lg);position:relative;overflow:hidden}
+.bps-hero__ring{position:absolute;border-radius:50%;border:1px solid rgba(255,255,255,.06);pointer-events:none}
+.bps-hero__ring--1{width:320px;height:320px;top:-140px;right:-80px}
+.bps-hero__ring--2{width:200px;height:200px;top:-60px;right:60px;border-color:rgba(245,158,11,.12)}
+.bps-hero__ring--3{width:120px;height:120px;bottom:-50px;left:35%;border-color:rgba(13,148,136,.14)}
+.bps-hero__inner{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap}
+.bps-hero__left{display:flex;align-items:center;gap:18px}
+.bps-hero__icon{width:54px;height:54px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff;flex-shrink:0}
+.bps-hero__title{font-size:22px;font-weight:800;color:#fff;letter-spacing:-0.4px;margin-bottom:2px}
+.bps-hero__sub{font-size:13px;color:rgba(255,255,255,.55);margin:0}
+
+/* Container */
+.container-fluid{padding:0 24px 40px;max-width:1400px;margin:0 auto}
+
+/* Alerts */
+.alert{border-radius:var(--db-radius);border:none;border-left:4px solid;font-family:'Sora',sans-serif;font-size:13.5px;font-weight:500;padding:14px 18px;margin-bottom:16px;animation:dbFadeUp .3s ease both}
+.alert-success{background:var(--db-success-light);color:#065f46;border-color:var(--db-success)}
+.alert-danger{background:var(--db-danger-light);color:#7f1d1d;border-color:var(--db-danger)}
+.alert-warning{background:var(--db-warning-light);color:#92400e;border-color:var(--db-warning)}
+@keyframes dbFadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+/* Cards */
+.card{background:var(--db-surf);border-radius:var(--db-radius-lg) !important;border:1px solid var(--db-border) !important;box-shadow:var(--db-shadow);overflow:hidden;animation:dbFadeUp .35s ease both}
+.card-header{padding:18px 22px !important;border-bottom:1px solid var(--db-border) !important;background:var(--db-surf) !important;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.card-header h5{font-size:15px;font-weight:700;color:var(--db-text);margin:0;display:flex;align-items:center;gap:8px}
+.card-header h5::before{content:'';display:inline-block;width:4px;height:18px;background:linear-gradient(to bottom,var(--db-teal),var(--db-sky));border-radius:2px}
+.card-header small{font-size:11.5px;color:var(--db-muted);font-family:'DM Mono',monospace}
+.card-body{padding:20px 22px !important}
+
+/* Form */
+.form-label{font-size:12px;font-weight:600;color:var(--db-text);margin-bottom:5px;font-family:'Sora',sans-serif}
+.form-control,.form-select{border:1.5px solid var(--db-border) !important;border-radius:var(--db-radius-sm) !important;font-family:'Sora',sans-serif !important;font-size:13px !important;color:var(--db-text) !important;background:var(--db-surf) !important;padding:9px 13px !important;transition:all .18s !important;box-shadow:none !important}
+.form-control:focus,.form-select:focus{border-color:var(--db-navy-light) !important;box-shadow:0 0 0 3px rgba(28,52,97,.1) !important}
+.form-control::placeholder{color:#94a3b8 !important}
+.form-control[readonly]{background:var(--db-surf2) !important;cursor:not-allowed;color:var(--db-muted) !important}
+.form-control[disabled]{background:var(--db-surf2) !important;color:var(--db-muted) !important;font-family:'DM Mono',monospace !important}
+textarea.form-control{resize:vertical;min-height:88px}
+.autofill-field.filled{background:#f0fdf4 !important;border-color:#86efac !important}
+
+/* Buttons */
+.btn{font-family:'Sora',sans-serif !important;font-weight:600 !important;border-radius:var(--db-radius-sm) !important;font-size:13px !important;transition:all .18s ease !important;display:inline-flex !important;align-items:center !important;gap:6px !important}
+.btn-secondary{background:var(--db-surf2) !important;border-color:var(--db-border) !important;color:var(--db-text) !important}
+.btn-secondary:hover{background:var(--db-border) !important;color:var(--db-text) !important}
+.btn-warning{background:linear-gradient(135deg,var(--db-amber),var(--db-amber-dark)) !important;border-color:transparent !important;color:#fff !important}
+.btn-warning:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(245,158,11,.35) !important;color:#fff !important}
+.btn-lg{padding:11px 24px !important;font-size:14px !important}
+
+.req{color:var(--db-rose)}
+.text-muted{color:var(--db-muted) !important;font-size:11.5px}
+
+/* Masonry 2-column layout — no blank spaces */
+.form-masonry{column-count:2;column-gap:18px}
+.form-masonry>.card{break-inside:avoid;display:inline-block;width:100%}
+@media(max-width:1100px){.form-masonry{column-count:1}}
+
+/* Photo preview */
+.photo-preview-box{border:2px dashed var(--db-border);border-radius:var(--db-radius);padding:20px;text-align:center;min-height:110px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--db-surf2)}
+.photo-preview-box i{font-size:28px;color:var(--db-border)}
+.photo-preview-box p{margin:6px 0 0;font-size:11px;color:var(--db-muted)}
+.photo-preview-box img{max-width:100%;max-height:130px;border-radius:var(--db-radius-sm)}
+
+/* Requirements list */
+.req-list{padding-left:20px;margin:0}
+.req-list li{padding:5px 0;font-size:13px;border-bottom:1px solid var(--db-border)}
+.req-list li:last-child{border-bottom:none}
+
+/* Certification */
+.certify-box{display:flex;align-items:flex-start;gap:12px;padding:16px;background:var(--db-surf2);border-radius:var(--db-radius);border:1px solid var(--db-border)}
+.certify-box input[type="checkbox"]{width:18px;height:18px;flex-shrink:0;margin-top:2px;accent-color:var(--db-navy);cursor:pointer}
+.certify-box label{font-size:13.5px;line-height:1.6;cursor:pointer}
+
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:var(--db-surf2)}
+::-webkit-scrollbar-thumb{background:var(--db-border);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--db-muted)}
+
+@media(max-width:900px){.bps-hero{padding:20px;border-radius:0}.bps-hero__title{font-size:18px}.container-fluid{padding:0 14px 32px}}
+</style>
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const residentSelect = document.getElementById('resident_id');
-    const formFields = {};
-    
-    function cacheFormFields() {
-        const fieldNames = [
-            'last_name', 'first_name', 'middle_name', 'ext',
-            'permanent_address', 'street', 'brgy', 'town', 'province',
-            'birthplace', 'mobile_phone', 'birthday', 
-            'civil_status', 'gender'
-        ];
-        
-        fieldNames.forEach(name => {
-            const element = document.querySelector(`[name="${name}"]`);
-            if (element) {
-                formFields[name] = element;
-            }
-        });
-    }
-    
-    function showLoading(show = true) {
-        const select = document.getElementById('resident_id');
-        if (show) {
-            select.disabled = true;
-            select.style.cursor = 'wait';
-        } else {
-            select.disabled = false;
-            select.style.cursor = 'pointer';
-        }
-    }
-    
-    function showNotification(message, type = 'info') {
-        const existingAlerts = document.querySelectorAll('.auto-notification');
-        existingAlerts.forEach(alert => alert.remove());
-        
-        const alertClass = type === 'success' ? 'alert-success' : 
-                          type === 'error' ? 'alert-danger' : 
-                          type === 'warning' ? 'alert-warning' : 'alert-info';
-        
-        const iconClass = type === 'success' ? 'fa-check-circle' : 
-                         type === 'error' ? 'fa-exclamation-circle' : 
-                         type === 'warning' ? 'fa-exclamation-triangle' : 'fa-info-circle';
-        
-        const alert = document.createElement('div');
-        alert.className = `alert ${alertClass} alert-dismissible fade show auto-notification`;
-        alert.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 9999; min-width: 300px; animation: slideInRight 0.3s ease-out;';
-        alert.innerHTML = `
-            <i class="fas ${iconClass} me-2"></i>${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        `;
-        
-        document.body.appendChild(alert);
-        
-        setTimeout(() => {
-            alert.classList.remove('show');
-            setTimeout(() => alert.remove(), 300);
-        }, 5000);
-    }
-    
-    function clearPersonalInformation() {
-        Object.values(formFields).forEach(field => {
-            if (field.tagName === 'SELECT') {
-                field.selectedIndex = 0;
-            } else {
-                field.value = '';
-            }
-            field.removeAttribute('readonly');
-            field.style.backgroundColor = '';
-        });
-        
-        document.querySelectorAll('.auto-notification').forEach(el => el.remove());
-    }
-    
-    function autoFillForm(data) {
-        const fieldMapping = {
-            'last_name': data.last_name,
-            'first_name': data.first_name,
-            'middle_name': data.middle_name,
-            'ext': data.ext_name,
-            'permanent_address': data.permanent_address || data.address,
-            'street': data.street,
-            'brgy': data.barangay,
-            'town': data.town || data.city,
-            'province': data.province,
-            'birthplace': data.birthplace,
-            'mobile_phone': data.contact_no,
-            'birthday': data.birthdate,
-            'civil_status': data.civil_status,
-            'gender': data.gender
-        };
-        
-        Object.keys(fieldMapping).forEach(fieldName => {
-            const field = formFields[fieldName];
-            const value = fieldMapping[fieldName];
-            
-            if (field && value) {
-                if (field.tagName === 'SELECT') {
-                    const options = Array.from(field.options);
-                    const matchingOption = options.find(opt => 
-                        opt.value.toLowerCase() === value.toLowerCase()
-                    );
-                    if (matchingOption) {
-                        field.value = matchingOption.value;
-                    }
-                } else {
-                    field.value = value;
-                }
-                
-                field.style.backgroundColor = '#e8f5e9';
-                field.setAttribute('readonly', 'readonly');
-                
-                field.style.transition = 'background-color 0.3s ease';
-                setTimeout(() => {
-                    field.style.backgroundColor = '#f0f8ff';
-                }, 300);
-            }
-        });
-        
-        const infoDiv = document.createElement('div');
-        infoDiv.className = 'alert alert-info mt-3 auto-notification';
-        infoDiv.innerHTML = `
-            <i class="fas fa-info-circle me-2"></i>
-            <strong>Info:</strong> Personal information fields have been auto-filled from verified resident data and are now read-only.
-            You can still fill in family background, academic information, and 4Ps program details.
-        `;
-        
-        const form = document.getElementById('4psForm');
-        const firstCard = form.querySelector('.card');
-        firstCard.after(infoDiv);
-    }
-    
+document.addEventListener('DOMContentLoaded', function () {
+
+    var residentSelect = document.getElementById('resident_id');
+    var autofillNotice = document.getElementById('autofill-notice');
+    var imagePreview   = document.getElementById('imagePreview');
+    var pictureInput   = document.querySelector('[name="id_picture"]');
+    var theForm        = document.getElementById('4psForm');
+    var submitBtn      = document.getElementById('submitBtn');
+    var certifyBox     = document.getElementById('certify');
+
+    var fieldMap = {
+        last_name:         'last_name',
+        first_name:        'first_name',
+        middle_name:       'middle_name',
+        ext:               'ext_name',
+        permanent_address: 'permanent_address',
+        street:            'street',
+        brgy:              'barangay',
+        town:              'town',
+        province:          'province',
+        birthplace:        'birthplace',
+        mobile_phone:      'contact_no',
+        birthday:          'birthdate',
+        civil_status:      'civil_status',
+        gender:            'gender'
+    };
+
+    // ── Resident autofill ──
     if (residentSelect) {
-        cacheFormFields();
-        
-        residentSelect.addEventListener('change', function() {
-            const residentId = this.value;
-            const selectedOption = this.options[this.selectedIndex];
-            
-            if (!residentId) {
-                clearPersonalInformation();
-                return;
-            }
-            
-            const alreadyIn4ps = selectedOption.getAttribute('data-already-in-4ps') === '1';
-            if (alreadyIn4ps) {
-                showNotification('This resident is already registered in the 4Ps program', 'warning');
+        residentSelect.addEventListener('change', function () {
+            var id  = this.value;
+            var opt = this.options[this.selectedIndex];
+
+            if (!id) { clearResident(); return; }
+
+            if (opt.getAttribute('data-already-in-4ps') === '1') {
+                showNotification('warning', 'This resident is already registered in the 4Ps program.');
                 this.value = '';
                 return;
             }
-            
-            showLoading(true);
-            
-            fetch('get_resident.php?id=' + residentId)
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error('Network response was not ok');
-                    }
-                    return response.json();
-                })
-                .then(result => {
-                    if (result.success && result.data) {
-                        autoFillForm(result.data);
-                        showNotification('✓ Resident information loaded successfully!', 'success');
-                    } else {
-                        showNotification(result.message || 'Error loading resident information', 'error');
-                        clearPersonalInformation();
-                        residentSelect.value = '';
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    showNotification('Failed to load resident information. Please try again.', 'error');
-                    clearPersonalInformation();
-                    residentSelect.value = '';
-                })
-                .finally(() => {
-                    showLoading(false);
+
+            residentSelect.disabled = true;
+
+            fetch('get_resident.php?id=' + encodeURIComponent(id), {
+                method: 'GET',
+                credentials: 'same-origin',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+            .then(function (response) {
+                if (!response.ok) throw new Error('Server error ' + response.status);
+                var ct = response.headers.get('content-type') || '';
+                if (!ct.includes('application/json')) throw new Error('Non-JSON response: ' + ct);
+                return response.json();
+            })
+            .then(function (result) {
+                if (!result.success) throw new Error(result.message || 'success:false');
+                fillForm(result.data);
+                if (autofillNotice) autofillNotice.style.display = 'block';
+                showNotification('success', 'Resident information loaded successfully!');
+            })
+            .catch(function (err) {
+                console.error('Autofill error:', err);
+                showNotification('danger', 'Could not load resident: ' + err.message);
+                clearResident();
+            })
+            .finally(function () {
+                residentSelect.disabled = false;
+            });
+        });
+    }
+
+    function fillForm(d) {
+        if (!d) return;
+        Object.keys(fieldMap).forEach(function (fname) {
+            var el  = document.querySelector('[name="' + fname + '"]');
+            var raw = d[fieldMap[fname]];
+            var val = (raw != null ? String(raw) : '').trim();
+            if (!el || !val) return;
+            if (el.tagName === 'SELECT') {
+                Array.from(el.options).forEach(function (o) {
+                    if (o.value.toLowerCase() === val.toLowerCase()) el.value = o.value;
                 });
-        });
-    }
-    
-    const imageInput = document.querySelector('input[name="id_picture"]');
-    if (imageInput) {
-        imageInput.addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            const preview = document.getElementById('imagePreview');
-            
-            if (file) {
-                if (file.size > 5242880) {
-                    showNotification('File size must be less than 5MB', 'error');
-                    this.value = '';
-                    return;
-                }
-                
-                const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
-                if (!allowedTypes.includes(file.type)) {
-                    showNotification('Only JPG, PNG, or GIF files are allowed', 'error');
-                    this.value = '';
-                    return;
-                }
-                
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    preview.innerHTML = `
-                        <img src="${e.target.result}" alt="ID Preview" 
-                             style="max-width: 100%; max-height: 200px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                        <p class="text-success mt-2 mb-0">
-                            <i class="fas fa-check-circle me-1"></i>Preview loaded
-                        </p>
-                    `;
-                };
-                reader.readAsDataURL(file);
             } else {
-                preview.innerHTML = `
-                    <i class="fas fa-user fa-3x text-muted"></i>
-                    <p class="text-muted mt-2">Preview will appear here</p>
-                `;
+                el.value = val;
             }
+            el.classList.add('filled');
+            el.setAttribute('readonly', true);
         });
     }
-    
-    const form = document.getElementById('4psForm');
-    if (form) {
-        form.addEventListener('submit', function(e) {
-            const certifyCheckbox = document.getElementById('certify');
-            if (!certifyCheckbox.checked) {
-                e.preventDefault();
-                showNotification('Please certify that the information provided is true and correct', 'warning');
-                certifyCheckbox.focus();
-                return false;
+
+    window.clearResident = function () {
+        if (residentSelect) residentSelect.value = '';
+        document.querySelectorAll('.autofill-field').forEach(function (f) {
+            if (f.tagName === 'SELECT') f.selectedIndex = 0;
+            else f.value = '';
+            f.classList.remove('filled');
+            f.removeAttribute('readonly');
+        });
+        if (autofillNotice) autofillNotice.style.display = 'none';
+    };
+
+    // ── Image preview ──
+    if (pictureInput) {
+        pictureInput.addEventListener('change', function (e) {
+            var file = e.target.files[0];
+            if (!file) return;
+            if (file.size > 5242880) {
+                showNotification('danger', 'File must be under 5MB.');
+                this.value = ''; return;
             }
-            
-            const submitBtn = form.querySelector('button[type="submit"]');
+            if (['image/jpeg','image/png','image/gif'].indexOf(file.type) === -1) {
+                showNotification('danger', 'Only JPG, PNG, or GIF files allowed.');
+                this.value = ''; return;
+            }
+            var reader = new FileReader();
+            reader.onload = function (ev) {
+                if (imagePreview) imagePreview.innerHTML = '<img src="' + ev.target.result + '" alt="Preview" style="max-width:100%;max-height:130px;border-radius:8px;">';
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    // ── Submit guard ──
+    if (theForm) {
+        theForm.addEventListener('submit', function (e) {
+            if (certifyBox && !certifyBox.checked) {
+                e.preventDefault();
+                showNotification('warning', 'Please tick the certification checkbox before submitting.');
+                return;
+            }
             if (submitBtn) {
                 submitBtn.disabled = true;
-                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Submitting...';
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
             }
         });
     }
-});
 
-const style = document.createElement('style');
-style.textContent = `
-    @keyframes slideInRight {
-        from {
-            transform: translateX(100%);
-            opacity: 0;
-        }
-        to {
-            transform: translateX(0);
-            opacity: 1;
-        }
-    }
-    
-    .form-control[readonly],
-    .form-select[readonly] {
-        cursor: not-allowed;
-    }
-`;
-document.head.appendChild(style);
+    // ── Auto-dismiss server alerts ──
+    setTimeout(function () {
+        document.querySelectorAll('.alert:not(.dynamic-alert)').forEach(function (a) {
+            a.classList.remove('show');
+            setTimeout(function () { if (a.parentNode) a.remove(); }, 300);
+        });
+    }, 5000);
+
+}); // end DOMContentLoaded
+
+function showNotification(type, msg) {
+    document.querySelectorAll('.dynamic-alert').forEach(function (a) { a.remove(); });
+    var a = document.createElement('div');
+    a.className = 'alert alert-' + type + ' alert-dismissible fade show dynamic-alert';
+    a.innerHTML = '<i class="fas fa-info-circle me-2"></i>' + msg +
+        '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+    var cf = document.querySelector('.container-fluid');
+    if (cf) cf.prepend(a);
+    setTimeout(function () {
+        a.classList.remove('show');
+        setTimeout(function () { if (a.parentNode) a.remove(); }, 300);
+    }, 5000);
+}
 </script>
-
-<style>
-.card {
-    border: none;
-    border-radius: 10px;
-}
-
-.card-header {
-    border-radius: 10px 10px 0 0 !important;
-    padding: 1rem 1.5rem;
-}
-
-.form-label {
-    font-weight: 500;
-    color: #2d3748;
-}
-
-.form-control, .form-select {
-    border: 1px solid #cbd5e0;
-    border-radius: 8px;
-    padding: 0.6rem 1rem;
-}
-
-.form-control:focus, .form-select:focus {
-    border-color: #4299e1;
-    box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.1);
-}
-
-.id-picture-preview {
-    border: 2px dashed #cbd5e0;
-    border-radius: 8px;
-    padding: 2rem;
-    text-align: center;
-    min-height: 200px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-}
-
-#resident_id:disabled {
-    opacity: 0.6;
-    cursor: wait;
-}
-
-.alert {
-    animation: slideIn 0.3s ease-out;
-}
-
-@keyframes slideIn {
-    from {
-        transform: translateY(-20px);
-        opacity: 0;
-    }
-    to {
-        transform: translateY(0);
-        opacity: 1;
-    }
-}
-</style>
 
 <?php include __DIR__ . '/../../includes/footer.php'; ?>

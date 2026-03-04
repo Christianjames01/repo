@@ -5,766 +5,320 @@ require_once '../../config/session.php';
 require_once '../../includes/security.php';
 require_once '../../includes/functions.php';
 
-requireAnyRole(['Admin', 'Super Admin', 'Super Administrator', 'Barangay Captain', 'Barangay Tanod', 'Staff', 'Secretary', 'Treasurer', 'Tanod', 'Resident']);
+requireAnyRole(['Admin','Super Admin','Super Administrator','Barangay Captain','Barangay Tanod','Staff','Secretary','Treasurer','Tanod','Resident']);
 
 $current_user_id = getCurrentUserId();
 $current_role    = getCurrentUserRole();
-
-$staff_roles = ['Admin', 'Super Admin', 'Super Administrator', 'Barangay Captain', 'Barangay Tanod', 'Staff', 'Secretary', 'Treasurer', 'Tanod'];
+$staff_roles = ['Admin','Super Admin','Super Administrator','Barangay Captain','Barangay Tanod','Staff','Secretary','Treasurer','Tanod'];
 $is_resident = !in_array($current_role, $staff_roles);
-
 $page_title = 'View Complaints';
 
 $resident_id = null;
 if ($is_resident) {
     $stmt = $conn->prepare("SELECT resident_id FROM tbl_users WHERE user_id = ?");
-    $stmt->bind_param("i", $current_user_id);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    if ($row = $result->fetch_assoc()) $resident_id = $row['resident_id'];
+    $stmt->bind_param("i", $current_user_id); $stmt->execute();
+    if ($row = $stmt->get_result()->fetch_assoc()) $resident_id = $row['resident_id'];
     $stmt->close();
-
     if ($resident_id) {
         $stmt = $conn->prepare("SELECT is_verified, id_photo FROM tbl_residents WHERE resident_id = ?");
-        $stmt->bind_param("i", $resident_id);
-        $stmt->execute();
-        $resident_info = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-
-        if (!$resident_info || $resident_info['is_verified'] != 1 || empty($resident_info['id_photo'])) {
-            header('Location: not-verified-complaints.php');
-            exit();
-        }
+        $stmt->bind_param("i", $resident_id); $stmt->execute();
+        $resident_info = $stmt->get_result()->fetch_assoc(); $stmt->close();
+        if (!$resident_info || $resident_info['is_verified'] != 1 || empty($resident_info['id_photo'])) { header('Location: not-verified-complaints.php'); exit(); }
     }
 }
 
 $success = isset($_GET['success']) ? sanitizeInput($_GET['success']) : '';
 $error   = isset($_GET['error'])   ? sanitizeInput($_GET['error'])   : '';
-
 $filter_status = isset($_GET['status']) ? sanitizeInput($_GET['status']) : '';
 
-// Detect date column
-$date_columns = ['created_at', 'date_filed', 'date_created'];
+$date_columns = ['created_at','date_filed','date_created'];
 $date_column  = null;
-foreach ($date_columns as $col) {
-    if (columnExists($conn, 'tbl_complaints', $col)) { $date_column = $col; break; }
-}
+foreach ($date_columns as $col) { if (columnExists($conn,'tbl_complaints',$col)) { $date_column=$col; break; } }
 
-// ── Main query ───────────────────────────────────────────────────────────────
-$sql = "SELECT c.complaint_id, c.complaint_number, c.subject, c.description, c.category,
-        c.priority, c.status, c.resident_id, c.assigned_to";
+$sql = "SELECT c.complaint_id, c.complaint_number, c.subject, c.description, c.category, c.priority, c.status, c.resident_id, c.assigned_to";
 if ($date_column) $sql .= ", c.$date_column as complaint_date";
-$sql .= ", CONCAT(r.first_name, ' ', r.last_name) as complainant_name,
-          u.username as assigned_to_name
+$sql .= ", CONCAT(r.first_name,' ',r.last_name) as complainant_name, u.username as assigned_to_name
           FROM tbl_complaints c
-          LEFT JOIN tbl_residents r ON c.resident_id = r.resident_id
-          LEFT JOIN tbl_users u ON c.assigned_to = u.user_id
+          LEFT JOIN tbl_residents r ON c.resident_id=r.resident_id
+          LEFT JOIN tbl_users u ON c.assigned_to=u.user_id
           WHERE 1=1";
-
-$params = [];
-$types  = '';
-
-if ($is_resident && $resident_id) { $sql .= " AND c.resident_id = ?";     $params[] = $resident_id;   $types .= 'i'; }
-if ($filter_status)               { $sql .= " AND TRIM(c.status) = ?";    $params[] = $filter_status; $types .= 's'; }
-
-$sql .= $date_column ? " ORDER BY c.$date_column DESC" : " ORDER BY c.complaint_id DESC";
-
+$params=[]; $types='';
+if ($is_resident && $resident_id) { $sql.=" AND c.resident_id=?"; $params[]=$resident_id; $types.='i'; }
+if ($filter_status)               { $sql.=" AND TRIM(c.status)=?"; $params[]=$filter_status; $types.='s'; }
+$sql .= $date_column?" ORDER BY c.$date_column DESC":" ORDER BY c.complaint_id DESC";
 $stmt = $conn->prepare($sql);
-if (!empty($params)) {
-    $stmt->bind_param($types, ...$params);
-}
-$stmt->execute();
-$complaints_result = $stmt->get_result();
-$complaints = $complaints_result->fetch_all(MYSQLI_ASSOC);
-$stmt->close();
+if (!empty($params)) $stmt->bind_param($types, ...$params);
+$stmt->execute(); $complaints=$stmt->get_result()->fetch_all(MYSQLI_ASSOC); $stmt->close();
 
-// ── Statistics ───────────────────────────────────────────────────────────────
-$stats = ['total' => 0, 'pending' => 0, 'in_progress' => 0, 'resolved' => 0, 'closed' => 0];
-$stats_sql = "SELECT status, COUNT(*) as count FROM tbl_complaints";
-if ($is_resident && $resident_id) $stats_sql .= " WHERE resident_id = " . (int)$resident_id;
-$stats_sql .= " GROUP BY status";
-$stats_result = $conn->query($stats_sql);
-if ($stats_result) {
-    while ($row = $stats_result->fetch_assoc()) {
-        $s = trim($row['status']);
-        $stats['total'] += $row['count'];
-        if ($s === 'Pending')     $stats['pending']     = $row['count'];
-        if ($s === 'In Progress') $stats['in_progress'] = $row['count'];
-        if ($s === 'Resolved')    $stats['resolved']    = $row['count'];
-        if ($s === 'Closed')      $stats['closed']      = $row['count'];
-    }
-}
+$stats=['total'=>0,'pending'=>0,'in_progress'=>0,'resolved'=>0,'closed'=>0];
+$stats_sql="SELECT status,COUNT(*) as count FROM tbl_complaints";
+if ($is_resident && $resident_id) $stats_sql.=" WHERE resident_id=".(int)$resident_id;
+$stats_sql.=" GROUP BY status";
+$stats_result=$conn->query($stats_sql);
+if ($stats_result) { while ($row=$stats_result->fetch_assoc()) { $s=trim($row['status']); $stats['total']+=$row['count']; if($s==='Pending')$stats['pending']=$row['count']; if($s==='In Progress')$stats['in_progress']=$row['count']; if($s==='Resolved')$stats['resolved']=$row['count']; if($s==='Closed')$stats['closed']=$row['count']; } }
 
 function getComplaintStatusBadge($status) {
-    $status = trim($status);
-    $badges = [
-        'Pending'     => '<span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i>Pending</span>',
-        'In Progress' => '<span class="badge bg-primary"><i class="fas fa-spinner me-1"></i>In Progress</span>',
-        'Resolved'    => '<span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Resolved</span>',
-        'Closed'      => '<span class="badge bg-secondary"><i class="fas fa-times-circle me-1"></i>Closed</span>',
-    ];
-    return $badges[$status] ?? '<span class="badge bg-secondary">' . htmlspecialchars($status) . '</span>';
+    $s=trim($status);
+    $map=['Pending'=>['amber','clock'],'In Progress'=>['sky','spinner'],'Resolved'=>['success','check-circle'],'Closed'=>['muted','times-circle']];
+    [$color,$icon]=$map[$s]??['muted','circle'];
+    return "<span class='db-badge db-badge--$color'><i class='fas fa-$icon'></i> ".htmlspecialchars($s)."</span>";
 }
-
 function getComplaintPriorityBadge($priority) {
-    $priority = trim($priority);
-    $badges = [
-        'Low'    => '<span class="badge bg-success"><i class="fas fa-circle me-1"></i>Low</span>',
-        'Medium' => '<span class="badge bg-warning text-dark"><i class="fas fa-exclamation-circle me-1"></i>Medium</span>',
-        'High'   => '<span class="badge bg-danger bg-opacity-75"><i class="fas fa-exclamation-triangle me-1"></i>High</span>',
-        'Urgent' => '<span class="badge bg-danger"><i class="fas fa-fire me-1"></i>Urgent</span>',
-    ];
-    return $badges[$priority] ?? '<span class="badge bg-secondary">' . htmlspecialchars($priority) . '</span>';
+    $p=trim($priority);
+    $map=['Low'=>['success','circle'],'Medium'=>['amber','exclamation-circle'],'High'=>['rose','exclamation-triangle'],'Urgent'=>['rose','fire']];
+    [$color,$icon]=$map[$p]??['muted','circle'];
+    return "<span class='db-badge db-badge--$color'><i class='fas fa-$icon'></i> ".htmlspecialchars($p)."</span>";
 }
 
 include '../../includes/header.php';
 ?>
-
 <style>
-/* ── Variables ── */
-:root {
-    --transition-speed: 0.3s;
-    --shadow-sm: 0 2px 8px rgba(0,0,0,0.08);
-    --shadow-md: 0 4px 16px rgba(0,0,0,0.12);
-    --shadow-lg: 0 8px 24px rgba(0,0,0,0.15);
-    --border-radius: 12px;
-    --border-radius-lg: 16px;
-}
-
-/* ── Cards ── */
-.card {
-    border: none;
-    border-radius: var(--border-radius);
-    box-shadow: var(--shadow-sm);
-    transition: all var(--transition-speed) ease;
-    overflow: hidden;
-}
-
-.card:hover {
-    box-shadow: var(--shadow-md);
-    transform: translateY(-4px);
-}
-
-.card-header {
-    background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
-    border-bottom: 2px solid #e9ecef;
-    padding: 1.25rem 1.5rem;
-    border-radius: var(--border-radius) var(--border-radius) 0 0 !important;
-}
-
-.card-header h5 {
-    font-weight: 700;
-    font-size: 1.1rem;
-    margin: 0;
-    display: flex;
-    align-items: center;
-}
-
-.card-body {
-    padding: 1.75rem;
-}
-
-/* ── Stat Cards ── */
-.stat-card {
-    transition: all var(--transition-speed) ease;
-    cursor: pointer;
-}
-
-.stat-card:hover {
-    transform: translateY(-4px);
-    box-shadow: var(--shadow-md) !important;
-}
-
-.stat-card.active-card {
-    border: 2px solid #0d6efd !important;
-    background: linear-gradient(to bottom, #ffffff, #f8f9ff);
-}
-
-/* ── Table ── */
-.table {
-    margin-bottom: 0;
-}
-
-.table thead th {
-    background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
-    border-bottom: 2px solid #dee2e6;
-    font-weight: 700;
-    font-size: 0.875rem;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: #495057;
-    padding: 1rem;
-    white-space: nowrap;
-}
-
-.table tbody tr {
-    transition: all var(--transition-speed) ease;
-    border-bottom: 1px solid #f1f3f5;
-}
-
-.table tbody tr:hover {
-    background: linear-gradient(135deg, rgba(13,110,253,0.03) 0%, rgba(13,110,253,0.05) 100%);
-}
-
-.table tbody td {
-    padding: 1rem;
-    vertical-align: middle;
-}
-
-.complaint-row {
-    transition: all 0.2s;
-    background: white;
-    cursor: pointer;
-}
-
-.complaint-row:hover {
-    background: #f8f9fa;
-    box-shadow: inset 3px 0 0 #0d6efd;
-}
-
-/* Resident rows — normal hover, no pointer cursor */
-.complaint-row-resident {
-    transition: background 0.2s;
-    background: white;
-}
-
-.complaint-row-resident:hover {
-    background: #f8f9fa;
-}
-
-/* ── Badges ── */
-.badge {
-    font-weight: 600;
-    padding: 0.5rem 1rem;
-    border-radius: 50px;
-    font-size: 0.85rem;
-    letter-spacing: 0.3px;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-}
-
-/* ── Buttons ── */
-.btn {
-    border-radius: 8px;
-    padding: 0.625rem 1.5rem;
-    font-weight: 600;
-    transition: all var(--transition-speed) ease;
-    border: none;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-}
-
-.btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-}
-
-.btn:active { transform: translateY(0); }
-
-.btn-sm {
-    padding: 0.5rem 1rem;
-    font-size: 0.875rem;
-}
-
-/* ── Alerts ── */
-.alert {
-    border: none;
-    border-radius: var(--border-radius);
-    padding: 1.25rem 1.5rem;
-    box-shadow: var(--shadow-sm);
-    border-left: 4px solid;
-}
-
-.alert-success {
-    background: linear-gradient(135deg, #d1f4e0 0%, #e7f9ee 100%);
-    border-left-color: #198754;
-}
-
-.alert-danger {
-    background: linear-gradient(135deg, #ffd6d6 0%, #ffe5e5 100%);
-    border-left-color: #dc3545;
-}
-
-/* ── Empty State ── */
-.empty-state {
-    text-align: center;
-    padding: 4rem 2rem;
-    color: #6c757d;
-}
-
-.empty-state i {
-    font-size: 4rem;
-    margin-bottom: 1.5rem;
-    opacity: 0.3;
-}
-
-.empty-state p {
-    font-size: 1.1rem;
-    font-weight: 500;
-    margin-bottom: 1rem;
-}
-
-/* ── Hover Preview Card ── */
-.complaint-preview-card {
-    position: fixed;
-    z-index: 9999;
-    width: 320px;
-    background: #fff;
-    border-radius: 12px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.10);
-    border: 1px solid #e9ecef;
-    overflow: hidden;
-    pointer-events: none;
-    animation: previewFadeIn 0.18s ease;
-}
-
-@keyframes previewFadeIn {
-    from { opacity: 0; transform: translateY(6px) scale(0.97); }
-    to   { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-.complaint-preview-header {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 14px 16px 10px;
-    border-bottom: 1px solid #f0f0f0;
-}
-
-.complaint-preview-icon-wrap { flex-shrink: 0; }
-
-.complaint-preview-icon {
-    width: 42px;
-    height: 42px;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.2rem;
-}
-
-.complaint-preview-header-text { flex: 1; min-width: 0; }
-
-.complaint-preview-type-label {
-    font-size: 0.7rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: #6c757d;
-    margin-bottom: 2px;
-}
-
-.complaint-preview-title {
-    font-size: 0.92rem;
-    font-weight: 700;
-    color: #212529;
-    line-height: 1.3;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.complaint-preview-body { padding: 12px 16px 14px; }
-
-.complaint-preview-message {
-    font-size: 0.82rem;
-    color: #495057;
-    line-height: 1.6;
-    margin-bottom: 10px;
-}
-
-.complaint-preview-footer {
-    font-size: 0.75rem;
-    color: #adb5bd;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-/* ── Responsive ── */
-@media (max-width: 768px) {
-    .container-fluid { padding-left: 1rem; padding-right: 1rem; }
-    .stat-card { margin-bottom: 1rem; }
-    .table thead th, .table tbody td { font-size: 0.8rem; padding: 0.75rem; }
-    .complaint-preview-card { display: none !important; }
-}
-
-html { scroll-behavior: smooth; }
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=DM+Mono:wght@300;400;500&display=swap');
+:root{--db-navy:#0d1b36;--db-navy-mid:#152849;--db-navy-light:#1c3461;--db-amber:#f59e0b;--db-amber-light:#fef3c7;--db-amber-dark:#b45309;--db-teal:#0d9488;--db-teal-light:#ccfbf1;--db-rose:#e11d48;--db-rose-light:#ffe4e6;--db-sky:#0ea5e9;--db-sky-light:#e0f2fe;--db-indigo:#6366f1;--db-indigo-light:#e0e7ff;--db-success:#10b981;--db-success-light:#d1fae5;--db-warning:#f59e0b;--db-warning-light:#fef3c7;--db-danger:#ef4444;--db-danger-light:#fee2e2;--db-info:#3b82f6;--db-info-light:#dbeafe;--db-bg:#eef2f7;--db-surf:#ffffff;--db-surf2:#f8fafc;--db-border:#e2e8f0;--db-text:#0f172a;--db-muted:#64748b;--db-radius:14px;--db-radius-sm:8px;--db-radius-lg:20px;--db-shadow:0 1px 3px rgba(13,27,54,.06),0 4px 16px rgba(13,27,54,.07);--db-shadow-lg:0 8px 40px rgba(13,27,54,.14),0 2px 8px rgba(13,27,54,.06);}
+*,*::before,*::after{box-sizing:border-box;}
+body{font-family:'Sora',sans-serif;background:var(--db-bg);color:var(--db-text);font-size:13.5px;}
+.rm-hero{background:linear-gradient(135deg,var(--db-navy) 0%,var(--db-navy-light) 65%,#224090 100%);padding:28px 36px;margin-bottom:24px;border-radius:0 0 var(--db-radius-lg) var(--db-radius-lg);position:relative;overflow:hidden;}
+.rm-hero__ring{position:absolute;border-radius:50%;border:1px solid rgba(255,255,255,.06);pointer-events:none;}
+.rm-hero__ring--1{width:300px;height:300px;top:-130px;right:-60px;}
+.rm-hero__ring--2{width:180px;height:180px;top:-50px;right:70px;border-color:rgba(245,158,11,.12);}
+.rm-hero__ring--3{width:100px;height:100px;bottom:-40px;left:40%;border-color:rgba(13,148,136,.14);}
+.rm-hero__inner{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+.rm-hero__left{display:flex;align-items:center;gap:16px;}
+.rm-hero__icon{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,var(--db-indigo),#4338ca);display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff;box-shadow:0 4px 16px rgba(99,102,241,.4);flex-shrink:0;}
+.rm-hero__title{font-size:22px;font-weight:800;color:#fff;letter-spacing:-.4px;margin-bottom:3px;}
+.rm-hero__sub{font-size:13px;color:rgba(255,255,255,.55);}
+.db-alert{display:flex;align-items:center;gap:12px;padding:14px 18px;border-radius:var(--db-radius);margin-bottom:16px;font-weight:500;font-size:13.5px;border-left:4px solid;}
+.db-alert--success{background:var(--db-success-light);color:#065f46;border-color:var(--db-success);}
+.db-alert--error{background:var(--db-danger-light);color:#7f1d1d;border-color:var(--db-danger);}
+.db-alert__close{margin-left:auto;background:none;border:none;cursor:pointer;font-size:18px;opacity:.6;}
+.db-stats-row{display:flex;flex-wrap:wrap;gap:14px;margin-bottom:24px;}
+.db-stat-card{flex:1 1 160px;background:var(--db-surf);border-radius:var(--db-radius);padding:18px 16px 14px;display:flex;flex-direction:column;gap:10px;box-shadow:var(--db-shadow);border:1px solid var(--db-border);transition:transform .2s,box-shadow .2s,border-color .2s;text-decoration:none;color:inherit;}
+.db-stat-card:hover{transform:translateY(-3px);box-shadow:var(--db-shadow-lg);color:inherit;}
+.db-stat-card.active{border-color:var(--db-navy-light);box-shadow:0 0 0 3px rgba(28,52,97,.15),var(--db-shadow-lg);transform:translateY(-3px);}
+.db-stat-card__icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px;}
+.db-stat-card__icon--indigo{background:var(--db-indigo-light);color:var(--db-indigo);}
+.db-stat-card__icon--amber{background:var(--db-amber-light);color:var(--db-amber-dark);}
+.db-stat-card__icon--sky{background:var(--db-sky-light);color:var(--db-sky);}
+.db-stat-card__icon--success{background:var(--db-success-light);color:var(--db-success);}
+.db-stat-card__icon--muted{background:var(--db-surf2);color:var(--db-muted);border:1px solid var(--db-border);}
+.db-stat-card__num{font-size:28px;font-weight:800;line-height:1;letter-spacing:-1px;}
+.db-stat-card__label{font-size:11px;color:var(--db-muted);font-weight:500;text-transform:uppercase;letter-spacing:.5px;}
+.db-stat-card__bar{height:3px;border-radius:2px;opacity:.4;}
+.db-stat-card__bar--indigo{background:linear-gradient(90deg,var(--db-indigo),transparent);}
+.db-stat-card__bar--amber{background:linear-gradient(90deg,var(--db-amber),transparent);}
+.db-stat-card__bar--sky{background:linear-gradient(90deg,var(--db-sky),transparent);}
+.db-stat-card__bar--success{background:linear-gradient(90deg,var(--db-success),transparent);}
+.db-stat-card__bar--muted{background:linear-gradient(90deg,#94a3b8,transparent);}
+.db-panel{background:var(--db-surf);border-radius:var(--db-radius-lg);border:1px solid var(--db-border);box-shadow:var(--db-shadow);margin-bottom:18px;overflow:hidden;animation:dbFadeUp .35s ease both;}
+@keyframes dbFadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.db-panel__header{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid var(--db-border);gap:10px;flex-wrap:wrap;}
+.db-panel__title{display:flex;align-items:center;gap:10px;}
+.db-panel__title h2{font-size:15px;font-weight:700;}
+.db-panel__icon{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:14px;}
+.db-panel__icon--indigo{background:var(--db-indigo-light);color:var(--db-indigo);}
+.db-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:var(--db-radius-sm);font-family:'Sora',sans-serif;font-size:13px;font-weight:600;cursor:pointer;border:1px solid transparent;text-decoration:none;transition:all .18s;white-space:nowrap;}
+.db-btn--sm{padding:6px 12px;font-size:12px;}
+.db-btn--primary{background:linear-gradient(135deg,var(--db-navy),var(--db-navy-light));color:#fff;}
+.db-btn--primary:hover{background:linear-gradient(135deg,var(--db-navy-light),#2748a0);transform:translateY(-1px);box-shadow:0 4px 14px rgba(13,27,54,.25);color:#fff;}
+.db-btn--ghost{background:var(--db-surf2);color:var(--db-text);border-color:var(--db-border);}
+.db-btn--ghost:hover{background:var(--db-border);}
+.db-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:20px;font-family:'DM Mono',monospace;font-size:10px;font-weight:500;letter-spacing:.3px;white-space:nowrap;}
+.db-badge--rose{background:var(--db-rose-light);color:#9f1239;}
+.db-badge--amber{background:var(--db-amber-light);color:#92400e;}
+.db-badge--sky{background:var(--db-sky-light);color:#0369a1;}
+.db-badge--indigo{background:var(--db-indigo-light);color:#4338ca;}
+.db-badge--success{background:var(--db-success-light);color:#065f46;}
+.db-badge--muted{background:var(--db-surf2);color:var(--db-muted);border:1px solid var(--db-border);}
+.db-table-wrap{overflow-x:auto;}
+.db-table{width:100%;border-collapse:collapse;font-size:12.5px;}
+.db-table thead tr{background:linear-gradient(135deg,var(--db-navy),var(--db-navy-light));}
+.db-table thead th{color:rgba(255,255,255,.8);font-family:'DM Mono',monospace;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.8px;padding:11px 16px;white-space:nowrap;border:none;}
+.db-table tbody tr{border-bottom:1px solid var(--db-border);transition:background .12s;}
+.db-table tbody tr:last-child{border-bottom:none;}
+.db-table tbody tr.clickable:hover{background:#f5f8ff;box-shadow:inset 3px 0 0 var(--db-indigo);cursor:pointer;}
+.db-table tbody tr.resident-row:hover{background:#f8fafc;}
+.db-table tbody td{padding:12px 16px;vertical-align:middle;}
+.db-id{font-family:'DM Mono',monospace;font-size:11px;color:var(--db-indigo);font-weight:500;}
+.db-text-sm{font-size:11.5px;color:var(--db-muted);}
+.db-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:56px 24px;text-align:center;gap:12px;}
+.db-empty i{font-size:44px;color:var(--db-border);}
+.db-empty p{font-size:14px;color:var(--db-muted);}
+.db-preview{position:fixed;z-index:9999;width:320px;background:var(--db-surf);border-radius:var(--db-radius);box-shadow:var(--db-shadow-lg);border:1px solid var(--db-border);overflow:hidden;pointer-events:none;animation:dbPrevIn .18s ease;}
+@keyframes dbPrevIn{from{opacity:0;transform:translateY(6px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
+.db-preview__header{display:flex;align-items:center;gap:12px;padding:14px 16px 10px;border-bottom:1px solid #f0f0f0;}
+.db-preview__icon{width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0;}
+.db-preview__header-text{flex:1;min-width:0;}
+.db-preview__type{font-family:'DM Mono',monospace;font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--db-muted);margin-bottom:2px;}
+.db-preview__title{font-size:.88rem;font-weight:700;color:var(--db-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.db-preview__body{padding:12px 16px 14px;}
+.db-preview__msg{font-size:.8rem;color:var(--db-muted);line-height:1.6;margin-bottom:10px;}
+.db-preview__footer{font-size:.72rem;color:#adb5bd;display:flex;align-items:center;gap:8px;}
+@media(max-width:768px){.rm-hero{padding:20px;border-radius:0;}.db-preview{display:none !important;}}
 </style>
 
-<div class="container-fluid py-4">
+<div class="rm-hero">
+    <div class="rm-hero__ring rm-hero__ring--1"></div>
+    <div class="rm-hero__ring rm-hero__ring--2"></div>
+    <div class="rm-hero__ring rm-hero__ring--3"></div>
+    <div class="rm-hero__inner">
+        <div class="rm-hero__left">
+            <div class="rm-hero__icon"><i class="fas fa-comments"></i></div>
+            <div>
+                <div class="rm-hero__title"><?php echo $is_resident?'My Complaints':'Complaints Management'; ?></div>
+                <div class="rm-hero__sub"><?php echo $is_resident?'View all your submitted complaints':'Manage all barangay complaints'; ?></div>
+            </div>
+        </div>
+        <?php if ($is_resident): ?>
+        <a href="file-complaint.php" class="db-btn db-btn--primary"><i class="fas fa-plus"></i> File Complaint</a>
+        <?php endif; ?>
+    </div>
+</div>
 
-    <!-- Page Header -->
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <h2 class="mb-1 fw-bold">
-                        <i class="fas fa-comments me-2 text-primary"></i>
-                        <?php echo $is_resident ? 'My Complaints' : 'Complaints Management'; ?>
-                    </h2>
-                    <p class="text-muted mb-0">
-                        <?php echo $is_resident ? 'View all your submitted complaints' : 'Manage all barangay complaints'; ?>
-                    </p>
-                </div>
+<div style="padding:0 24px 24px;">
+
+<?php if ($success==='filed'): ?><div class="db-alert db-alert--success"><i class="fas fa-check-circle"></i> Complaint filed successfully! <button class="db-alert__close" onclick="this.parentElement.remove()">×</button></div><?php endif; ?>
+<?php if ($error==='not_found'): ?><div class="db-alert db-alert--error"><i class="fas fa-exclamation-circle"></i> Complaint not found. <button class="db-alert__close" onclick="this.parentElement.remove()">×</button></div><?php endif; ?>
+
+<!-- Stats -->
+<div class="db-stats-row">
+    <a href="view-complaints.php" class="db-stat-card <?php echo empty($filter_status)?'active':''; ?>">
+        <div class="db-stat-card__icon db-stat-card__icon--indigo"><i class="fas fa-comments"></i></div>
+        <div><div class="db-stat-card__num"><?php echo $stats['total']; ?></div><div class="db-stat-card__label">Total</div></div>
+        <div class="db-stat-card__bar db-stat-card__bar--indigo"></div>
+    </a>
+    <a href="?status=Pending" class="db-stat-card <?php echo $filter_status==='Pending'?'active':''; ?>">
+        <div class="db-stat-card__icon db-stat-card__icon--amber"><i class="fas fa-clock"></i></div>
+        <div><div class="db-stat-card__num" style="color:var(--db-amber-dark)"><?php echo $stats['pending']; ?></div><div class="db-stat-card__label">Pending</div></div>
+        <div class="db-stat-card__bar db-stat-card__bar--amber"></div>
+    </a>
+    <a href="?status=In+Progress" class="db-stat-card <?php echo $filter_status==='In Progress'?'active':''; ?>">
+        <div class="db-stat-card__icon db-stat-card__icon--sky"><i class="fas fa-spinner"></i></div>
+        <div><div class="db-stat-card__num" style="color:var(--db-sky)"><?php echo $stats['in_progress']; ?></div><div class="db-stat-card__label">In Progress</div></div>
+        <div class="db-stat-card__bar db-stat-card__bar--sky"></div>
+    </a>
+    <a href="?status=Resolved" class="db-stat-card <?php echo $filter_status==='Resolved'?'active':''; ?>">
+        <div class="db-stat-card__icon db-stat-card__icon--success"><i class="fas fa-check-circle"></i></div>
+        <div><div class="db-stat-card__num" style="color:var(--db-success)"><?php echo $stats['resolved']; ?></div><div class="db-stat-card__label">Resolved</div></div>
+        <div class="db-stat-card__bar db-stat-card__bar--success"></div>
+    </a>
+    <a href="?status=Closed" class="db-stat-card <?php echo $filter_status==='Closed'?'active':''; ?>">
+        <div class="db-stat-card__icon db-stat-card__icon--muted"><i class="fas fa-times-circle"></i></div>
+        <div><div class="db-stat-card__num"><?php echo $stats['closed']; ?></div><div class="db-stat-card__label">Closed</div></div>
+        <div class="db-stat-card__bar db-stat-card__bar--muted"></div>
+    </a>
+</div>
+
+<!-- Table Panel -->
+<div class="db-panel">
+    <div class="db-panel__header">
+        <div class="db-panel__title">
+            <div class="db-panel__icon db-panel__icon--indigo"><i class="fas fa-list"></i></div>
+            <h2><?php if($filter_status) echo htmlspecialchars($filter_status).' Complaints'; else echo $is_resident?'My Complaints':'All Complaints'; ?></h2>
+            <span class="db-badge db-badge--indigo"><?php echo count($complaints); ?></span>
+        </div>
+    </div>
+
+    <?php if (empty($complaints)): ?>
+    <div class="db-empty">
+        <i class="fas fa-comments"></i>
+        <p>No complaints found</p>
+        <?php if ($filter_status): ?><a href="view-complaints.php" class="db-btn db-btn--ghost db-btn--sm"><i class="fas fa-times"></i> Clear Filter</a>
+        <?php elseif ($is_resident): ?><a href="file-complaint.php" class="db-btn db-btn--primary db-btn--sm"><i class="fas fa-plus"></i> File Your First Complaint</a>
+        <?php else: ?><p style="font-size:12px;color:var(--db-muted)">No complaints have been filed yet.</p><?php endif; ?>
+    </div>
+    <?php else: ?>
+    <div class="db-table-wrap">
+        <table class="db-table">
+            <thead>
+                <tr>
+                    <th>Complaint #</th><th>Date Filed</th><th>Category</th>
+                    <?php if (!$is_resident): ?><th>Complainant</th><th>Assigned To</th><?php endif; ?>
+                    <th>Subject</th><th>Priority</th><th>Status</th>
+                    <?php if ($is_resident): ?><th style="text-align:center">Action</th><?php endif; ?>
+                </tr>
+            </thead>
+            <tbody>
+            <?php foreach ($complaints as $complaint):
+                if (empty($complaint['complaint_id'])) continue;
+                $view_url  = 'complaint-details.php?id='.$complaint['complaint_id'];
+                $priority  = trim($complaint['priority']??'Medium');
+                $date_val  = $complaint['complaint_date']??null;
+                $icon_class='fa-comment';
+                switch ($complaint['category']) { case 'Noise':$icon_class='fa-volume-up';break; case 'Garbage':$icon_class='fa-trash';break; case 'Property':$icon_class='fa-home';break; case 'Infrastructure':$icon_class='fa-road';break; case 'Public Safety':$icon_class='fa-shield-alt';break; case 'Services':$icon_class='fa-concierge-bell';break; }
+                $prev_color='indigo';
+                if ($priority==='Urgent')     $prev_color='rose';
+                elseif ($priority==='High')   $prev_color='amber';
+                elseif ($priority==='Medium') $prev_color='sky';
+                elseif ($priority==='Low')    $prev_color='success';
+                $prev_title   = htmlspecialchars(($complaint['complaint_number']??'').' – '.($complaint['subject']??''));
+                $prev_message = htmlspecialchars(mb_strimwidth($complaint['description']??'',0,150,'…'));
+                $prev_type    = htmlspecialchars($complaint['category']??'');
+                $prev_time    = $date_val?date('M j, Y',strtotime($date_val)):'N/A';
+                $row_class    = $is_resident?'resident-row':'clickable';
+            ?>
+            <tr class="<?php echo $row_class; ?>"
+                <?php if (!$is_resident): ?>
+                data-url="<?php echo htmlspecialchars($view_url); ?>"
+                data-pt="<?php echo $prev_title; ?>" data-pm="<?php echo $prev_message; ?>"
+                data-ptype="<?php echo $prev_type; ?>" data-pc="<?php echo $prev_color; ?>"
+                data-picon="<?php echo $icon_class; ?>" data-ptime="<?php echo $prev_time; ?>"
+                <?php endif; ?>>
+                <td><span class="db-id"><?php echo htmlspecialchars($complaint['complaint_number']??'N/A'); ?></span></td>
+                <td>
+                    <span class="db-text-sm"><?php echo $date_val?date('M d, Y',strtotime($date_val)):'N/A'; ?></span>
+                    <?php if ($date_val): ?><br><span class="db-text-sm" style="color:#94a3b8"><?php echo date('h:i A',strtotime($date_val)); ?></span><?php endif; ?>
+                </td>
+                <td><span class="db-badge db-badge--sky"><i class="fas <?php echo $icon_class; ?>"></i> <?php echo htmlspecialchars($complaint['category']??'N/A'); ?></span></td>
+                <?php if (!$is_resident): ?>
+                <td><?php echo htmlspecialchars($complaint['complainant_name']??'Unknown'); ?></td>
+                <td><?php if (!empty($complaint['assigned_to_name'])): ?><span class="db-text-sm"><i class="fas fa-user-tie" style="color:var(--db-sky)"></i> <?php echo htmlspecialchars($complaint['assigned_to_name']); ?></span><?php else: ?><span class="db-text-sm" style="font-style:italic">Not assigned</span><?php endif; ?></td>
+                <?php endif; ?>
+                <td>
+                    <strong><?php echo htmlspecialchars($complaint['subject']??'N/A'); ?></strong>
+                    <?php if (!empty($complaint['description'])): ?><br><span class="db-text-sm"><?php echo htmlspecialchars(substr($complaint['description'],0,50)); ?>…</span><?php endif; ?>
+                </td>
+                <td><?php echo getComplaintPriorityBadge($complaint['priority']??'Medium'); ?></td>
+                <td><?php echo getComplaintStatusBadge($complaint['status']??'Pending'); ?></td>
                 <?php if ($is_resident): ?>
-                <a href="file-complaint.php" class="btn btn-primary">
-                    <i class="fas fa-plus me-2"></i>File Complaint
-                </a>
+                <td style="text-align:center"><a href="<?php echo htmlspecialchars($view_url); ?>" class="db-btn db-btn--sm db-btn--primary"><i class="fas fa-eye"></i> View</a></td>
                 <?php endif; ?>
-            </div>
-        </div>
-    </div>
-
-    <!-- Alerts -->
-    <?php if ($success === 'filed'): ?>
-    <div class="alert alert-success alert-dismissible fade show">
-        <i class="fas fa-check-circle me-2"></i>Complaint filed successfully!
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
     </div>
     <?php endif; ?>
-    <?php if ($error === 'not_found'): ?>
-    <div class="alert alert-danger alert-dismissible fade show">
-        <i class="fas fa-exclamation-circle me-2"></i>Complaint not found.
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    </div>
-    <?php endif; ?>
-
-    <!-- Statistics Cards -->
-    <div class="row mb-4">
-        <div class="col-md">
-            <a href="view-complaints.php" class="text-decoration-none">
-                <div class="card border-0 shadow-sm stat-card <?php echo empty($filter_status) ? 'active-card' : ''; ?>">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <p class="text-muted mb-1 small">Total Complaints</p>
-                                <h3 class="mb-0"><?php echo $stats['total']; ?></h3>
-                            </div>
-                            <div class="bg-primary bg-opacity-10 text-primary rounded-circle p-3">
-                                <i class="fas fa-comments fs-4"></i>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </a>
-        </div>
-        <div class="col-md">
-            <a href="?status=Pending" class="text-decoration-none">
-                <div class="card border-0 shadow-sm stat-card <?php echo $filter_status === 'Pending' ? 'active-card' : ''; ?>">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <p class="text-muted mb-1 small">Pending</p>
-                                <h3 class="mb-0"><?php echo $stats['pending']; ?></h3>
-                            </div>
-                            <div class="bg-warning bg-opacity-10 text-warning rounded-circle p-3">
-                                <i class="fas fa-clock fs-4"></i>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </a>
-        </div>
-        <div class="col-md">
-            <a href="?status=In+Progress" class="text-decoration-none">
-                <div class="card border-0 shadow-sm stat-card <?php echo $filter_status === 'In Progress' ? 'active-card' : ''; ?>">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <p class="text-muted mb-1 small">In Progress</p>
-                                <h3 class="mb-0"><?php echo $stats['in_progress']; ?></h3>
-                            </div>
-                            <div class="bg-info bg-opacity-10 text-info rounded-circle p-3">
-                                <i class="fas fa-spinner fs-4"></i>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </a>
-        </div>
-        <div class="col-md">
-            <a href="?status=Resolved" class="text-decoration-none">
-                <div class="card border-0 shadow-sm stat-card <?php echo $filter_status === 'Resolved' ? 'active-card' : ''; ?>">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <p class="text-muted mb-1 small">Resolved</p>
-                                <h3 class="mb-0"><?php echo $stats['resolved']; ?></h3>
-                            </div>
-                            <div class="bg-success bg-opacity-10 text-success rounded-circle p-3">
-                                <i class="fas fa-check-circle fs-4"></i>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </a>
-        </div>
-        <div class="col-md">
-            <a href="?status=Closed" class="text-decoration-none">
-                <div class="card border-0 shadow-sm stat-card <?php echo $filter_status === 'Closed' ? 'active-card' : ''; ?>">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <p class="text-muted mb-1 small">Closed</p>
-                                <h3 class="mb-0"><?php echo $stats['closed']; ?></h3>
-                            </div>
-                            <div class="bg-secondary bg-opacity-10 text-secondary rounded-circle p-3">
-                                <i class="fas fa-times-circle fs-4"></i>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </a>
-        </div>
-    </div>
-
-    <!-- Complaints Table -->
-    <div class="card border-0 shadow-sm">
-        <div class="card-header">
-            <h5>
-                <i class="fas fa-list me-2"></i>
-                <?php
-                if ($filter_status) echo htmlspecialchars($filter_status) . ' Complaints';
-                else                echo $is_resident ? 'My Complaints' : 'All Complaints';
-                ?>
-                <span class="badge bg-primary ms-2"><?php echo count($complaints); ?></span>
-            </h5>
-        </div>
-        <div class="card-body">
-
-            <?php if (empty($complaints)): ?>
-            <div class="empty-state">
-                <i class="fas fa-comments d-block"></i>
-                <p>No complaints found</p>
-                <?php if ($filter_status): ?>
-                <a href="view-complaints.php" class="btn btn-outline-primary mt-2">
-                    <i class="fas fa-times me-2"></i>Clear Filter
-                </a>
-                <?php elseif ($is_resident): ?>
-                <a href="file-complaint.php" class="btn btn-primary mt-2">
-                    <i class="fas fa-plus me-2"></i>File Your First Complaint
-                </a>
-                <?php else: ?>
-                <p class="text-muted small">No complaints have been filed yet.</p>
-                <?php endif; ?>
-            </div>
-
-            <?php else: ?>
-            <div class="table-responsive">
-                <table class="table table-hover align-middle">
-                    <thead>
-                        <tr>
-                            <th>Complaint #</th>
-                            <th>Date Filed</th>
-                            <th>Category</th>
-                            <?php if (!$is_resident): ?>
-                            <th>Complainant</th>
-                            <th>Assigned To</th>
-                            <?php endif; ?>
-                            <th>Subject</th>
-                            <th>Priority</th>
-                            <th>Status</th>
-                            <?php if ($is_resident): ?>
-                            <th class="text-center">Action</th>
-                            <?php endif; ?>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    <?php foreach ($complaints as $complaint):
-                        if (empty($complaint['complaint_id'])) continue;
-
-                        $view_url  = 'complaint-details.php?id=' . $complaint['complaint_id'];
-                        $priority  = trim($complaint['priority'] ?? 'Medium');
-                        $date_val  = $complaint['complaint_date'] ?? null;
-
-                        // Icon per category
-                        $icon_class = 'fa-comment';
-                        switch ($complaint['category']) {
-                            case 'Noise':          $icon_class = 'fa-volume-up';      break;
-                            case 'Garbage':        $icon_class = 'fa-trash';          break;
-                            case 'Property':       $icon_class = 'fa-home';           break;
-                            case 'Infrastructure': $icon_class = 'fa-road';           break;
-                            case 'Public Safety':  $icon_class = 'fa-shield-alt';     break;
-                            case 'Services':       $icon_class = 'fa-concierge-bell'; break;
-                        }
-
-                        // Preview color per priority (admin only)
-                        $prev_color = 'primary';
-                        if ($priority === 'Urgent')     $prev_color = 'danger';
-                        elseif ($priority === 'High')   $prev_color = 'warning';
-                        elseif ($priority === 'Medium') $prev_color = 'info';
-                        elseif ($priority === 'Low')    $prev_color = 'success';
-
-                        $prev_title   = htmlspecialchars(($complaint['complaint_number'] ?? '') . ' – ' . ($complaint['subject'] ?? ''));
-                        $prev_message = htmlspecialchars(mb_strimwidth($complaint['description'] ?? '', 0, 150, '…'));
-                        $prev_type    = htmlspecialchars($complaint['category'] ?? '');
-                        $prev_time    = $date_val ? date('M j, Y', strtotime($date_val)) : 'N/A';
-
-                        // Resident rows: plain, no hover data, no row-click
-                        // Admin rows: hover preview + row-click
-                        $row_class = $is_resident ? 'complaint-row-resident' : 'complaint-row';
-                    ?>
-                    <tr class="<?php echo $row_class; ?>"
-                        <?php if (!$is_resident): ?>
-                        data-url="<?php echo htmlspecialchars($view_url); ?>"
-                        data-preview-title="<?php echo $prev_title; ?>"
-                        data-preview-message="<?php echo $prev_message; ?>"
-                        data-preview-type="<?php echo $prev_type; ?>"
-                        data-preview-color="<?php echo $prev_color; ?>"
-                        data-preview-icon="<?php echo $icon_class; ?>"
-                        data-preview-time="<?php echo $prev_time; ?>"
-                        <?php endif; ?>>
-
-                        <td><strong class="text-primary"><?php echo htmlspecialchars($complaint['complaint_number'] ?? 'N/A'); ?></strong></td>
-                        <td>
-                            <i class="fas fa-calendar-alt text-muted me-1"></i>
-                            <?php echo $date_val ? date('M d, Y', strtotime($date_val)) : 'N/A'; ?>
-                            <?php if ($date_val): ?>
-                            <br><small class="text-muted"><?php echo date('h:i A', strtotime($date_val)); ?></small>
-                            <?php endif; ?>
-                        </td>
-                        <td>
-                            <span class="badge bg-info">
-                                <i class="fas <?php echo $icon_class; ?> me-1"></i>
-                                <?php echo htmlspecialchars($complaint['category'] ?? 'N/A'); ?>
-                            </span>
-                        </td>
-                        <?php if (!$is_resident): ?>
-                        <td>
-                            <i class="fas fa-user text-muted me-1"></i>
-                            <?php echo htmlspecialchars($complaint['complainant_name'] ?? 'Unknown'); ?>
-                        </td>
-                        <td>
-                            <?php if (!empty($complaint['assigned_to_name'])): ?>
-                                <i class="fas fa-user-tie me-1 text-info"></i>
-                                <?php echo htmlspecialchars($complaint['assigned_to_name']); ?>
-                            <?php else: ?>
-                                <span class="text-muted"><i>Not assigned</i></span>
-                            <?php endif; ?>
-                        </td>
-                        <?php endif; ?>
-                        <td>
-                            <strong><?php echo htmlspecialchars($complaint['subject'] ?? 'N/A'); ?></strong>
-                            <?php if (!empty($complaint['description'])): ?>
-                            <br><small class="text-muted"><?php echo htmlspecialchars(substr($complaint['description'], 0, 50)); ?>…</small>
-                            <?php endif; ?>
-                        </td>
-                        <td><?php echo getComplaintPriorityBadge($complaint['priority'] ?? 'Medium'); ?></td>
-                        <td><?php echo getComplaintStatusBadge($complaint['status'] ?? 'Pending'); ?></td>
-                        <?php if ($is_resident): ?>
-                        <td class="text-center">
-                            <a href="<?php echo htmlspecialchars($view_url); ?>" class="btn btn-sm btn-primary">
-                                <i class="fas fa-eye me-1"></i>View
-                            </a>
-                        </td>
-                        <?php endif; ?>
-                    </tr>
-                    <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
-            <?php endif; ?>
-
-        </div>
-    </div>
-
+</div>
 </div>
 
 <?php if (!$is_resident): ?>
-<!-- Hover Preview Card — Admin/Staff only -->
-<div id="complaintPreviewCard" class="complaint-preview-card" style="display:none;">
-    <div class="complaint-preview-header">
-        <div class="complaint-preview-icon-wrap">
-            <div class="complaint-preview-icon" id="previewIconBox">
-                <i class="fas fa-comment" id="previewIcon"></i>
-            </div>
-        </div>
-        <div class="complaint-preview-header-text">
-            <div class="complaint-preview-type-label" id="previewTypeLabel"></div>
-            <div class="complaint-preview-title"      id="previewTitle"></div>
+<div id="dbPreview" class="db-preview" style="display:none;">
+    <div class="db-preview__header">
+        <div class="db-preview__icon" id="dbPrevIcon"><i class="fas fa-comment" id="dbPrevIconI"></i></div>
+        <div class="db-preview__header-text">
+            <div class="db-preview__type" id="dbPrevType"></div>
+            <div class="db-preview__title" id="dbPrevTitle"></div>
         </div>
     </div>
-    <div class="complaint-preview-body">
-        <p class="complaint-preview-message" id="previewMessage"></p>
-        <div class="complaint-preview-footer">
-            <i class="far fa-calendar-alt"></i>
-            <span id="previewTime"></span>
-        </div>
+    <div class="db-preview__body">
+        <p class="db-preview__msg" id="dbPrevMsg"></p>
+        <div class="db-preview__footer"><i class="far fa-calendar-alt"></i><span id="dbPrevTime"></span></div>
     </div>
 </div>
-<?php endif; ?>
-
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-
-    // Auto-dismiss alerts
-    document.querySelectorAll('.alert-dismissible').forEach(function (el) {
-        setTimeout(function () { try { new bootstrap.Alert(el).close(); } catch(e){} }, 5000);
+    setTimeout(() => document.querySelectorAll('.db-alert').forEach(a => { a.style.opacity='0'; setTimeout(()=>a.remove(),400); }), 5000);
+    const card=document.getElementById('dbPreview'), iconBox=card.querySelector('#dbPrevIcon'), iconEl=card.querySelector('#dbPrevIconI');
+    const cmap={rose:{bg:'rgba(225,29,72,.1)',text:'#e11d48'},amber:{bg:'rgba(245,158,11,.1)',text:'#b45309'},sky:{bg:'rgba(14,165,233,.1)',text:'#0ea5e9'},indigo:{bg:'rgba(99,102,241,.1)',text:'#6366f1'},success:{bg:'rgba(16,185,129,.1)',text:'#10b981'}};
+    let timer;
+    function pos(e){const cw=card.offsetWidth||320,ch=card.offsetHeight||160,m=14;let x=e.clientX+m,y=e.clientY+m;if(x+cw>window.innerWidth-m)x=e.clientX-cw-m;if(y+ch>window.innerHeight-m)y=e.clientY-ch-m;card.style.left=x+'px';card.style.top=y+'px';}
+    document.querySelectorAll('.clickable').forEach(row => {
+        row.addEventListener('mouseenter',function(e){clearTimeout(timer);const c=cmap[this.dataset.pc]||cmap.indigo;document.getElementById('dbPrevTitle').textContent=this.dataset.pt;document.getElementById('dbPrevMsg').textContent=this.dataset.pm;document.getElementById('dbPrevType').textContent=this.dataset.ptype;document.getElementById('dbPrevTime').textContent=this.dataset.ptime;iconEl.className='fas '+this.dataset.picon;iconBox.style.background=c.bg;iconEl.style.color=c.text;pos(e);card.style.display='block';});
+        row.addEventListener('mousemove',pos);
+        row.addEventListener('mouseleave',()=>{timer=setTimeout(()=>{if(!card.matches(':hover'))card.style.display='none';},150);});
+        row.addEventListener('click',function(){if(this.dataset.url)location.href=this.dataset.url;});
     });
-
-    // ── Hover Preview — Admin/Staff only (.complaint-row) ──
-    const card       = document.getElementById('complaintPreviewCard');
-    <?php if (!$is_resident): ?>
-    const iconBox    = document.getElementById('previewIconBox');
-    const icon       = document.getElementById('previewIcon');
-    const titleEl    = document.getElementById('previewTitle');
-    const messageEl  = document.getElementById('previewMessage');
-    const typeEl     = document.getElementById('previewTypeLabel');
-    const timeEl     = document.getElementById('previewTime');
-
-    const colorMap = {
-        primary  : { bg: 'rgba(13,110,253,0.12)',  text: '#0d6efd' },
-        warning  : { bg: 'rgba(255,193,7,0.12)',   text: '#d39e00' },
-        success  : { bg: 'rgba(25,135,84,0.12)',   text: '#198754' },
-        info     : { bg: 'rgba(13,202,240,0.12)',  text: '#0aa2c0' },
-        danger   : { bg: 'rgba(220,53,69,0.12)',   text: '#dc3545' },
-        secondary: { bg: 'rgba(108,117,125,0.12)', text: '#6c757d' },
-    };
-
-    let hideTimer = null;
-
-    function positionCard(e) {
-        const margin = 16;
-        const cw = card.offsetWidth  || 320;
-        const ch = card.offsetHeight || 200;
-        let x = e.clientX + margin;
-        let y = e.clientY + margin;
-        if (x + cw > window.innerWidth  - margin) x = e.clientX - cw - margin;
-        if (y + ch > window.innerHeight - margin) y = e.clientY - ch - margin;
-        card.style.left = x + 'px';
-        card.style.top  = y + 'px';
-    }
-
-    function showCard(row, e) {
-        clearTimeout(hideTimer);
-        const c = colorMap[row.dataset.previewColor] || colorMap.primary;
-        titleEl.textContent   = row.dataset.previewTitle;
-        messageEl.textContent = row.dataset.previewMessage;
-        typeEl.textContent    = row.dataset.previewType;
-        timeEl.textContent    = row.dataset.previewTime;
-        icon.className        = 'fas ' + row.dataset.previewIcon;
-        iconBox.style.background = c.bg;
-        icon.style.color         = c.text;
-        positionCard(e);
-        card.style.display = 'block';
-    }
-
-    function hideCard() { card.style.display = 'none'; }
-
-    document.querySelectorAll('.complaint-row').forEach(function (row) {
-        row.addEventListener('mouseenter', function (e) { showCard(this, e); });
-        row.addEventListener('mousemove',  function (e) { positionCard(e); });
-        row.addEventListener('mouseleave', function () {
-            hideTimer = setTimeout(function () {
-                if (!card.matches(':hover')) hideCard();
-            }, 150);
-        });
-        // Click whole row to navigate
-        row.addEventListener('click', function (e) {
-            if (!e.target.closest('a,button')) window.location.href = this.dataset.url;
-        });
-    });
-    <?php endif; ?>
 });
 </script>
-
+<?php endif; ?>
 <?php include '../../includes/footer.php'; ?>

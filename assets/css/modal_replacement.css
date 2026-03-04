@@ -1,0 +1,568 @@
+/* ═══════════════════════════════════════════════════════
+   ENHANCED FORECAST MODAL — Drop-in replacement CSS
+   Replace the existing .tt-modal / .tt-modal__box styles
+═══════════════════════════════════════════════════════ */
+
+/* Overlay */
+.tt-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(9, 18, 38, .65);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 9999;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.tt-modal--open {
+    display: flex;
+}
+
+/* Wide two-column box */
+.tt-modal__box {
+    background: var(--db-surf);
+    border-radius: 24px;
+    width: 100%;
+    max-width: 860px;
+    max-height: 92vh;
+    overflow: hidden;
+    box-shadow: 0 32px 80px rgba(9, 18, 38, .32), 0 4px 16px rgba(9, 18, 38, .1);
+    display: flex;
+    flex-direction: column;
+    animation: ttModalIn .32s cubic-bezier(.34, 1.56, .64, 1) both;
+}
+
+@keyframes ttModalIn {
+    from {
+        opacity: 0;
+        transform: scale(.9) translateY(24px);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+.tt-modal__box--sm {
+    max-width: 420px;
+}
+
+/* for clear-chat modal */
+
+/* Hero header */
+.tt-modal__hero {
+    background: linear-gradient(135deg, var(--db-navy) 0%, #1e3a8a 55%, var(--db-navy-light) 100%);
+    padding: 28px 32px 24px;
+    position: relative;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.tt-modal__hero-ring {
+    position: absolute;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, .07);
+    pointer-events: none;
+}
+
+.tt-modal__hero-ring--1 {
+    width: 300px;
+    height: 300px;
+    top: -140px;
+    right: -60px;
+}
+
+.tt-modal__hero-ring--2 {
+    width: 180px;
+    height: 180px;
+    top: -60px;
+    right: 80px;
+    border-color: rgba(245, 158, 11, .14);
+}
+
+.tt-modal__hero-ring--3 {
+    width: 90px;
+    height: 90px;
+    bottom: -30px;
+    left: 38%;
+    border-color: rgba(14, 165, 233, .14);
+}
+
+.tt-modal__hero-inner {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.tt-modal__hero-left {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+}
+
+.tt-modal__day-icon {
+    width: 68px;
+    height: 68px;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, .1);
+    border: 1px solid rgba(255, 255, 255, .15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 34px;
+    backdrop-filter: blur(8px);
+    flex-shrink: 0;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, .2);
+}
+
+.tt-modal__day-name {
+    font-size: 22px;
+    font-weight: 800;
+    color: #fff;
+    letter-spacing: -.4px;
+    margin-bottom: 4px;
+}
+
+.tt-modal__day-date {
+    font-size: 12px;
+    color: rgba(255, 255, 255, .55);
+    font-family: 'DM Mono', monospace;
+}
+
+.tt-modal__condition {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 6px;
+    padding: 3px 10px;
+    background: rgba(255, 255, 255, .12);
+    border: 1px solid rgba(255, 255, 255, .18);
+    border-radius: 20px;
+    font-size: 11px;
+    color: rgba(255, 255, 255, .85);
+    font-weight: 600;
+}
+
+.tt-modal__hero-temps {
+    text-align: right;
+}
+
+.tt-modal__hero-temps .high {
+    font-size: 38px;
+    font-weight: 800;
+    color: #fff;
+    letter-spacing: -2px;
+    line-height: 1;
+}
+
+.tt-modal__hero-temps .high .unit {
+    font-size: 18px;
+    font-weight: 400;
+    opacity: .7;
+}
+
+.tt-modal__hero-temps .low {
+    font-size: 16px;
+    color: rgba(255, 255, 255, .5);
+    font-weight: 500;
+    margin-top: 4px;
+    font-family: 'DM Mono', monospace;
+}
+
+.tt-modal__close-btn {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    width: 32px;
+    height: 32px;
+    background: rgba(255, 255, 255, .1);
+    border: 1px solid rgba(255, 255, 255, .15);
+    border-radius: 8px;
+    color: rgba(255, 255, 255, .8);
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background .15s, color .15s;
+    z-index: 2;
+}
+
+.tt-modal__close-btn:hover {
+    background: rgba(255, 255, 255, .2);
+    color: #fff;
+}
+
+/* Two-column body */
+.tt-modal__body {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.tt-modal__body::-webkit-scrollbar {
+    width: 4px;
+}
+
+.tt-modal__body::-webkit-scrollbar-thumb {
+    background: var(--db-border);
+    border-radius: 2px;
+}
+
+@media (max-width:640px) {
+    .tt-modal__body {
+        grid-template-columns: 1fr;
+    }
+
+    .tt-modal__box {
+        border-radius: 18px;
+    }
+}
+
+/* Left — detail rows */
+.tt-modal__details {
+    padding: 24px 28px;
+    border-right: 1px solid var(--db-border);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.tt-modal__section-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: var(--db-muted);
+    margin: 10px 0 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.tt-modal__section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--db-border);
+}
+
+.tt-modal__section-label:first-child {
+    margin-top: 0;
+}
+
+.tt-modal__detail-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--db-surf2);
+    border: 1px solid var(--db-border);
+    transition: transform .15s, box-shadow .15s;
+}
+
+.tt-modal__detail-row:hover {
+    transform: translateX(3px);
+    box-shadow: var(--db-shadow);
+}
+
+.tt-modal__detail-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    flex-shrink: 0;
+}
+
+.tt-modal__detail-text {
+    flex: 1;
+}
+
+.tt-modal__detail-label {
+    font-size: 10px;
+    color: var(--db-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    margin-bottom: 2px;
+}
+
+.tt-modal__detail-val {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--db-text);
+}
+
+.tt-modal__detail-sub {
+    font-size: 10px;
+    color: var(--db-muted);
+    margin-top: 1px;
+}
+
+/* Right — statistics */
+.tt-modal__stats {
+    padding: 24px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.tt-stat-card {
+    border-radius: 12px;
+    padding: 16px;
+    border: 1px solid transparent;
+    position: relative;
+    overflow: hidden;
+}
+
+.tt-stat-card--rain {
+    background: linear-gradient(135deg, #eff6ff, #dbeafe);
+    border-color: #bfdbfe;
+}
+
+.tt-stat-card--heat {
+    background: linear-gradient(135deg, #fef3c7, #fde68a);
+    border-color: #fcd34d;
+}
+
+.tt-stat-card--comfort {
+    background: linear-gradient(135deg, #f0fdf4, #dcfce7);
+    border-color: #bbf7d0;
+}
+
+.tt-stat-card__top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.tt-stat-card__label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .7px;
+    color: var(--db-muted);
+}
+
+.tt-stat-card__icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+}
+
+.tt-stat-card--rain .tt-stat-card__icon {
+    background: rgba(59, 130, 246, .15);
+    color: var(--db-info);
+}
+
+.tt-stat-card--heat .tt-stat-card__icon {
+    background: rgba(245, 158, 11, .15);
+    color: var(--db-amber-dark);
+}
+
+.tt-stat-card--comfort .tt-stat-card__icon {
+    background: rgba(16, 185, 129, .15);
+    color: var(--db-teal);
+}
+
+.tt-stat-card__val {
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: -1px;
+    color: var(--db-text);
+    line-height: 1;
+}
+
+.tt-stat-card__unit {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--db-muted);
+    margin-left: 2px;
+}
+
+.tt-stat-card__sub {
+    font-size: 11px;
+    color: var(--db-muted);
+    margin-top: 4px;
+}
+
+.tt-stat-bar {
+    margin-top: 10px;
+    height: 5px;
+    border-radius: 3px;
+    background: rgba(0, 0, 0, .07);
+    overflow: hidden;
+}
+
+.tt-stat-bar__fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width .8s cubic-bezier(.34, 1.56, .64, 1);
+    width: 0;
+}
+
+.tt-stat-card--rain .tt-stat-bar__fill {
+    background: linear-gradient(90deg, var(--db-info), #60a5fa);
+}
+
+.tt-stat-card--heat .tt-stat-bar__fill {
+    background: linear-gradient(90deg, var(--db-amber-dark), var(--db-amber));
+}
+
+.tt-stat-card--comfort .tt-stat-bar__fill {
+    background: linear-gradient(90deg, var(--db-teal), #34d399);
+}
+
+.tt-modal__advice {
+    border-radius: 12px;
+    padding: 14px 16px;
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    border: 1px solid;
+}
+
+.tt-modal__advice--safe {
+    background: var(--db-success-light);
+    border-color: #6ee7b7;
+    color: #065f46;
+}
+
+.tt-modal__advice--caution {
+    background: var(--db-amber-light);
+    border-color: #fcd34d;
+    color: #92400e;
+}
+
+.tt-modal__advice--danger {
+    background: var(--db-danger-light);
+    border-color: #fca5a5;
+    color: #7f1d1d;
+}
+
+.tt-modal__advice i {
+    font-size: 15px;
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+
+.tt-modal__advice-title {
+    font-weight: 700;
+    font-size: 12px;
+    margin-bottom: 3px;
+}
+
+.tt-modal__advice-text {
+    font-size: 12px;
+    line-height: 1.6;
+    font-weight: 500;
+}
+
+/* Footer */
+.tt-modal__footer {
+    border-top: 1px solid var(--db-border);
+    padding: 14px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--db-surf2);
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.tt-modal__footer-meta {
+    font-size: 11px;
+    color: var(--db-muted);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-family: 'DM Mono', monospace;
+}
+
+.tt-modal__footer-btns {
+    display: flex;
+    gap: 8px;
+}
+
+.tt-modal__footer-btn {
+    padding: 7px 16px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: 'Sora', sans-serif;
+    cursor: pointer;
+    border: none;
+    transition: all .15s;
+}
+
+.tt-modal__footer-btn--ghost {
+    background: var(--db-surf);
+    border: 1px solid var(--db-border);
+    color: var(--db-text);
+}
+
+.tt-modal__footer-btn--ghost:hover {
+    background: var(--db-border);
+}
+
+.tt-modal__footer-btn--primary {
+    background: linear-gradient(135deg, var(--db-navy), var(--db-navy-light));
+    color: #fff;
+}
+
+.tt-modal__footer-btn--primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(13, 27, 54, .3);
+}
+
+/* ─────────────────────────────────────────────
+   HERO LAYOUT FIX: center datetime in hero
+───────────────────────────────────────────── */
+.tt-hero__inner {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 16px;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.tt-hero__right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+@media (max-width:768px) {
+    .tt-hero__inner {
+        grid-template-columns: 1fr;
+        justify-items: center;
+    }
+
+    .tt-hero__right {
+        justify-content: center;
+    }
+}

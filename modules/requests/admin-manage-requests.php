@@ -8,914 +8,602 @@ require_once '../../includes/functions.php';
 requireLogin();
 $user_id = getCurrentUserId();
 $user_role = getCurrentUserRole();
-
-if (!in_array($user_role, ['Admin', 'Super Admin', 'Staff', 'Treasurer'])) {
-    header('Location: ../dashboard/index.php');
-    exit();
-}
+if (!in_array($user_role,['Admin','Super Admin','Staff','Treasurer'])) { header('Location: ../dashboard/index.php'); exit(); }
 
 $page_title = 'Document Requests Management';
 
 // Handle status update
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
-    $request_id = intval($_POST['request_id']);
-    $status = sanitizeInput($_POST['status']);
-    $remarks = isset($_POST['remarks']) ? sanitizeInput($_POST['remarks']) : '';
-
-    $request_query = "SELECT r.*, rt.request_type_name, res.first_name, res.last_name, u.user_id 
-                      FROM tbl_requests r 
-                      JOIN tbl_request_types rt ON r.request_type_id = rt.request_type_id 
-                      JOIN tbl_residents res ON r.resident_id = res.resident_id 
-                      JOIN tbl_users u ON res.resident_id = u.resident_id
-                      WHERE r.request_id = ?";
-    $req_stmt = $conn->prepare($request_query);
-    $req_stmt->bind_param("i", $request_id);
-    $req_stmt->execute();
-    $request_details = $req_stmt->get_result()->fetch_assoc();
-    $req_stmt->close();
-
-    if ($request_details) {
-        $sql = "UPDATE tbl_requests SET status = ?, processed_by = ?, processed_date = NOW() WHERE request_id = ?";
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param("sii", $status, $user_id, $request_id);
-
-        if ($stmt->execute()) {
-            $notif_title = "Request Status Updated";
-            $notif_message = "Your request for {$request_details['request_type_name']} is now {$status}";
-            if (!empty($remarks)) $notif_message .= ". Remarks: {$remarks}";
-            $notif_type = "request_" . strtolower($status);
-            $reference_type = "request";
-
-            $notif_sql = "INSERT INTO tbl_notifications 
-                         (user_id, type, reference_type, reference_id, title, message, is_read, created_at) 
-                         VALUES (?, ?, ?, ?, ?, ?, 0, NOW())";
-            $notif_stmt = $conn->prepare($notif_sql);
-            $notif_stmt->bind_param("ississ",
-                $request_details['user_id'], $notif_type, $reference_type,
-                $request_id, $notif_title, $notif_message
-            );
-            $notif_stmt->execute();
-            $notif_stmt->close();
-            $_SESSION['success_message'] = 'Request status updated successfully!';
-        } else {
-            $_SESSION['error_message'] = 'Failed to update request status.';
-        }
-        $stmt->close();
-    } else {
-        $_SESSION['error_message'] = 'Request not found.';
-    }
-    header('Location: ' . $_SERVER['PHP_SELF'] . '?tab=manage');
-    exit();
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['update_status'])) {
+    $request_id=intval($_POST['request_id']); $status=sanitizeInput($_POST['status']); $remarks=isset($_POST['remarks'])?sanitizeInput($_POST['remarks']):'';
+    $req_stmt=$conn->prepare("SELECT r.*,rt.request_type_name,res.first_name,res.last_name,u.user_id FROM tbl_requests r JOIN tbl_request_types rt ON r.request_type_id=rt.request_type_id JOIN tbl_residents res ON r.resident_id=res.resident_id JOIN tbl_users u ON res.resident_id=u.resident_id WHERE r.request_id=?");
+    $req_stmt->bind_param("i",$request_id); $req_stmt->execute(); $rd=$req_stmt->get_result()->fetch_assoc(); $req_stmt->close();
+    if ($rd) { $stmt=$conn->prepare("UPDATE tbl_requests SET status=?,processed_by=?,processed_date=NOW() WHERE request_id=?"); $stmt->bind_param("sii",$status,$user_id,$request_id); if($stmt->execute()){$nm="Request Status Updated";$msg="Your request for {$rd['request_type_name']} is now {$status}";if(!empty($remarks))$msg.=". Remarks: {$remarks}";$nt="request_".strtolower($status);$ns=$conn->prepare("INSERT INTO tbl_notifications (user_id,type,reference_type,reference_id,title,message,is_read,created_at) VALUES(?,?,?,?,?,?,0,NOW())");$ns->bind_param("ississ",$rd['user_id'],$nt,'request',$request_id,$nm,$msg);$ns->execute();$ns->close();$_SESSION['success_message']='Request status updated successfully!';}else{$_SESSION['error_message']='Failed to update request status.';}$stmt->close();}else{$_SESSION['error_message']='Request not found.';}
+    header('Location: '.$_SERVER['PHP_SELF'].'?tab=manage'); exit();
 }
 
-// ============================================================================
 // Handle payment update
-// When marked as PAID: inserts revenue as 'Verified' immediately and updates
-// fund balance — so it shows up in Revenue Management without manual approval.
-// ============================================================================
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_payment'])) {
-    $request_id     = intval($_POST['request_id']);
-    $payment_status = intval($_POST['payment_status']);
-
-    $request_query = "SELECT r.*, rt.request_type_name, rt.fee, res.first_name, res.last_name, u.user_id 
-                      FROM tbl_requests r 
-                      JOIN tbl_request_types rt ON r.request_type_id = rt.request_type_id 
-                      JOIN tbl_residents res ON r.resident_id = res.resident_id 
-                      JOIN tbl_users u ON res.resident_id = u.resident_id
-                      WHERE r.request_id = ?";
-    $req_stmt = $conn->prepare($request_query);
-    $req_stmt->bind_param("i", $request_id);
-    $req_stmt->execute();
-    $request_details = $req_stmt->get_result()->fetch_assoc();
-    $req_stmt->close();
-
-    if ($request_details) {
-
-        // ── Prevent duplicate revenue: check if already paid ──
-        $cur_stmt = $conn->prepare("SELECT payment_status FROM tbl_requests WHERE request_id = ?");
-        $cur_stmt->bind_param("i", $request_id);
-        $cur_stmt->execute();
-        $cur_data = $cur_stmt->get_result()->fetch_assoc();
-        $cur_stmt->close();
-        $was_already_paid = ($cur_data && $cur_data['payment_status'] == 1);
-
-        $sql = "UPDATE tbl_requests SET payment_status = ? WHERE request_id = ?";
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param("ii", $payment_status, $request_id);
-
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['update_payment'])) {
+    $request_id=intval($_POST['request_id']); $payment_status=intval($_POST['payment_status']);
+    $req_stmt=$conn->prepare("SELECT r.*,rt.request_type_name,rt.fee,res.first_name,res.last_name,u.user_id FROM tbl_requests r JOIN tbl_request_types rt ON r.request_type_id=rt.request_type_id JOIN tbl_residents res ON r.resident_id=res.resident_id JOIN tbl_users u ON res.resident_id=u.resident_id WHERE r.request_id=?");
+    $req_stmt->bind_param("i",$request_id); $req_stmt->execute(); $rd=$req_stmt->get_result()->fetch_assoc(); $req_stmt->close();
+    if ($rd) {
+        $cur_stmt=$conn->prepare("SELECT payment_status FROM tbl_requests WHERE request_id=?"); $cur_stmt->bind_param("i",$request_id); $cur_stmt->execute(); $cd=$cur_stmt->get_result()->fetch_assoc(); $cur_stmt->close(); $was_paid=($cd&&$cd['payment_status']==1);
+        $stmt=$conn->prepare("UPDATE tbl_requests SET payment_status=? WHERE request_id=?"); $stmt->bind_param("ii",$payment_status,$request_id);
         if ($stmt->execute()) {
-
-            // Only create revenue when newly marking as PAID and fee > 0
-            if ($payment_status == 1 && !$was_already_paid && $request_details['fee'] > 0) {
-
-                $table_check = $conn->query("SHOW TABLES LIKE 'tbl_revenues'");
-                $revenue_table_exists = ($table_check && $table_check->num_rows > 0);
-
-                if ($revenue_table_exists) {
-
-                    // Get or auto-create the "Document Fees" category
-                    $category_id   = null;
-                    $cat_result    = $conn->query("SELECT category_id FROM tbl_revenue_categories WHERE category_name = 'Document Fees' LIMIT 1");
-                    if ($cat_result && $cat_result->num_rows > 0) {
-                        $category_id = $cat_result->fetch_assoc()['category_id'];
-                    } else {
-                        $conn->query("INSERT INTO tbl_revenue_categories (category_name, description, is_active) VALUES ('Document Fees', 'Revenue from document requests', 1)");
-                        $category_id = $conn->insert_id;
-                    }
-
-                    if ($category_id) {
-                        $reference_number = 'REV-' . date('Ymd') . '-' . str_pad($request_id, 6, '0', STR_PAD_LEFT);
-
-                        // ── FIX: source includes "– DocType" so revenues.php displays correctly ──
-                        $resident_name    = trim($request_details['first_name'] . ' ' . $request_details['last_name']);
-                        $source           = $resident_name . ' – ' . $request_details['request_type_name'];
-                        // ── FIX: plain request_id (no zero-padding) so revenues.php regex matches ──
-                        $description      = "Payment for {$request_details['request_type_name']} (Request #{$request_id})";
-                        $fee              = (float) $request_details['fee'];
-
-                        $revenue_sql = "INSERT INTO tbl_revenues 
-                                           (reference_number, category_id, source, amount, description,
-                                            transaction_date, payment_method,
-                                            received_by, verified_by, verification_date,
-                                            status, created_at)
-                                        VALUES (?, ?, ?, ?, ?, NOW(), 'Cash', ?, ?, NOW(), 'Verified', NOW())";
-
-                        $revenue_stmt = $conn->prepare($revenue_sql);
-                        if ($revenue_stmt) {
-                            $revenue_stmt->bind_param("sisssdii",
-                                $reference_number,
-                                $category_id,
-                                $source,
-                                $fee,
-                                $description,
-                                $user_id,   // received_by
-                                $user_id    // verified_by
-                            );
-
-                            if ($revenue_stmt->execute()) {
-
-                                // Update fund balance
-                                $bal_stmt = $conn->prepare(
-                                    "UPDATE tbl_fund_balance 
-                                     SET current_balance = current_balance + ?, updated_by = ?, last_updated = NOW()
-                                     ORDER BY balance_id DESC LIMIT 1"
-                                );
-                                if ($bal_stmt) {
-                                    $bal_stmt->bind_param("di", $fee, $user_id);
-                                    $bal_stmt->execute();
-                                    $bal_stmt->close();
-                                }
-
-                                // Notify resident
-                                $notif_title   = "Payment Confirmed";
-                                $notif_message = "Your payment of ₱" . number_format($fee, 2)
-                                               . " for {$request_details['request_type_name']}"
-                                               . " has been confirmed. Reference: {$reference_number}";
-                                $notif_sql = "INSERT INTO tbl_notifications 
-                                             (user_id, type, reference_type, reference_id, title, message, is_read, created_at) 
-                                             VALUES (?, ?, ?, ?, ?, ?, 0, NOW())";
-                                $notif_stmt = $conn->prepare($notif_sql);
-                                $notif_stmt->bind_param("ississ",
-                                    $request_details['user_id'],
-                                    'payment_confirmed', 'request',
-                                    $request_id, $notif_title, $notif_message
-                                );
-                                $notif_stmt->execute();
-                                $notif_stmt->close();
-
-                                // Notify Treasurer(s) about payment
-                                $tres_result = $conn->query("SELECT user_id FROM tbl_users WHERE role = 'Treasurer'");
-                                if ($tres_result && $tres_result->num_rows > 0) {
-                                    $tres_notif = $conn->prepare(
-                                        "INSERT INTO tbl_notifications (user_id, type, reference_type, reference_id, title, message, is_read, created_at) VALUES (?, 'payment_confirmed', 'request', ?, ?, ?, 0, NOW())"
-                                    );
-                                    $tres_title = "Document Payment Received";
-                                    $tres_msg   = "{$resident_name} paid ₱" . number_format($fee, 2) . " for {$request_details['request_type_name']} (Request #{$request_id}). Reference: {$reference_number}";
-                                    while ($tres_row = $tres_result->fetch_assoc()) {
-                                        $tres_uid = $tres_row['user_id'];
-                                        $tres_notif->bind_param("iiss", $tres_uid, $request_id, $tres_title, $tres_msg);
-                                        $tres_notif->execute();
-                                    }
-                                    $tres_notif->close();
-                                }
-
-                                $_SESSION['success_message'] =
-                                    "Payment confirmed! Revenue verified automatically. Reference: {$reference_number}";
-
-                            } else {
-                                $_SESSION['success_message'] =
-                                    'Payment updated but failed to create revenue: ' . $revenue_stmt->error;
-                            }
-                            $revenue_stmt->close();
-                        }
-                    }
-                } else {
-                    $_SESSION['success_message'] = 'Payment status updated successfully!';
-                }
-
-            } else {
-                // Unpaid, free document, or already paid
-                $_SESSION['success_message'] = 'Payment status updated successfully!';
-            }
-
-        } else {
-            $_SESSION['error_message'] = 'Failed to update payment status.';
-        }
+            if ($payment_status==1&&!$was_paid&&$rd['fee']>0) {
+                $tc=$conn->query("SHOW TABLES LIKE 'tbl_revenues'");
+                if ($tc&&$tc->num_rows>0) {
+                    $cid=null; $cr=$conn->query("SELECT category_id FROM tbl_revenue_categories WHERE category_name='Document Fees' LIMIT 1");
+                    if ($cr&&$cr->num_rows>0) $cid=$cr->fetch_assoc()['category_id']; else { $conn->query("INSERT INTO tbl_revenue_categories (category_name,description,is_active) VALUES('Document Fees','Revenue from document requests',1)"); $cid=$conn->insert_id; }
+                    if ($cid) { $ref='REV-'.date('Ymd').'-'.str_pad($request_id,6,'0',STR_PAD_LEFT); $rn=trim($rd['first_name'].' '.$rd['last_name']); $src=$rn.' – '.$rd['request_type_name']; $desc="Payment for {$rd['request_type_name']} (Request #{$request_id})"; $fee=(float)$rd['fee']; $rs=$conn->prepare("INSERT INTO tbl_revenues (reference_number,category_id,source,amount,description,transaction_date,payment_method,received_by,verified_by,verification_date,status,created_at) VALUES(?,?,?,?,?,NOW(),'Cash',?,?,NOW(),'Verified',NOW())"); if($rs){$rs->bind_param("sisssdii",$ref,$cid,$src,$fee,$desc,$user_id,$user_id);if($rs->execute()){$bs=$conn->prepare("UPDATE tbl_fund_balance SET current_balance=current_balance+?,updated_by=?,last_updated=NOW() ORDER BY balance_id DESC LIMIT 1");if($bs){$bs->bind_param("di",$fee,$user_id);$bs->execute();$bs->close();}$nm="Payment Confirmed";$msg="Your payment of ₱".number_format($fee,2)." for {$rd['request_type_name']} has been confirmed. Reference: {$ref}";$ns=$conn->prepare("INSERT INTO tbl_notifications (user_id,type,reference_type,reference_id,title,message,is_read,created_at) VALUES(?,?,?,?,?,?,0,NOW())");$ns->bind_param("ississ",$rd['user_id'],'payment_confirmed','request',$request_id,$nm,$msg);$ns->execute();$ns->close();$_SESSION['success_message']="Payment confirmed! Revenue verified automatically. Reference: {$ref}";}else{$_SESSION['success_message']='Payment updated but failed to create revenue: '.$rs->error;}$rs->close();}}
+                } else { $_SESSION['success_message']='Payment status updated successfully!'; }
+            } else { $_SESSION['success_message']='Payment status updated successfully!'; }
+        } else { $_SESSION['error_message']='Failed to update payment status.'; }
         $stmt->close();
-    } else {
-        $_SESSION['error_message'] = 'Request not found.';
-    }
-    header('Location: ' . $_SERVER['PHP_SELF'] . '?tab=manage');
-    exit();
+    } else { $_SESSION['error_message']='Request not found.'; }
+    header('Location: '.$_SERVER['PHP_SELF'].'?tab=manage'); exit();
 }
 
-$active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'manage';
-$search = isset($_GET['search']) ? sanitizeInput($_GET['search']) : '';
-$date_from = isset($_GET['date_from']) ? $_GET['date_from'] : date('Y-m-01');
-$date_to = isset($_GET['date_to']) ? $_GET['date_to'] : date('Y-m-d');
-$request_type_filter = isset($_GET['request_type']) ? intval($_GET['request_type']) : 0;
-$status_filter = isset($_GET['status']) ? $_GET['status'] : '';
+$active_tab   = isset($_GET['tab'])         ? $_GET['tab']             : 'manage';
+$search       = isset($_GET['search'])      ? sanitizeInput($_GET['search']) : '';
+$date_from    = isset($_GET['date_from'])   ? $_GET['date_from']       : date('Y-m-01');
+$date_to      = isset($_GET['date_to'])     ? $_GET['date_to']         : date('Y-m-d');
+$rt_filter    = isset($_GET['request_type'])? intval($_GET['request_type']): 0;
+$status_filter= isset($_GET['status'])      ? $_GET['status']          : '';
 
-// Statistics
-$stats_sql = "SELECT 
-              COUNT(*) as total,
-              SUM(CASE WHEN status = 'Pending' THEN 1 ELSE 0 END) as pending,
-              SUM(CASE WHEN status = 'Approved' THEN 1 ELSE 0 END) as approved,
-              SUM(CASE WHEN status = 'Released' THEN 1 ELSE 0 END) as released,
-              SUM(CASE WHEN status = 'Rejected' THEN 1 ELSE 0 END) as rejected,
-              SUM(CASE WHEN payment_status = 1 THEN 1 ELSE 0 END) as paid
-              FROM tbl_requests";
-$stats = $conn->query($stats_sql)->fetch_assoc();
+$stats=$conn->query("SELECT COUNT(*) as total, SUM(CASE WHEN status='Pending' THEN 1 ELSE 0 END) as pending, SUM(CASE WHEN status='Approved' THEN 1 ELSE 0 END) as approved, SUM(CASE WHEN status='Released' THEN 1 ELSE 0 END) as released, SUM(CASE WHEN status='Rejected' THEN 1 ELSE 0 END) as rejected, SUM(CASE WHEN payment_status=1 THEN 1 ELSE 0 END) as paid FROM tbl_requests")->fetch_assoc();
 
-// Request types
-$request_types = [];
-$result = $conn->query("SELECT * FROM tbl_request_types ORDER BY request_type_name");
-if ($result) {
-    while ($row = $result->fetch_assoc()) $request_types[] = $row;
-}
+$request_types=[];
+$rtr=$conn->query("SELECT * FROM tbl_request_types ORDER BY request_type_name");
+if ($rtr) while($r=$rtr->fetch_assoc()) $request_types[]=$r;
 
-// Fetch requests
-$manage_sql = "SELECT r.*, 
-            res.first_name, res.last_name, res.email,
-            rt.request_type_name, rt.fee,
-            u.username as processed_by_name
-        FROM tbl_requests r
-        INNER JOIN tbl_residents res ON r.resident_id = res.resident_id
-        LEFT JOIN tbl_request_types rt ON r.request_type_id = rt.request_type_id
-        LEFT JOIN tbl_users u ON r.processed_by = u.user_id
-        WHERE 1=1";
+$msql="SELECT r.*,res.first_name,res.last_name,res.email,rt.request_type_name,rt.fee,u.username as processed_by_name FROM tbl_requests r INNER JOIN tbl_residents res ON r.resident_id=res.resident_id LEFT JOIN tbl_request_types rt ON r.request_type_id=rt.request_type_id LEFT JOIN tbl_users u ON r.processed_by=u.user_id WHERE 1=1";
+$mp=[]; $mt='';
+if ($status_filter&&$status_filter!=='Paid') { $msql.=" AND r.status=?"; $mp[]=$status_filter; $mt.='s'; }
+if ($status_filter==='Paid') $msql.=" AND r.payment_status=1";
+if ($search) { $msql.=" AND (res.first_name LIKE ? OR res.last_name LIKE ? OR rt.request_type_name LIKE ?)"; $sp="%{$search}%"; $mp[]=$sp;$mp[]=$sp;$mp[]=$sp; $mt.='sss'; }
+$msql.=" ORDER BY CASE r.status WHEN 'Pending' THEN 1 WHEN 'Approved' THEN 2 WHEN 'Released' THEN 3 WHEN 'Rejected' THEN 4 END, r.request_date DESC";
+if (!empty($mp)) { $ms=$conn->prepare($msql); $ms->bind_param($mt,...$mp); $ms->execute(); $manage_requests=$ms->get_result(); }
+else $manage_requests=$conn->query($msql);
 
-$manage_params = [];
-$manage_types = "";
+$stmt=$conn->prepare("SELECT COUNT(*) as total_requests, SUM(CASE WHEN status='Pending' THEN 1 ELSE 0 END) as pending, SUM(CASE WHEN status='Approved' THEN 1 ELSE 0 END) as approved, SUM(CASE WHEN status='Released' THEN 1 ELSE 0 END) as released, SUM(CASE WHEN status='Rejected' THEN 1 ELSE 0 END) as rejected, SUM(CASE WHEN payment_status=1 THEN 1 ELSE 0 END) as paid_requests, SUM(CASE WHEN payment_status=1 THEN rt.fee ELSE 0 END) as total_revenue FROM tbl_requests r LEFT JOIN tbl_request_types rt ON r.request_type_id=rt.request_type_id WHERE DATE(request_date) BETWEEN ? AND ?");
+$stmt->bind_param("ss",$date_from,$date_to); $stmt->execute(); $report_stats=$stmt->get_result()->fetch_assoc(); $stmt->close();
 
-if ($status_filter && $status_filter !== 'Paid') {
-    $manage_sql .= " AND r.status = ?";
-    $manage_params[] = $status_filter;
-    $manage_types .= "s";
-}
+$stmt=$conn->prepare("SELECT rt.request_type_name,COUNT(*) as count FROM tbl_requests r LEFT JOIN tbl_request_types rt ON r.request_type_id=rt.request_type_id WHERE DATE(r.request_date) BETWEEN ? AND ? GROUP BY r.request_type_id,rt.request_type_name ORDER BY count DESC");
+$stmt->bind_param("ss",$date_from,$date_to); $stmt->execute(); $type_distribution=$stmt->get_result(); $stmt->close();
 
-if ($status_filter === 'Paid') {
-    $manage_sql .= " AND r.payment_status = 1";
-}
-
-if ($search) {
-    $manage_sql .= " AND (res.first_name LIKE ? OR res.last_name LIKE ? OR rt.request_type_name LIKE ?)";
-    $search_param = "%{$search}%";
-    $manage_params[] = $search_param;
-    $manage_params[] = $search_param;
-    $manage_params[] = $search_param;
-    $manage_types .= "sss";
-}
-
-$manage_sql .= " ORDER BY CASE r.status 
-    WHEN 'Pending' THEN 1 WHEN 'Approved' THEN 2 
-    WHEN 'Released' THEN 3 WHEN 'Rejected' THEN 4 END, r.request_date DESC";
-
-if (!empty($manage_params)) {
-    $manage_stmt = $conn->prepare($manage_sql);
-    $manage_stmt->bind_param($manage_types, ...$manage_params);
-    $manage_stmt->execute();
-    $manage_requests = $manage_stmt->get_result();
-} else {
-    $manage_requests = $conn->query($manage_sql);
-}
-
-// Report stats
-$stmt = $conn->prepare("SELECT 
-    COUNT(*) as total_requests,
-    SUM(CASE WHEN status = 'Pending' THEN 1 ELSE 0 END) as pending,
-    SUM(CASE WHEN status = 'Approved' THEN 1 ELSE 0 END) as approved,
-    SUM(CASE WHEN status = 'Released' THEN 1 ELSE 0 END) as released,
-    SUM(CASE WHEN status = 'Rejected' THEN 1 ELSE 0 END) as rejected,
-    SUM(CASE WHEN payment_status = 1 THEN 1 ELSE 0 END) as paid_requests,
-    SUM(CASE WHEN payment_status = 1 THEN rt.fee ELSE 0 END) as total_revenue
-    FROM tbl_requests r
-    LEFT JOIN tbl_request_types rt ON r.request_type_id = rt.request_type_id
-    WHERE DATE(request_date) BETWEEN ? AND ?");
-$stmt->bind_param("ss", $date_from, $date_to);
-$stmt->execute();
-$report_stats = $stmt->get_result()->fetch_assoc();
-$stmt->close();
-
-// Type distribution
-$stmt = $conn->prepare("SELECT rt.request_type_name, COUNT(*) as count
-    FROM tbl_requests r
-    LEFT JOIN tbl_request_types rt ON r.request_type_id = rt.request_type_id
-    WHERE DATE(r.request_date) BETWEEN ? AND ?
-    GROUP BY r.request_type_id, rt.request_type_name ORDER BY count DESC");
-$stmt->bind_param("ss", $date_from, $date_to);
-$stmt->execute();
-$type_distribution = $stmt->get_result();
-$stmt->close();
-
-// Detailed report
-$detail_sql = "SELECT r.*, res.first_name, res.last_name, rt.request_type_name, rt.fee
-    FROM tbl_requests r
-    INNER JOIN tbl_residents res ON r.resident_id = res.resident_id
-    LEFT JOIN tbl_request_types rt ON r.request_type_id = rt.request_type_id
-    WHERE DATE(r.request_date) BETWEEN ? AND ?";
-$params = [$date_from, $date_to];
-$types = "ss";
-if ($active_tab === 'reports' && $status_filter) {
-    $detail_sql .= " AND r.status = ?"; $params[] = $status_filter; $types .= "s";
-}
-if ($active_tab === 'reports' && $request_type_filter) {
-    $detail_sql .= " AND r.request_type_id = ?"; $params[] = $request_type_filter; $types .= "i";
-}
-$detail_sql .= " ORDER BY r.request_date DESC";
-$stmt = $conn->prepare($detail_sql);
-$stmt->bind_param($types, ...$params);
-$stmt->execute();
-$report_requests = $stmt->get_result();
-$stmt->close();
+$dsql="SELECT r.*,res.first_name,res.last_name,rt.request_type_name,rt.fee FROM tbl_requests r INNER JOIN tbl_residents res ON r.resident_id=res.resident_id LEFT JOIN tbl_request_types rt ON r.request_type_id=rt.request_type_id WHERE DATE(r.request_date) BETWEEN ? AND ?";
+$dp=[$date_from,$date_to]; $dt='ss';
+if ($active_tab==='reports'&&$status_filter) { $dsql.=" AND r.status=?"; $dp[]=$status_filter; $dt.='s'; }
+if ($active_tab==='reports'&&$rt_filter)     { $dsql.=" AND r.request_type_id=?"; $dp[]=$rt_filter; $dt.='i'; }
+$dsql.=" ORDER BY r.request_date DESC";
+$stmt=$conn->prepare($dsql); $stmt->bind_param($dt,...$dp); $stmt->execute(); $report_requests=$stmt->get_result(); $stmt->close();
 
 include '../../includes/header.php';
 ?>
-
 <style>
-:root {
-    --transition-speed: 0.3s;
-    --shadow-sm: 0 2px 8px rgba(0,0,0,0.08);
-    --shadow-md: 0 4px 16px rgba(0,0,0,0.12);
-    --shadow-lg: 0 8px 24px rgba(0,0,0,0.15);
-    --border-radius: 12px;
-    --border-radius-lg: 16px;
-}
-.card { border: none; border-radius: var(--border-radius); box-shadow: var(--shadow-sm); transition: all var(--transition-speed) ease; overflow: hidden; }
-.card:hover { box-shadow: var(--shadow-md); transform: translateY(-4px); }
-.card-header { background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%); border-bottom: 2px solid #e9ecef; padding: 1.25rem 1.5rem; border-radius: var(--border-radius) var(--border-radius) 0 0 !important; }
-.card-header h5 { font-weight: 700; font-size: 1.1rem; margin: 0; display: flex; align-items: center; }
-.card-body { padding: 1.75rem; }
-.stat-card { transition: all var(--transition-speed) ease; cursor: pointer; }
-.stat-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-md) !important; }
-.active-card         { border: 2px solid #0d6efd !important; background: linear-gradient(to bottom, #ffffff, #f8f9ff); }
-.active-card-warning { border: 2px solid #ffc107 !important; background: linear-gradient(to bottom, #ffffff, #fffbf0); }
-.active-card-info    { border: 2px solid #0dcaf0 !important; background: linear-gradient(to bottom, #ffffff, #f0fcff); }
-.active-card-success { border: 2px solid #198754 !important; background: linear-gradient(to bottom, #ffffff, #f0f9f4); }
-.active-card-danger  { border: 2px solid #dc3545 !important; background: linear-gradient(to bottom, #ffffff, #fff5f5); }
-.active-card-primary { border: 2px solid #0d6efd !important; background: linear-gradient(to bottom, #ffffff, #f8f9ff); }
-.table { margin-bottom: 0; }
-.table thead th { background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%); border-bottom: 2px solid #dee2e6; font-weight: 700; font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.5px; color: #495057; padding: 1rem; }
-.table tbody tr { transition: all var(--transition-speed) ease; border-bottom: 1px solid #f1f3f5; }
-.table tbody tr:hover { background: linear-gradient(135deg, rgba(13,110,253,0.03) 0%, rgba(13,110,253,0.05) 100%); transform: scale(1.01); }
-.table tbody td { padding: 1rem; vertical-align: middle; }
-.request-row { transition: all 0.2s; background: white; cursor: pointer; }
-.request-row:hover { background: #f8f9fa; box-shadow: inset 3px 0 0 #0d6efd; }
-.badge { font-weight: 600; padding: 0.5rem 1rem; border-radius: 50px; font-size: 0.85rem; letter-spacing: 0.3px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
-.btn { border-radius: 8px; padding: 0.625rem 1.5rem; font-weight: 600; transition: all var(--transition-speed) ease; border: none; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
-.btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
-.btn:active { transform: translateY(0); }
-.btn-sm { padding: 0.5rem 1rem; font-size: 0.875rem; }
-.alert { border: none; border-radius: var(--border-radius); padding: 1.25rem 1.5rem; box-shadow: var(--shadow-sm); border-left: 4px solid; }
-.alert-success { background: linear-gradient(135deg, #d1f4e0 0%, #e7f9ee 100%); border-left-color: #198754; }
-.alert-danger  { background: linear-gradient(135deg, #ffd6d6 0%, #ffe5e5 100%); border-left-color: #dc3545; }
-.alert-info    { background: linear-gradient(135deg, #d0f0ff 0%, #e6f7ff 100%); border-left-color: #0dcaf0; }
-.alert i { font-size: 1.1rem; }
-.nav-tabs { border-bottom: 2px solid #e9ecef; }
-.nav-tabs .nav-link { color: #6c757d; border: none; border-bottom: 3px solid transparent; font-weight: 600; padding: 1rem 1.5rem; transition: all var(--transition-speed) ease; }
-.nav-tabs .nav-link:hover { border-color: #e9ecef; color: #0d6efd; background: rgba(13,110,253,0.05); }
-.nav-tabs .nav-link.active { color: #0d6efd; border-bottom-color: #0d6efd; background: transparent; }
-.req-preview-card { position: fixed; z-index: 9999; width: 340px; background: #fff; border-radius: 14px; box-shadow: 0 8px 32px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.10); border: 1px solid #e9ecef; overflow: hidden; pointer-events: none; animation: previewFadeIn 0.18s ease; }
-@keyframes previewFadeIn { from { opacity: 0; transform: translateY(6px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
-.req-preview-header { display: flex; align-items: center; gap: 12px; padding: 14px 16px 10px; border-bottom: 1px solid #f0f0f0; }
-.req-preview-icon { width: 44px; height: 44px; border-radius: 11px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; flex-shrink: 0; }
-.req-preview-header-text { flex: 1; min-width: 0; }
-.req-preview-type { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #6c757d; margin-bottom: 2px; }
-.req-preview-title { font-size: 0.92rem; font-weight: 700; color: #212529; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.req-preview-body { padding: 12px 16px 14px; }
-.req-preview-row { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 7px; font-size: 0.82rem; }
-.req-preview-label { color: #adb5bd; font-weight: 600; min-width: 72px; flex-shrink: 0; }
-.req-preview-value { color: #495057; }
-.req-preview-footer { font-size: 0.75rem; color: #adb5bd; display: flex; align-items: center; margin-top: 10px; padding-top: 10px; border-top: 1px solid #f0f0f0; gap: 8px; }
-.form-label { font-weight: 700; font-size: 0.9rem; color: #1a1a1a; margin-bottom: 0.75rem; }
-.form-control, .form-select { border: 2px solid #e9ecef; border-radius: 8px; padding: 0.75rem 1rem; transition: all var(--transition-speed) ease; font-size: 0.95rem; }
-.form-control:focus, .form-select:focus { border-color: #0d6efd; box-shadow: 0 0 0 4px rgba(13,110,253,0.1); }
-.modal-content { border: none; border-radius: var(--border-radius-lg); box-shadow: var(--shadow-lg); }
-.modal-header { background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%); border-bottom: 2px solid #e9ecef; border-radius: var(--border-radius-lg) var(--border-radius-lg) 0 0; padding: 1.5rem; }
-.modal-title { font-weight: 700; font-size: 1.25rem; }
-.modal-body { padding: 2rem; }
-.modal-footer { background: #f8f9fa; border-top: 2px solid #e9ecef; padding: 1.25rem 2rem; border-radius: 0 0 var(--border-radius-lg) var(--border-radius-lg); }
-.empty-state { text-align: center; padding: 4rem 2rem; color: #6c757d; }
-.empty-state i { font-size: 4rem; margin-bottom: 1.5rem; opacity: 0.3; }
-.empty-state p { font-size: 1.1rem; font-weight: 500; margin-bottom: 1rem; }
-/* Auto-verified notice in payment modal */
-.auto-verified-notice {
-    background: linear-gradient(135deg, #d1fae5 0%, #ecfdf5 100%);
-    border: 1px solid #6ee7b7;
-    border-radius: 10px;
-    padding: 1rem 1.25rem;
-    display: flex;
-    gap: 0.75rem;
-    align-items: flex-start;
-    margin-top: 1rem;
-}
-.auto-verified-notice i { color: #059669; margin-top: 2px; flex-shrink: 0; }
-.auto-verified-notice span { font-size: 0.875rem; color: #065f46; line-height: 1.5; }
-@media print { .no-print, .nav-tabs, .btn, form { display: none !important; } }
-@media (max-width: 768px) {
-    .container-fluid { padding-left: 1rem; padding-right: 1rem; }
-    .stat-card { margin-bottom: 1rem; }
-    .table thead th { font-size: 0.8rem; padding: 0.75rem; }
-    .table tbody td { font-size: 0.875rem; padding: 0.75rem; }
-    .req-preview-card { display: none !important; }
-}
-html { scroll-behavior: smooth; }
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=DM+Mono:wght@300;400;500&display=swap');
+:root{--db-navy:#0d1b36;--db-navy-mid:#152849;--db-navy-light:#1c3461;--db-amber:#f59e0b;--db-amber-light:#fef3c7;--db-amber-dark:#b45309;--db-teal:#0d9488;--db-teal-light:#ccfbf1;--db-rose:#e11d48;--db-rose-light:#ffe4e6;--db-sky:#0ea5e9;--db-sky-light:#e0f2fe;--db-indigo:#6366f1;--db-indigo-light:#e0e7ff;--db-success:#10b981;--db-success-light:#d1fae5;--db-warning:#f59e0b;--db-warning-light:#fef3c7;--db-danger:#ef4444;--db-danger-light:#fee2e2;--db-info:#3b82f6;--db-info-light:#dbeafe;--db-bg:#eef2f7;--db-surf:#ffffff;--db-surf2:#f8fafc;--db-border:#e2e8f0;--db-text:#0f172a;--db-muted:#64748b;--db-radius:14px;--db-radius-sm:8px;--db-radius-lg:20px;--db-shadow:0 1px 3px rgba(13,27,54,.06),0 4px 16px rgba(13,27,54,.07);--db-shadow-lg:0 8px 40px rgba(13,27,54,.14),0 2px 8px rgba(13,27,54,.06);}
+*,*::before,*::after{box-sizing:border-box;}
+body{font-family:'Sora',sans-serif;background:var(--db-bg);color:var(--db-text);font-size:13.5px;}
+.rm-hero{background:linear-gradient(135deg,var(--db-navy) 0%,var(--db-navy-light) 65%,#224090 100%);padding:28px 36px;margin-bottom:24px;border-radius:0 0 var(--db-radius-lg) var(--db-radius-lg);position:relative;overflow:hidden;}
+.rm-hero__ring{position:absolute;border-radius:50%;border:1px solid rgba(255,255,255,.06);pointer-events:none;}
+.rm-hero__ring--1{width:300px;height:300px;top:-130px;right:-60px;}
+.rm-hero__ring--2{width:180px;height:180px;top:-50px;right:70px;border-color:rgba(245,158,11,.12);}
+.rm-hero__ring--3{width:100px;height:100px;bottom:-40px;left:40%;border-color:rgba(13,148,136,.14);}
+.rm-hero__inner{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+.rm-hero__left{display:flex;align-items:center;gap:16px;}
+.rm-hero__icon{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,var(--db-teal),#0f766e);display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff;box-shadow:0 4px 16px rgba(13,148,136,.4);flex-shrink:0;}
+.rm-hero__title{font-size:22px;font-weight:800;color:#fff;letter-spacing:-.4px;margin-bottom:3px;}
+.rm-hero__sub{font-size:13px;color:rgba(255,255,255,.55);}
+.db-alert{display:flex;align-items:center;gap:12px;padding:14px 18px;border-radius:var(--db-radius);margin-bottom:16px;font-weight:500;font-size:13.5px;border-left:4px solid;}
+.db-alert--success{background:var(--db-success-light);color:#065f46;border-color:var(--db-success);}
+.db-alert--error{background:var(--db-danger-light);color:#7f1d1d;border-color:var(--db-danger);}
+.db-alert--info{background:var(--db-info-light);color:#1e40af;border-color:var(--db-info);}
+.db-alert__close{margin-left:auto;background:none;border:none;cursor:pointer;font-size:18px;opacity:.6;}
+.db-stats-row{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:24px;}
+.db-stat-card{flex:1 1 130px;background:var(--db-surf);border-radius:var(--db-radius);padding:16px 14px 12px;display:flex;flex-direction:column;gap:9px;box-shadow:var(--db-shadow);border:1px solid var(--db-border);transition:transform .2s,box-shadow .2s,border-color .2s;text-decoration:none;color:inherit;}
+.db-stat-card:hover{transform:translateY(-3px);box-shadow:var(--db-shadow-lg);color:inherit;}
+.db-stat-card.active{border-color:var(--db-navy-light);box-shadow:0 0 0 3px rgba(28,52,97,.15),var(--db-shadow-lg);transform:translateY(-3px);}
+.db-stat-card__icon{width:38px;height:38px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:15px;}
+.db-stat-card__icon--teal{background:var(--db-teal-light);color:var(--db-teal);}
+.db-stat-card__icon--amber{background:var(--db-amber-light);color:var(--db-amber-dark);}
+.db-stat-card__icon--sky{background:var(--db-sky-light);color:var(--db-sky);}
+.db-stat-card__icon--success{background:var(--db-success-light);color:var(--db-success);}
+.db-stat-card__icon--rose{background:var(--db-rose-light);color:var(--db-rose);}
+.db-stat-card__icon--indigo{background:var(--db-indigo-light);color:var(--db-indigo);}
+.db-stat-card__num{font-size:26px;font-weight:800;line-height:1;letter-spacing:-1px;}
+.db-stat-card__label{font-size:10px;color:var(--db-muted);font-weight:500;text-transform:uppercase;letter-spacing:.5px;}
+.db-stat-card__bar{height:3px;border-radius:2px;opacity:.4;}
+.db-stat-card__bar--teal{background:linear-gradient(90deg,var(--db-teal),transparent);}
+.db-stat-card__bar--amber{background:linear-gradient(90deg,var(--db-amber),transparent);}
+.db-stat-card__bar--sky{background:linear-gradient(90deg,var(--db-sky),transparent);}
+.db-stat-card__bar--success{background:linear-gradient(90deg,var(--db-success),transparent);}
+.db-stat-card__bar--rose{background:linear-gradient(90deg,var(--db-rose),transparent);}
+.db-stat-card__bar--indigo{background:linear-gradient(90deg,var(--db-indigo),transparent);}
+.db-panel{background:var(--db-surf);border-radius:var(--db-radius-lg);border:1px solid var(--db-border);box-shadow:var(--db-shadow);margin-bottom:18px;overflow:hidden;animation:dbFadeUp .35s ease both;}
+@keyframes dbFadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.db-panel__header{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid var(--db-border);gap:10px;flex-wrap:wrap;}
+.db-panel__title{display:flex;align-items:center;gap:10px;}
+.db-panel__title h2{font-size:15px;font-weight:700;}
+.db-panel__icon{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:14px;}
+.db-panel__icon--teal{background:var(--db-teal-light);color:var(--db-teal);}
+.db-panel__body{padding:20px 22px;}
+.db-tab-nav{display:flex;gap:0;border-bottom:2px solid var(--db-border);margin-bottom:20px;}
+.db-tab-btn{padding:11px 20px;font-family:'Sora',sans-serif;font-size:13px;font-weight:600;color:var(--db-muted);background:none;border:none;border-bottom:3px solid transparent;cursor:pointer;text-decoration:none;transition:all .18s;display:inline-flex;align-items:center;gap:7px;margin-bottom:-2px;}
+.db-tab-btn:hover{color:var(--db-navy);border-bottom-color:rgba(28,52,97,.2);}
+.db-tab-btn.active{color:var(--db-navy);border-bottom-color:var(--db-navy);}
+.db-form-row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;}
+.db-input,.db-select{padding:9px 13px;border:1.5px solid var(--db-border);border-radius:var(--db-radius-sm);font-family:'Sora',sans-serif;font-size:13px;color:var(--db-text);background:var(--db-surf);outline:none;transition:border-color .18s,box-shadow .18s;appearance:none;}
+.db-input:focus,.db-select:focus{border-color:var(--db-navy-light);box-shadow:0 0 0 3px rgba(28,52,97,.1);}
+.db-filter-label{font-size:11px;font-weight:600;color:var(--db-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;display:block;}
+.db-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:var(--db-radius-sm);font-family:'Sora',sans-serif;font-size:13px;font-weight:600;cursor:pointer;border:1px solid transparent;text-decoration:none;transition:all .18s;white-space:nowrap;}
+.db-btn--sm{padding:6px 12px;font-size:12px;}
+.db-btn--primary{background:linear-gradient(135deg,var(--db-navy),var(--db-navy-light));color:#fff;}
+.db-btn--primary:hover{background:linear-gradient(135deg,var(--db-navy-light),#2748a0);transform:translateY(-1px);box-shadow:0 4px 14px rgba(13,27,54,.25);color:#fff;}
+.db-btn--ghost{background:var(--db-surf2);color:var(--db-text);border-color:var(--db-border);}
+.db-btn--ghost:hover{background:var(--db-border);}
+.db-btn--success{background:linear-gradient(135deg,#065f46,var(--db-success));color:#fff;}
+.db-btn--success:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(16,185,129,.3);color:#fff;}
+.db-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:20px;font-family:'DM Mono',monospace;font-size:10px;font-weight:500;letter-spacing:.3px;white-space:nowrap;}
+.db-badge--teal{background:var(--db-teal-light);color:#0f766e;}
+.db-badge--amber{background:var(--db-amber-light);color:#92400e;}
+.db-badge--sky{background:var(--db-sky-light);color:#0369a1;}
+.db-badge--success{background:var(--db-success-light);color:#065f46;}
+.db-badge--rose{background:var(--db-rose-light);color:#9f1239;}
+.db-badge--indigo{background:var(--db-indigo-light);color:#4338ca;}
+.db-badge--muted{background:var(--db-surf2);color:var(--db-muted);border:1px solid var(--db-border);}
+.db-table-wrap{overflow-x:auto;}
+.db-table{width:100%;border-collapse:collapse;font-size:12.5px;}
+.db-table thead tr{background:linear-gradient(135deg,var(--db-navy),var(--db-navy-light));}
+.db-table thead th{color:rgba(255,255,255,.8);font-family:'DM Mono',monospace;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.8px;padding:11px 16px;white-space:nowrap;border:none;}
+.db-table tbody tr{border-bottom:1px solid var(--db-border);transition:background .12s;}
+.db-table tbody tr:last-child{border-bottom:none;}
+.db-table tbody tr.req-row:hover{background:#f5f8ff;box-shadow:inset 3px 0 0 var(--db-teal);cursor:pointer;}
+.db-table tbody td{padding:11px 16px;vertical-align:middle;}
+.db-id{font-family:'DM Mono',monospace;font-size:11px;color:var(--db-indigo);font-weight:500;}
+.db-text-sm{font-size:11.5px;color:var(--db-muted);}
+.db-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:56px 24px;text-align:center;gap:12px;}
+.db-empty i{font-size:44px;color:var(--db-border);}
+.db-empty p{font-size:14px;color:var(--db-muted);}
+/* DB Modal */
+.db-modal{display:none;position:fixed;inset:0;background:rgba(13,27,54,.55);backdrop-filter:blur(5px);z-index:9999;align-items:center;justify-content:center;padding:20px;}
+.db-modal--open{display:flex;}
+.db-modal__box{background:var(--db-surf);border-radius:var(--db-radius-lg);width:100%;max-width:480px;max-height:92vh;overflow-y:auto;box-shadow:var(--db-shadow-lg);animation:dbModalIn .28s cubic-bezier(.34,1.56,.64,1);}
+@keyframes dbModalIn{from{opacity:0;transform:scale(.9) translateY(16px)}to{opacity:1;transform:scale(1) translateY(0)}}
+.db-modal__header{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-radius:var(--db-radius-lg) var(--db-radius-lg) 0 0;}
+.db-modal__header--teal{background:linear-gradient(135deg,#065f46,var(--db-teal));}
+.db-modal__header--amber{background:linear-gradient(135deg,var(--db-amber-dark),var(--db-amber));}
+.db-modal__header h3{color:#fff;font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px;}
+.db-modal__close{background:rgba(255,255,255,.15);border:none;color:rgba(255,255,255,.85);width:30px;height:30px;border-radius:7px;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;transition:background .15s;}
+.db-modal__close:hover{background:rgba(255,255,255,.28);color:#fff;}
+.db-modal__body{padding:22px;}
+.db-modal__footer{display:flex;gap:10px;margin-top:18px;}
+.db-modal__footer .db-btn{flex:1;justify-content:center;}
+.db-notice{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:var(--db-radius-sm);font-size:12.5px;margin-top:14px;}
+.db-notice--success{background:var(--db-success-light);color:#065f46;}
+.db-notice--amber{background:var(--db-amber-light);color:#92400e;}
+/* Reports section */
+.db-mini-stats{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:18px;}
+.db-mini-stat{flex:1 1 120px;background:var(--db-surf);border-radius:var(--db-radius);padding:14px 16px;text-align:center;border:1px solid var(--db-border);box-shadow:var(--db-shadow);}
+.db-mini-stat .num{font-size:24px;font-weight:800;letter-spacing:-1px;}
+.db-mini-stat .lbl{font-size:10px;color:var(--db-muted);text-transform:uppercase;letter-spacing:.5px;margin-top:2px;}
+.db-charts-row{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:18px;}
+.db-chart-card{flex:1 1 280px;background:var(--db-surf);border-radius:var(--db-radius-lg);border:1px solid var(--db-border);box-shadow:var(--db-shadow);overflow:hidden;}
+.db-chart-card__header{padding:16px 20px;border-bottom:1px solid var(--db-border);display:flex;align-items:center;gap:10px;}
+.db-chart-card__header h3{font-size:14px;font-weight:700;}
+.db-chart-card__body{padding:16px 20px;}
+/* Hover preview */
+.db-preview{position:fixed;z-index:9999;width:340px;background:var(--db-surf);border-radius:var(--db-radius);box-shadow:var(--db-shadow-lg);border:1px solid var(--db-border);overflow:hidden;pointer-events:none;animation:dbPrevIn .18s ease;}
+@keyframes dbPrevIn{from{opacity:0;transform:translateY(6px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
+.db-preview__header{display:flex;align-items:center;gap:12px;padding:14px 16px 10px;border-bottom:1px solid #f0f0f0;}
+.db-preview__icon{width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0;}
+.db-preview__header-text{flex:1;min-width:0;}
+.db-preview__type{font-family:'DM Mono',monospace;font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--db-muted);margin-bottom:2px;}
+.db-preview__title{font-size:.88rem;font-weight:700;color:var(--db-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.db-preview__body{padding:12px 16px 14px;}
+.db-preview__row{display:flex;gap:8px;font-size:.8rem;margin-bottom:6px;}
+.db-preview__label{color:var(--db-muted);font-weight:600;min-width:68px;flex-shrink:0;}
+.db-preview__val{color:var(--db-text);}
+.db-preview__footer{font-size:.72rem;color:#adb5bd;display:flex;align-items:center;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid #f0f0f0;}
+@media print{.no-print{display:none !important}}
+@media(max-width:768px){.rm-hero{padding:20px;border-radius:0;}.db-preview{display:none !important;}}
 </style>
 
-<div class="container-fluid py-4">
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <h2 class="mb-1 fw-bold"><i class="fas fa-tasks me-2 text-primary"></i>Document Requests Management</h2>
-                    <p class="text-muted mb-0">Manage and analyze document requests</p>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <?php echo displayMessage(); ?>
-
-    <!-- Statistics Cards -->
-    <div class="row mb-4">
-        <div class="col-md-2">
-            <a href="?tab=manage" class="text-decoration-none">
-                <div class="card border-0 shadow-sm stat-card <?php echo ($active_tab==='manage' && !$status_filter) ? 'active-card' : ''; ?>">
-                    <div class="card-body"><div class="d-flex justify-content-between align-items-center">
-                        <div><p class="text-muted mb-1 small">Total</p><h3 class="mb-0"><?php echo $stats['total']; ?></h3></div>
-                        <div class="bg-primary bg-opacity-10 text-primary rounded-circle p-3"><i class="fas fa-tasks fs-4"></i></div>
-                    </div></div>
-                </div>
-            </a>
-        </div>
-        <div class="col-md-2">
-            <a href="?tab=manage&status=Pending" class="text-decoration-none">
-                <div class="card border-0 shadow-sm stat-card <?php echo ($status_filter==='Pending') ? 'active-card-warning' : ''; ?>">
-                    <div class="card-body"><div class="d-flex justify-content-between align-items-center">
-                        <div><p class="text-muted mb-1 small">Pending</p><h3 class="mb-0"><?php echo $stats['pending']; ?></h3></div>
-                        <div class="bg-warning bg-opacity-10 text-warning rounded-circle p-3"><i class="fas fa-clock fs-4"></i></div>
-                    </div></div>
-                </div>
-            </a>
-        </div>
-        <div class="col-md-2">
-            <a href="?tab=manage&status=Approved" class="text-decoration-none">
-                <div class="card border-0 shadow-sm stat-card <?php echo ($status_filter==='Approved') ? 'active-card-info' : ''; ?>">
-                    <div class="card-body"><div class="d-flex justify-content-between align-items-center">
-                        <div><p class="text-muted mb-1 small">Approved</p><h3 class="mb-0"><?php echo $stats['approved']; ?></h3></div>
-                        <div class="bg-info bg-opacity-10 text-info rounded-circle p-3"><i class="fas fa-check-circle fs-4"></i></div>
-                    </div></div>
-                </div>
-            </a>
-        </div>
-        <div class="col-md-2">
-            <a href="?tab=manage&status=Released" class="text-decoration-none">
-                <div class="card border-0 shadow-sm stat-card <?php echo ($status_filter==='Released') ? 'active-card-success' : ''; ?>">
-                    <div class="card-body"><div class="d-flex justify-content-between align-items-center">
-                        <div><p class="text-muted mb-1 small">Released</p><h3 class="mb-0"><?php echo $stats['released']; ?></h3></div>
-                        <div class="bg-success bg-opacity-10 text-success rounded-circle p-3"><i class="fas fa-check-double fs-4"></i></div>
-                    </div></div>
-                </div>
-            </a>
-        </div>
-        <div class="col-md-2">
-            <a href="?tab=manage&status=Rejected" class="text-decoration-none">
-                <div class="card border-0 shadow-sm stat-card <?php echo ($status_filter==='Rejected') ? 'active-card-danger' : ''; ?>">
-                    <div class="card-body"><div class="d-flex justify-content-between align-items-center">
-                        <div><p class="text-muted mb-1 small">Rejected</p><h3 class="mb-0"><?php echo $stats['rejected']; ?></h3></div>
-                        <div class="bg-danger bg-opacity-10 text-danger rounded-circle p-3"><i class="fas fa-times-circle fs-4"></i></div>
-                    </div></div>
-                </div>
-            </a>
-        </div>
-        <div class="col-md-2">
-            <a href="?tab=manage&status=Paid" class="text-decoration-none">
-                <div class="card border-0 shadow-sm stat-card <?php echo ($status_filter==='Paid') ? 'active-card-primary' : ''; ?>">
-                    <div class="card-body"><div class="d-flex justify-content-between align-items-center">
-                        <div><p class="text-muted mb-1 small">Paid</p><h3 class="mb-0"><?php echo $stats['paid']; ?></h3></div>
-                        <div class="bg-primary bg-opacity-10 text-primary rounded-circle p-3"><i class="fas fa-dollar-sign fs-4"></i></div>
-                    </div></div>
-                </div>
-            </a>
-        </div>
-    </div>
-
-    <!-- Navigation Tabs -->
-    <ul class="nav nav-tabs mb-4 no-print" role="tablist">
-        <li class="nav-item"><a class="nav-link <?php echo $active_tab === 'manage' ? 'active' : ''; ?>" href="?tab=manage"><i class="fas fa-tasks me-2"></i>Manage Requests</a></li>
-        <li class="nav-item"><a class="nav-link <?php echo $active_tab === 'reports' ? 'active' : ''; ?>" href="?tab=reports"><i class="fas fa-chart-bar me-2"></i>Reports & Analytics</a></li>
-    </ul>
-
-    <div class="tab-content">
-
-        <!-- Manage Tab -->
-        <div class="tab-pane <?php echo $active_tab === 'manage' ? 'show active' : ''; ?>">
-            <div class="card border-0 shadow-sm mb-4 no-print">
-                <div class="card-body">
-                    <form method="GET" action="" class="row g-3">
-                        <input type="hidden" name="tab" value="manage">
-                        <?php if ($status_filter): ?><input type="hidden" name="status" value="<?php echo htmlspecialchars($status_filter); ?>"><?php endif; ?>
-                        <div class="col-md-10">
-                            <label class="form-label">Search</label>
-                            <input type="text" name="search" class="form-control" placeholder="Search by name or document type..." value="<?php echo htmlspecialchars($search); ?>">
-                        </div>
-                        <div class="col-md-2">
-                            <label class="form-label">&nbsp;</label>
-                            <div class="d-grid"><button type="submit" class="btn btn-primary"><i class="fas fa-search me-1"></i>Search</button></div>
-                        </div>
-                    </form>
-                    <?php if ($status_filter): ?>
-                    <div class="mt-2">
-                        <span class="text-muted small">Filtering by: </span>
-                        <?php $badge_colors = ['Pending'=>'warning','Approved'=>'info','Released'=>'success','Rejected'=>'danger','Paid'=>'primary']; $bc = $badge_colors[$status_filter] ?? 'secondary'; ?>
-                        <span class="badge bg-<?= $bc ?>"><?= htmlspecialchars($status_filter) ?></span>
-                        <a href="?tab=manage" class="ms-2 small text-muted"><i class="fas fa-times me-1"></i>Clear filter</a>
-                    </div>
-                    <?php endif; ?>
-                </div>
-            </div>
-
-            <div class="card border-0 shadow-sm">
-                <div class="card-header">
-                    <h5>
-                        <i class="fas fa-list me-2"></i>
-                        <?php echo $status_filter ? htmlspecialchars($status_filter) . ' Requests' : 'All Requests'; ?>
-                        <span class="badge bg-primary ms-2"><?php echo $manage_requests ? $manage_requests->num_rows : 0; ?></span>
-                    </h5>
-                </div>
-                <div class="card-body">
-                    <p class="text-muted small mb-3"><i class="fas fa-info-circle me-1"></i>Hover over a row to preview details. Click a row to open the full request page.</p>
-                    <div class="table-responsive">
-                        <table class="table table-hover align-middle">
-                            <thead>
-                                <tr>
-                                    <th>ID</th><th>Date</th><th>Resident</th><th>Document Type</th>
-                                    <th>Purpose</th><th>Fee</th><th>Payment</th><th>Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php if ($manage_requests && $manage_requests->num_rows > 0): ?>
-                                    <?php while ($request = $manage_requests->fetch_assoc()):
-                                        $icon = 'fa-file-alt'; $icon_color = 'secondary';
-                                        if ($request['status'] === 'Pending')  { $icon = 'fa-clock';        $icon_color = 'warning'; }
-                                        if ($request['status'] === 'Approved') { $icon = 'fa-check-circle'; $icon_color = 'info'; }
-                                        if ($request['status'] === 'Released') { $icon = 'fa-check-double'; $icon_color = 'success'; }
-                                        if ($request['status'] === 'Rejected') { $icon = 'fa-times-circle'; $icon_color = 'danger'; }
-                                        $full_name    = htmlspecialchars(($request['first_name'] ?? '') . ' ' . ($request['last_name'] ?? ''));
-                                        $doc_type     = htmlspecialchars($request['request_type_name'] ?? 'N/A');
-                                        $purpose_full = $request['purpose'] ?? '';
-                                        $fee_text     = $request['fee'] > 0 ? '₱' . number_format($request['fee'], 2) : 'Free';
-                                        $pay_text     = $request['payment_status'] ? 'Paid' : ($request['fee'] > 0 ? 'Unpaid' : 'N/A');
-                                    ?>
-                                    <tr class="request-row"
-                                        data-preview-title="<?= $doc_type ?>"
-                                        data-preview-message="<?= htmlspecialchars(mb_strimwidth($purpose_full, 0, 120, '...')) ?>"
-                                        data-preview-icon="<?= $icon ?>"
-                                        data-preview-color="<?= $icon_color ?>"
-                                        data-preview-type="<?= htmlspecialchars($request['status']) ?>"
-                                        data-preview-time="<?= htmlspecialchars(date('M j, Y g:i A', strtotime($request['request_date']))) ?>"
-                                        data-preview-name="<?= $full_name ?>"
-                                        data-preview-fee="<?= htmlspecialchars($fee_text) ?>"
-                                        data-preview-pay="<?= htmlspecialchars($pay_text) ?>"
-                                        data-preview-email="<?= htmlspecialchars($request['email'] ?? 'N/A') ?>"
-                                        onclick="window.location.href='view-request.php?id=<?= $request['request_id'] ?>'">
-
-                                        <td><strong class="text-primary">#<?php echo str_pad($request['request_id'], 5, '0', STR_PAD_LEFT); ?></strong></td>
-                                        <td><i class="fas fa-calendar-alt text-muted me-1"></i><small><?php echo date('M d, Y', strtotime($request['request_date'])); ?></small></td>
-                                        <td>
-                                            <i class="fas fa-user text-muted me-1"></i><strong><?= $full_name ?></strong><br>
-                                            <small class="text-muted"><i class="fas fa-envelope me-1"></i><?= htmlspecialchars($request['email'] ?? 'N/A') ?></small>
-                                        </td>
-                                        <td><span class="badge bg-info"><?= $doc_type ?></span></td>
-                                        <td><?php if (strlen($purpose_full) > 40): ?><span title="<?= htmlspecialchars($purpose_full) ?>"><?= htmlspecialchars(substr($purpose_full, 0, 40)) ?>...</span><?php else: ?><?= htmlspecialchars($purpose_full) ?><?php endif; ?></td>
-                                        <td><?php if ($request['fee'] > 0): ?><strong class="text-success">₱<?php echo number_format($request['fee'], 2); ?></strong><?php else: ?><span class="badge bg-light text-dark">Free</span><?php endif; ?></td>
-                                        <td>
-                                            <?php if ($request['payment_status']): ?>
-                                                <span class="badge bg-success"><i class="fas fa-check me-1"></i>Paid</span>
-                                            <?php elseif ($request['fee'] > 0): ?>
-                                                <span class="badge bg-warning text-dark"><i class="fas fa-exclamation me-1"></i>Unpaid</span>
-                                            <?php else: ?>
-                                                <span class="badge bg-secondary">N/A</span>
-                                            <?php endif; ?>
-                                        </td>
-                                        <td>
-                                            <?php
-                                            $sc = ['Pending'=>'warning','Approved'=>'info','Released'=>'success','Rejected'=>'danger'];
-                                            $si = ['Pending'=>'clock','Approved'=>'check-circle','Released'=>'check-double','Rejected'=>'times-circle'];
-                                            $cls = $sc[$request['status']] ?? 'secondary';
-                                            $ico = $si[$request['status']] ?? 'info-circle';
-                                            ?>
-                                            <span class="badge bg-<?= $cls ?>"><i class="fas fa-<?= $ico ?> me-1"></i><?= $request['status'] ?></span>
-                                        </td>
-                                    </tr>
-                                    <?php endwhile; ?>
-                                <?php else: ?>
-                                    <tr><td colspan="8" class="text-center py-5">
-                                        <div class="empty-state"><i class="fas fa-inbox"></i><p>No requests found</p>
-                                            <?php if ($status_filter): ?><a href="?tab=manage" class="btn btn-outline-primary"><i class="fas fa-times me-2"></i>Clear Filter</a><?php endif; ?>
-                                        </div>
-                                    </td></tr>
-                                <?php endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Reports Tab -->
-        <div class="tab-pane <?php echo $active_tab === 'reports' ? 'show active' : ''; ?>">
-            <div class="card border-0 shadow-sm mb-4 no-print">
-                <div class="card-body">
-                    <form method="GET" action="" class="row g-3">
-                        <input type="hidden" name="tab" value="reports">
-                        <div class="col-md-3"><label class="form-label">Date From</label><input type="date" name="date_from" class="form-control" value="<?php echo htmlspecialchars($date_from); ?>"></div>
-                        <div class="col-md-3"><label class="form-label">Date To</label><input type="date" name="date_to" class="form-control" value="<?php echo htmlspecialchars($date_to); ?>"></div>
-                        <div class="col-md-2">
-                            <label class="form-label">Status</label>
-                            <select name="status" class="form-select">
-                                <option value="">All Status</option>
-                                <option value="Pending"  <?php echo $status_filter === 'Pending'  ? 'selected' : ''; ?>>Pending</option>
-                                <option value="Approved" <?php echo $status_filter === 'Approved' ? 'selected' : ''; ?>>Approved</option>
-                                <option value="Released" <?php echo $status_filter === 'Released' ? 'selected' : ''; ?>>Released</option>
-                                <option value="Rejected" <?php echo $status_filter === 'Rejected' ? 'selected' : ''; ?>>Rejected</option>
-                            </select>
-                        </div>
-                        <div class="col-md-2">
-                            <label class="form-label">Request Type</label>
-                            <select name="request_type" class="form-select">
-                                <option value="0">All Types</option>
-                                <?php foreach ($request_types as $type): ?>
-                                    <option value="<?php echo $type['request_type_id']; ?>" <?php echo $request_type_filter == $type['request_type_id'] ? 'selected' : ''; ?>><?php echo htmlspecialchars($type['request_type_name']); ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div class="col-md-2"><label class="form-label">&nbsp;</label><div class="d-grid"><button type="submit" class="btn btn-primary"><i class="fas fa-filter me-1"></i>Filter</button></div></div>
-                    </form>
-                </div>
-            </div>
-
-            <div class="row mb-4">
-                <div class="col-md-2"><div class="card border-0 shadow-sm"><div class="card-body text-center"><h3 class="mb-1"><?php echo $report_stats['total_requests']; ?></h3><p class="text-muted small mb-0">Total</p></div></div></div>
-                <div class="col-md-2"><div class="card border-0 shadow-sm"><div class="card-body text-center"><h3 class="mb-1 text-warning"><?php echo $report_stats['pending']; ?></h3><p class="text-muted small mb-0">Pending</p></div></div></div>
-                <div class="col-md-2"><div class="card border-0 shadow-sm"><div class="card-body text-center"><h3 class="mb-1 text-info"><?php echo $report_stats['approved']; ?></h3><p class="text-muted small mb-0">Approved</p></div></div></div>
-                <div class="col-md-2"><div class="card border-0 shadow-sm"><div class="card-body text-center"><h3 class="mb-1 text-success"><?php echo $report_stats['released']; ?></h3><p class="text-muted small mb-0">Released</p></div></div></div>
-                <div class="col-md-2"><div class="card border-0 shadow-sm"><div class="card-body text-center"><h3 class="mb-1 text-primary"><?php echo $report_stats['paid_requests']; ?></h3><p class="text-muted small mb-0">Paid</p></div></div></div>
-                <div class="col-md-2"><div class="card border-0 shadow-sm"><div class="card-body text-center"><h5 class="mb-1 text-success">₱<?php echo number_format($report_stats['total_revenue'] ?? 0, 2); ?></h5><p class="text-muted small mb-0">Revenue</p></div></div></div>
-            </div>
-
-            <div class="row mb-4">
-                <div class="col-lg-6 mb-4">
-                    <div class="card border-0 shadow-sm h-100">
-                        <div class="card-header bg-white py-3"><h5 class="mb-0"><i class="fas fa-chart-pie me-2"></i>Request Type Distribution</h5></div>
-                        <div class="card-body">
-                            <canvas id="requestTypeChart" style="max-height: 300px;"></canvas>
-                            <div class="mt-3"><table class="table table-sm"><tbody>
-                                <?php if ($type_distribution && $type_distribution->num_rows > 0): $type_distribution->data_seek(0); while ($row = $type_distribution->fetch_assoc()): ?>
-                                    <tr><td><?= htmlspecialchars($row['request_type_name'] ?? 'Unknown') ?></td><td class="text-end fw-bold"><?= $row['count'] ?></td></tr>
-                                <?php endwhile; else: echo '<tr><td colspan="2" class="text-center text-muted">No data</td></tr>'; endif; ?>
-                            </tbody></table></div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-lg-6 mb-4">
-                    <div class="card border-0 shadow-sm h-100">
-                        <div class="card-header bg-white py-3"><h5 class="mb-0"><i class="fas fa-chart-pie me-2"></i>Status Overview</h5></div>
-                        <div class="card-body">
-                            <canvas id="statusChart" style="max-height: 300px;"></canvas>
-                            <div class="mt-3"><table class="table table-sm"><tbody>
-                                <tr><td><span class="badge bg-warning">Pending</span></td><td class="text-end fw-bold"><?= $report_stats['pending'] ?></td></tr>
-                                <tr><td><span class="badge bg-info">Approved</span></td><td class="text-end fw-bold"><?= $report_stats['approved'] ?></td></tr>
-                                <tr><td><span class="badge bg-success">Released</span></td><td class="text-end fw-bold"><?= $report_stats['released'] ?></td></tr>
-                                <tr><td><span class="badge bg-danger">Rejected</span></td><td class="text-end fw-bold"><?= $report_stats['rejected'] ?></td></tr>
-                            </tbody></table></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="card border-0 shadow-sm mb-4 no-print">
-                <div class="card-body">
-                    <div class="row">
-                        <div class="col-md-8">
-                            <h6 class="mb-3">Period Summary</h6>
-                            <p class="small mb-2"><strong>Date Range:</strong> <?= date('M d, Y', strtotime($date_from)) ?> - <?= date('M d, Y', strtotime($date_to)) ?></p>
-                            <?php $d1=new DateTime($date_from); $d2=new DateTime($date_to); $iv=$d1->diff($d2); $days=$iv->days+1; ?>
-                            <p class="small mb-2"><strong>Total Days:</strong> <?= $days ?> days</p>
-                            <p class="small mb-2"><strong>Average per Day:</strong> <?= $days > 0 ? number_format($report_stats['total_requests']/$days,2) : 0 ?> requests</p>
-                            <p class="small mb-0"><strong>Revenue Collected:</strong> <span class="text-success fw-bold">₱<?= number_format($report_stats['total_revenue']??0,2) ?></span></p>
-                        </div>
-                        <div class="col-md-4">
-                            <h6 class="mb-3">Export Options</h6>
-                            <div class="d-grid gap-2">
-                                <button class="btn btn-primary" onclick="window.print()"><i class="fas fa-print me-2"></i>Print Report</button>
-                                <button class="btn btn-success" onclick="exportToExcel()"><i class="fas fa-file-excel me-2"></i>Export to Excel</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="card border-0 shadow-sm">
-                <div class="card-header bg-white py-3"><h5 class="mb-0">Detailed Request List</h5></div>
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table table-hover align-middle">
-                            <thead><tr><th>Request ID</th><th>Date</th><th>Resident Name</th><th>Request Type</th><th>Purpose</th><th>Status</th><th>Payment</th></tr></thead>
-                            <tbody>
-                                <?php if ($report_requests->num_rows > 0): while ($request = $report_requests->fetch_assoc()):
-                                    $sc = ['Pending'=>'warning','Approved'=>'info','Released'=>'success','Rejected'=>'danger'];
-                                    $cls = $sc[$request['status']] ?? 'secondary';
-                                ?>
-                                    <tr>
-                                        <td><strong class="text-primary">#<?= str_pad($request['request_id'],5,'0',STR_PAD_LEFT) ?></strong></td>
-                                        <td><small><?= date('M d, Y', strtotime($request['request_date'])) ?></small></td>
-                                        <td><?= htmlspecialchars($request['first_name'].' '.$request['last_name']) ?></td>
-                                        <td><?= htmlspecialchars($request['request_type_name'] ?? 'N/A') ?></td>
-                                        <td><?= htmlspecialchars(mb_strimwidth($request['purpose']??'',0,50,'...')) ?></td>
-                                        <td><span class="badge bg-<?= $cls ?>"><?= $request['status'] ?></span></td>
-                                        <td><?= $request['payment_status'] ? '<span class="badge bg-success">Paid</span>' : '<span class="badge bg-warning text-dark">Unpaid</span>' ?></td>
-                                    </tr>
-                                <?php endwhile; else: ?>
-                                    <tr><td colspan="7" class="text-center py-5"><i class="fas fa-inbox fa-3x text-muted mb-3 d-block"></i><p class="text-muted">No requests found</p></td></tr>
-                                <?php endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+<div class="rm-hero">
+    <div class="rm-hero__ring rm-hero__ring--1"></div>
+    <div class="rm-hero__ring rm-hero__ring--2"></div>
+    <div class="rm-hero__ring rm-hero__ring--3"></div>
+    <div class="rm-hero__inner">
+        <div class="rm-hero__left">
+            <div class="rm-hero__icon"><i class="fas fa-tasks"></i></div>
+            <div>
+                <div class="rm-hero__title">Document Requests Management</div>
+                <div class="rm-hero__sub">Manage and analyze document requests</div>
             </div>
         </div>
     </div>
 </div>
+
+<div style="padding:0 24px 24px;">
+
+<?php echo displayMessage(); ?>
+<?php if (isset($_SESSION['success_message'])): ?><div class="db-alert db-alert--success"><i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($_SESSION['success_message']); unset($_SESSION['success_message']); ?> <button class="db-alert__close" onclick="this.parentElement.remove()">×</button></div><?php endif; ?>
+<?php if (isset($_SESSION['error_message'])): ?><div class="db-alert db-alert--error"><i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($_SESSION['error_message']); unset($_SESSION['error_message']); ?> <button class="db-alert__close" onclick="this.parentElement.remove()">×</button></div><?php endif; ?>
+
+<!-- Stats -->
+<div class="db-stats-row">
+    <a href="?tab=manage" class="db-stat-card <?php echo ($active_tab==='manage'&&!$status_filter)?'active':''; ?>">
+        <div class="db-stat-card__icon db-stat-card__icon--teal"><i class="fas fa-tasks"></i></div>
+        <div><div class="db-stat-card__num"><?php echo $stats['total']; ?></div><div class="db-stat-card__label">Total</div></div>
+        <div class="db-stat-card__bar db-stat-card__bar--teal"></div>
+    </a>
+    <a href="?tab=manage&status=Pending" class="db-stat-card <?php echo $status_filter==='Pending'?'active':''; ?>">
+        <div class="db-stat-card__icon db-stat-card__icon--amber"><i class="fas fa-clock"></i></div>
+        <div><div class="db-stat-card__num" style="color:var(--db-amber-dark)"><?php echo $stats['pending']; ?></div><div class="db-stat-card__label">Pending</div></div>
+        <div class="db-stat-card__bar db-stat-card__bar--amber"></div>
+    </a>
+    <a href="?tab=manage&status=Approved" class="db-stat-card <?php echo $status_filter==='Approved'?'active':''; ?>">
+        <div class="db-stat-card__icon db-stat-card__icon--sky"><i class="fas fa-check-circle"></i></div>
+        <div><div class="db-stat-card__num" style="color:var(--db-sky)"><?php echo $stats['approved']; ?></div><div class="db-stat-card__label">Approved</div></div>
+        <div class="db-stat-card__bar db-stat-card__bar--sky"></div>
+    </a>
+    <a href="?tab=manage&status=Released" class="db-stat-card <?php echo $status_filter==='Released'?'active':''; ?>">
+        <div class="db-stat-card__icon db-stat-card__icon--success"><i class="fas fa-check-double"></i></div>
+        <div><div class="db-stat-card__num" style="color:var(--db-success)"><?php echo $stats['released']; ?></div><div class="db-stat-card__label">Released</div></div>
+        <div class="db-stat-card__bar db-stat-card__bar--success"></div>
+    </a>
+    <a href="?tab=manage&status=Rejected" class="db-stat-card <?php echo $status_filter==='Rejected'?'active':''; ?>">
+        <div class="db-stat-card__icon db-stat-card__icon--rose"><i class="fas fa-times-circle"></i></div>
+        <div><div class="db-stat-card__num" style="color:var(--db-rose)"><?php echo $stats['rejected']; ?></div><div class="db-stat-card__label">Rejected</div></div>
+        <div class="db-stat-card__bar db-stat-card__bar--rose"></div>
+    </a>
+    <a href="?tab=manage&status=Paid" class="db-stat-card <?php echo $status_filter==='Paid'?'active':''; ?>">
+        <div class="db-stat-card__icon db-stat-card__icon--indigo"><i class="fas fa-money-bill"></i></div>
+        <div><div class="db-stat-card__num" style="color:var(--db-indigo)"><?php echo $stats['paid']; ?></div><div class="db-stat-card__label">Paid</div></div>
+        <div class="db-stat-card__bar db-stat-card__bar--indigo"></div>
+    </a>
+</div>
+
+<!-- Tab Nav -->
+<div class="db-tab-nav no-print">
+    <a href="?tab=manage<?php echo $status_filter?'&status='.urlencode($status_filter):''; ?>" class="db-tab-btn <?php echo $active_tab==='manage'?'active':''; ?>">
+        <i class="fas fa-tasks"></i> Manage Requests
+    </a>
+    <a href="?tab=reports" class="db-tab-btn <?php echo $active_tab==='reports'?'active':''; ?>">
+        <i class="fas fa-chart-bar"></i> Reports & Analytics
+    </a>
+</div>
+
+<?php if ($active_tab === 'manage'): ?>
+<!-- Search Filter -->
+<div class="db-panel no-print">
+    <div class="db-panel__header">
+        <div class="db-panel__title">
+            <div class="db-panel__icon db-panel__icon--teal"><i class="fas fa-search"></i></div>
+            <h2>Search Requests</h2>
+        </div>
+        <?php if ($status_filter): ?>
+        <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:12px;color:var(--db-muted)">Filtering:</span>
+            <?php $bc=['Pending'=>'amber','Approved'=>'sky','Released'=>'success','Rejected'=>'rose','Paid'=>'indigo']; $c=$bc[$status_filter]??'muted'; ?>
+            <span class="db-badge db-badge--<?php echo $c; ?>"><?php echo htmlspecialchars($status_filter); ?></span>
+            <a href="?tab=manage" class="db-btn db-btn--ghost db-btn--sm"><i class="fas fa-times"></i> Clear</a>
+        </div>
+        <?php endif; ?>
+    </div>
+    <div class="db-panel__body">
+        <form method="GET">
+            <input type="hidden" name="tab" value="manage">
+            <?php if ($status_filter): ?><input type="hidden" name="status" value="<?php echo htmlspecialchars($status_filter); ?>"><?php endif; ?>
+            <div class="db-form-row">
+                <div style="flex:1;min-width:200px;">
+                    <label class="db-filter-label">Search</label>
+                    <input type="text" name="search" class="db-input" style="width:100%;" placeholder="Search by name or document type…" value="<?php echo htmlspecialchars($search); ?>">
+                </div>
+                <div style="padding-top:18px;">
+                    <button type="submit" class="db-btn db-btn--primary"><i class="fas fa-search"></i> Search</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Requests Table -->
+<div class="db-panel">
+    <div class="db-panel__header">
+        <div class="db-panel__title">
+            <div class="db-panel__icon db-panel__icon--teal"><i class="fas fa-list"></i></div>
+            <h2><?php echo $status_filter?htmlspecialchars($status_filter).' Requests':'All Requests'; ?></h2>
+            <span class="db-badge db-badge--teal"><?php echo $manage_requests?$manage_requests->num_rows:0; ?></span>
+        </div>
+        <span class="db-text-sm"><i class="fas fa-info-circle"></i> Hover to preview · Click to open</span>
+    </div>
+    <div class="db-table-wrap">
+        <table class="db-table">
+            <thead><tr><th>ID</th><th>Date</th><th>Resident</th><th>Document Type</th><th>Purpose</th><th>Fee</th><th>Payment</th><th>Status</th></tr></thead>
+            <tbody>
+            <?php if ($manage_requests && $manage_requests->num_rows > 0):
+                while ($req=$manage_requests->fetch_assoc()):
+                    $icon='fa-file-alt'; $ic='muted';
+                    if ($req['status']==='Pending')  {$icon='fa-clock';$ic='amber';}
+                    if ($req['status']==='Approved') {$icon='fa-check-circle';$ic='sky';}
+                    if ($req['status']==='Released') {$icon='fa-check-double';$ic='success';}
+                    if ($req['status']==='Rejected') {$icon='fa-times-circle';$ic='rose';}
+                    $fn=htmlspecialchars(($req['first_name']??'').' '.($req['last_name']??''));
+                    $dt=htmlspecialchars($req['request_type_name']??'N/A');
+                    $fee_txt=$req['fee']>0?'₱'.number_format($req['fee'],2):'Free';
+                    $pay_txt=$req['payment_status']?'Paid':($req['fee']>0?'Unpaid':'N/A');
+            ?>
+            <tr class="req-row"
+                data-url="view-request.php?id=<?php echo $req['request_id']; ?>"
+                data-pt="<?php echo $dt; ?>" data-pm="<?php echo htmlspecialchars(mb_strimwidth($req['purpose']??'',0,110,'…')); ?>"
+                data-pc="<?php echo $ic; ?>" data-picon="<?php echo $icon; ?>"
+                data-ptype="<?php echo htmlspecialchars($req['status']); ?>"
+                data-ptime="<?php echo htmlspecialchars(date('M j, Y g:i A',strtotime($req['request_date']))); ?>"
+                data-pname="<?php echo $fn; ?>"
+                data-pemail="<?php echo htmlspecialchars($req['email']??'N/A'); ?>"
+                data-pfee="<?php echo htmlspecialchars($fee_txt); ?>"
+                data-ppay="<?php echo htmlspecialchars($pay_txt); ?>">
+                <td><span class="db-id">#<?php echo str_pad($req['request_id'],5,'0',STR_PAD_LEFT); ?></span></td>
+                <td><span class="db-text-sm"><?php echo date('M d, Y',strtotime($req['request_date'])); ?></span></td>
+                <td>
+                    <strong><?php echo $fn; ?></strong>
+                    <br><span class="db-text-sm"><?php echo htmlspecialchars($req['email']??'N/A'); ?></span>
+                </td>
+                <td><span class="db-badge db-badge--sky"><?php echo $dt; ?></span></td>
+                <td><span class="db-text-sm"><?php $p=$req['purpose']??''; echo htmlspecialchars(strlen($p)>40?substr($p,0,40).'…':$p); ?></span></td>
+                <td><?php if ($req['fee']>0): ?><strong style="color:var(--db-success)">₱<?php echo number_format($req['fee'],2); ?></strong><?php else: ?><span class="db-badge db-badge--muted">Free</span><?php endif; ?></td>
+                <td><?php if ($req['payment_status']): ?><span class="db-badge db-badge--success"><i class="fas fa-check"></i> Paid</span><?php elseif($req['fee']>0): ?><span class="db-badge db-badge--amber">Unpaid</span><?php else: ?><span class="db-badge db-badge--muted">N/A</span><?php endif; ?></td>
+                <td><?php
+                    $sc=['Pending'=>'amber','Approved'=>'sky','Released'=>'success','Rejected'=>'rose'];
+                    $si=['Pending'=>'clock','Approved'=>'check-circle','Released'=>'check-double','Rejected'=>'times-circle'];
+                    $cls=$sc[$req['status']]??'muted'; $ico=$si[$req['status']]??'circle';
+                    echo "<span class='db-badge db-badge--$cls'><i class='fas fa-$ico'></i> {$req['status']}</span>";
+                ?></td>
+            </tr>
+            <?php endwhile; else: ?>
+            <tr><td colspan="8"><div class="db-empty"><i class="fas fa-inbox"></i><p>No requests found</p><?php if($status_filter): ?><a href="?tab=manage" class="db-btn db-btn--ghost db-btn--sm"><i class="fas fa-times"></i> Clear Filter</a><?php endif; ?></div></td></tr>
+            <?php endif; ?>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<?php else: /* Reports tab */ ?>
+
+<!-- Report Filters -->
+<div class="db-panel no-print">
+    <div class="db-panel__header">
+        <div class="db-panel__title">
+            <div class="db-panel__icon db-panel__icon--teal"><i class="fas fa-filter"></i></div>
+            <h2>Report Filters</h2>
+        </div>
+    </div>
+    <div class="db-panel__body">
+        <form method="GET">
+            <input type="hidden" name="tab" value="reports">
+            <div class="db-form-row">
+                <div><label class="db-filter-label">Date From</label><input type="date" name="date_from" class="db-input" value="<?php echo htmlspecialchars($date_from); ?>"></div>
+                <div><label class="db-filter-label">Date To</label><input type="date" name="date_to" class="db-input" value="<?php echo htmlspecialchars($date_to); ?>"></div>
+                <div>
+                    <label class="db-filter-label">Status</label>
+                    <select name="status" class="db-select">
+                        <option value="">All Status</option>
+                        <?php foreach(['Pending','Approved','Released','Rejected'] as $s): ?><option value="<?php echo $s; ?>" <?php echo $status_filter===$s?'selected':''; ?>><?php echo $s; ?></option><?php endforeach; ?>
+                    </select>
+                </div>
+                <div>
+                    <label class="db-filter-label">Request Type</label>
+                    <select name="request_type" class="db-select">
+                        <option value="0">All Types</option>
+                        <?php foreach ($request_types as $t): ?><option value="<?php echo $t['request_type_id']; ?>" <?php echo $rt_filter==$t['request_type_id']?'selected':''; ?>><?php echo htmlspecialchars($t['request_type_name']); ?></option><?php endforeach; ?>
+                    </select>
+                </div>
+                <div style="padding-top:18px;"><button type="submit" class="db-btn db-btn--primary"><i class="fas fa-filter"></i> Filter</button></div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Mini Stats -->
+<div class="db-mini-stats">
+    <div class="db-mini-stat"><div class="num"><?php echo $report_stats['total_requests']; ?></div><div class="lbl">Total</div></div>
+    <div class="db-mini-stat"><div class="num" style="color:var(--db-amber-dark)"><?php echo $report_stats['pending']; ?></div><div class="lbl">Pending</div></div>
+    <div class="db-mini-stat"><div class="num" style="color:var(--db-sky)"><?php echo $report_stats['approved']; ?></div><div class="lbl">Approved</div></div>
+    <div class="db-mini-stat"><div class="num" style="color:var(--db-success)"><?php echo $report_stats['released']; ?></div><div class="lbl">Released</div></div>
+    <div class="db-mini-stat"><div class="num" style="color:var(--db-indigo)"><?php echo $report_stats['paid_requests']; ?></div><div class="lbl">Paid</div></div>
+    <div class="db-mini-stat"><div class="num" style="color:var(--db-success);font-size:18px;">₱<?php echo number_format($report_stats['total_revenue']??0,2); ?></div><div class="lbl">Revenue</div></div>
+</div>
+
+<!-- Charts -->
+<div class="db-charts-row">
+    <div class="db-chart-card">
+        <div class="db-chart-card__header"><i class="fas fa-chart-pie" style="color:var(--db-teal)"></i><h3>Request Type Distribution</h3></div>
+        <div class="db-chart-card__body">
+            <canvas id="typeChart" style="max-height:240px;"></canvas>
+            <table class="db-table" style="margin-top:14px;"><tbody>
+            <?php if ($type_distribution && $type_distribution->num_rows > 0): $type_distribution->data_seek(0); while($r=$type_distribution->fetch_assoc()): ?>
+                <tr><td><?php echo htmlspecialchars($r['request_type_name']??'Unknown'); ?></td><td style="text-align:right;font-weight:700;font-family:'DM Mono',monospace"><?php echo $r['count']; ?></td></tr>
+            <?php endwhile; else: ?><tr><td colspan="2" style="text-align:center;color:var(--db-muted)">No data</td></tr><?php endif; ?>
+            </tbody></table>
+        </div>
+    </div>
+    <div class="db-chart-card">
+        <div class="db-chart-card__header"><i class="fas fa-chart-pie" style="color:var(--db-indigo)"></i><h3>Status Overview</h3></div>
+        <div class="db-chart-card__body">
+            <canvas id="statusChart" style="max-height:240px;"></canvas>
+            <table class="db-table" style="margin-top:14px;"><tbody>
+                <?php foreach(['Pending'=>['amber',$report_stats['pending']],'Approved'=>['sky',$report_stats['approved']],'Released'=>['success',$report_stats['released']],'Rejected'=>['rose',$report_stats['rejected']]] as $s=>[$c,$n]): ?>
+                <tr><td><span class="db-badge db-badge--<?php echo $c; ?>"><?php echo $s; ?></span></td><td style="text-align:right;font-weight:700;font-family:'DM Mono',monospace"><?php echo $n; ?></td></tr>
+                <?php endforeach; ?>
+            </tbody></table>
+        </div>
+    </div>
+</div>
+
+<!-- Summary + Export -->
+<div class="db-panel no-print">
+    <div class="db-panel__header">
+        <div class="db-panel__title"><div class="db-panel__icon db-panel__icon--teal"><i class="fas fa-info-circle"></i></div><h2>Period Summary</h2></div>
+    </div>
+    <div class="db-panel__body" style="display:flex;gap:24px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:200px;">
+            <p style="font-size:13px;margin-bottom:8px;"><strong>Date Range:</strong> <?php echo date('M d, Y',strtotime($date_from)).' – '.date('M d, Y',strtotime($date_to)); ?></p>
+            <?php $d1=new DateTime($date_from);$d2=new DateTime($date_to);$days=$d1->diff($d2)->days+1; ?>
+            <p style="font-size:13px;margin-bottom:8px;"><strong>Total Days:</strong> <?php echo $days; ?></p>
+            <p style="font-size:13px;margin-bottom:8px;"><strong>Avg/Day:</strong> <?php echo $days>0?number_format($report_stats['total_requests']/$days,2):0; ?> requests</p>
+            <p style="font-size:13px;"><strong>Revenue:</strong> <span style="color:var(--db-success);font-weight:700;">₱<?php echo number_format($report_stats['total_revenue']??0,2); ?></span></p>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;min-width:160px;">
+            <button class="db-btn db-btn--primary" onclick="window.print()"><i class="fas fa-print"></i> Print Report</button>
+            <button class="db-btn db-btn--success" onclick="exportToExcel()"><i class="fas fa-file-excel"></i> Export to Excel</button>
+        </div>
+    </div>
+</div>
+
+<!-- Detailed List -->
+<div class="db-panel">
+    <div class="db-panel__header"><div class="db-panel__title"><div class="db-panel__icon db-panel__icon--teal"><i class="fas fa-list"></i></div><h2>Detailed Request List</h2></div></div>
+    <div class="db-table-wrap">
+        <table class="db-table">
+            <thead><tr><th>Request ID</th><th>Date</th><th>Resident</th><th>Request Type</th><th>Purpose</th><th>Status</th><th>Payment</th></tr></thead>
+            <tbody>
+            <?php if ($report_requests->num_rows > 0): while($r=$report_requests->fetch_assoc()): $sc=['Pending'=>'amber','Approved'=>'sky','Released'=>'success','Rejected'=>'rose']; $cls=$sc[$r['status']]??'muted'; ?>
+                <tr>
+                    <td><span class="db-id">#<?php echo str_pad($r['request_id'],5,'0',STR_PAD_LEFT); ?></span></td>
+                    <td><span class="db-text-sm"><?php echo date('M d, Y',strtotime($r['request_date'])); ?></span></td>
+                    <td><?php echo htmlspecialchars($r['first_name'].' '.$r['last_name']); ?></td>
+                    <td><?php echo htmlspecialchars($r['request_type_name']??'N/A'); ?></td>
+                    <td><span class="db-text-sm"><?php echo htmlspecialchars(mb_strimwidth($r['purpose']??'',0,50,'…')); ?></span></td>
+                    <td><span class="db-badge db-badge--<?php echo $cls; ?>"><?php echo $r['status']; ?></span></td>
+                    <td><?php echo $r['payment_status']?"<span class='db-badge db-badge--success'><i class='fas fa-check'></i> Paid</span>":"<span class='db-badge db-badge--amber'>Unpaid</span>"; ?></td>
+                </tr>
+            <?php endwhile; else: ?><tr><td colspan="7"><div class="db-empty"><i class="fas fa-inbox"></i><p>No requests found</p></div></td></tr><?php endif; ?>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<?php endif; ?>
+</div><!-- /padding -->
 
 <!-- Hover Preview Card -->
-<div id="reqPreviewCard" class="req-preview-card" style="display:none;">
-    <div class="req-preview-header">
-        <div class="req-preview-icon" id="reqPreviewIconBox"><i class="fas fa-file-alt" id="reqPreviewIcon"></i></div>
-        <div class="req-preview-header-text">
-            <div class="req-preview-type" id="reqPreviewType"></div>
-            <div class="req-preview-title" id="reqPreviewTitle"></div>
+<div id="dbPreview" class="db-preview" style="display:none;">
+    <div class="db-preview__header">
+        <div class="db-preview__icon" id="dbPrevIcon"><i class="fas fa-file-alt" id="dbPrevIconI"></i></div>
+        <div class="db-preview__header-text">
+            <div class="db-preview__type" id="dbPrevType"></div>
+            <div class="db-preview__title" id="dbPrevTitle"></div>
         </div>
     </div>
-    <div class="req-preview-body">
-        <div class="req-preview-row"><span class="req-preview-label"><i class="fas fa-user me-1"></i>Resident</span><span class="req-preview-value" id="reqPreviewName"></span></div>
-        <div class="req-preview-row"><span class="req-preview-label"><i class="fas fa-envelope me-1"></i>Email</span><span class="req-preview-value" id="reqPreviewEmail"></span></div>
-        <div class="req-preview-row"><span class="req-preview-label"><i class="fas fa-align-left me-1"></i>Purpose</span><span class="req-preview-value" id="reqPreviewMessage"></span></div>
-        <div class="req-preview-row"><span class="req-preview-label"><i class="fas fa-peso-sign me-1"></i>Fee</span><span class="req-preview-value" id="reqPreviewFee"></span></div>
-        <div class="req-preview-row"><span class="req-preview-label"><i class="fas fa-credit-card me-1"></i>Payment</span><span class="req-preview-value" id="reqPreviewPay"></span></div>
-        <div class="req-preview-footer"><i class="far fa-calendar-alt"></i><span id="reqPreviewTime"></span></div>
+    <div class="db-preview__body">
+        <div class="db-preview__row"><span class="db-preview__label"><i class="fas fa-user"></i> Resident</span><span class="db-preview__val" id="dbPrevName"></span></div>
+        <div class="db-preview__row"><span class="db-preview__label"><i class="fas fa-envelope"></i> Email</span><span class="db-preview__val" id="dbPrevEmail"></span></div>
+        <div class="db-preview__row"><span class="db-preview__label"><i class="fas fa-align-left"></i> Purpose</span><span class="db-preview__val" id="dbPrevMsg"></span></div>
+        <div class="db-preview__row"><span class="db-preview__label"><i class="fas fa-peso-sign"></i> Fee</span><span class="db-preview__val" id="dbPrevFee"></span></div>
+        <div class="db-preview__row"><span class="db-preview__label"><i class="fas fa-credit-card"></i> Payment</span><span class="db-preview__val" id="dbPrevPay"></span></div>
+        <div class="db-preview__footer"><i class="far fa-calendar-alt"></i><span id="dbPrevTime"></span></div>
     </div>
 </div>
 
-<!-- Update Status Modal -->
-<div class="modal fade" id="statusModal" tabindex="-1">
-    <div class="modal-dialog"><div class="modal-content"><form method="POST">
-        <div class="modal-header"><h5 class="modal-title"><i class="fas fa-edit me-2"></i>Update Request Status</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-        <div class="modal-body">
-            <input type="hidden" name="request_id" id="status_request_id">
-            <div class="mb-3"><label class="form-label">Status <span class="text-danger">*</span></label>
-                <select name="status" id="status_select" class="form-select" required>
-                    <option value="Pending">Pending</option><option value="Approved">Approved</option>
-                    <option value="Released">Released</option><option value="Rejected">Rejected</option>
-                </select>
-            </div>
-            <div class="mb-3"><label class="form-label">Remarks</label><textarea name="remarks" class="form-control" rows="3" placeholder="Add any remarks..."></textarea></div>
+<!-- Status Modal -->
+<div id="statusModal" class="db-modal">
+    <div class="db-modal__box">
+        <div class="db-modal__header db-modal__header--teal">
+            <h3><i class="fas fa-edit"></i> Update Request Status</h3>
+            <button class="db-modal__close" onclick="closeModal('statusModal')">×</button>
         </div>
-        <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-            <button type="submit" name="update_status" class="btn btn-primary"><i class="fas fa-check me-2"></i>Update Status</button>
+        <div class="db-modal__body">
+            <form method="POST" id="statusForm">
+                <input type="hidden" name="request_id" id="status_request_id">
+                <div style="margin-bottom:14px;">
+                    <label class="db-filter-label">Status</label>
+                    <select name="status" id="status_select" class="db-select" style="width:100%;">
+                        <option value="Pending">Pending</option><option value="Approved">Approved</option>
+                        <option value="Released">Released</option><option value="Rejected">Rejected</option>
+                    </select>
+                </div>
+                <div style="margin-bottom:4px;">
+                    <label class="db-filter-label">Remarks</label>
+                    <textarea name="remarks" class="db-input" style="width:100%;height:80px;resize:vertical;" placeholder="Add remarks…"></textarea>
+                </div>
+                <div class="db-modal__footer">
+                    <button type="button" class="db-btn db-btn--ghost" onclick="closeModal('statusModal')"><i class="fas fa-times"></i> Cancel</button>
+                    <button type="submit" name="update_status" class="db-btn db-btn--primary"><i class="fas fa-check"></i> Update Status</button>
+                </div>
+            </form>
         </div>
-    </form></div></div>
+    </div>
 </div>
 
-<!-- Update Payment Modal -->
-<div class="modal fade" id="paymentModal" tabindex="-1">
-    <div class="modal-dialog"><div class="modal-content"><form method="POST">
-        <div class="modal-header"><h5 class="modal-title"><i class="fas fa-dollar-sign me-2"></i>Update Payment Status</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-        <div class="modal-body">
-            <input type="hidden" name="request_id" id="payment_request_id">
-            <div class="mb-3"><label class="form-label">Payment Status <span class="text-danger">*</span></label>
-                <select name="payment_status" id="payment_status_select" class="form-select" required>
-                    <option value="0">Unpaid</option>
-                    <option value="1">Paid</option>
-                </select>
-            </div>
-            <div class="auto-verified-notice">
-                <i class="fas fa-check-circle"></i>
-                <span>When marked as <strong>Paid</strong>, revenue is automatically recorded as <strong>Verified</strong> in Revenue Management — no separate approval needed.</span>
-            </div>
+<!-- Payment Modal -->
+<div id="paymentModal" class="db-modal">
+    <div class="db-modal__box">
+        <div class="db-modal__header db-modal__header--amber">
+            <h3><i class="fas fa-money-bill"></i> Update Payment Status</h3>
+            <button class="db-modal__close" onclick="closeModal('paymentModal')">×</button>
         </div>
-        <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-            <button type="submit" name="update_payment" class="btn btn-primary"><i class="fas fa-check me-2"></i>Update Payment</button>
+        <div class="db-modal__body">
+            <form method="POST" id="paymentForm">
+                <input type="hidden" name="request_id" id="payment_request_id">
+                <div style="margin-bottom:4px;">
+                    <label class="db-filter-label">Payment Status</label>
+                    <select name="payment_status" id="payment_status_select" class="db-select" style="width:100%;">
+                        <option value="0">Unpaid</option><option value="1">Paid</option>
+                    </select>
+                </div>
+                <div class="db-notice db-notice--success">
+                    <i class="fas fa-check-circle" style="flex-shrink:0;margin-top:1px;"></i>
+                    <span>When marked as <strong>Paid</strong>, revenue is automatically recorded as <strong>Verified</strong> in Revenue Management.</span>
+                </div>
+                <div class="db-modal__footer">
+                    <button type="button" class="db-btn db-btn--ghost" onclick="closeModal('paymentModal')"><i class="fas fa-times"></i> Cancel</button>
+                    <button type="submit" name="update_payment" class="db-btn db-btn--primary"><i class="fas fa-check"></i> Update Payment</button>
+                </div>
+            </form>
         </div>
-    </form></div></div>
+    </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
 <script>
-(function () {
-    const card = document.getElementById('reqPreviewCard');
-    const iconBox = document.getElementById('reqPreviewIconBox');
-    const icon = document.getElementById('reqPreviewIcon');
-    const colorMap = {
-        warning : { bg: 'rgba(255,193,7,0.12)',   text: '#d39e00' },
-        info    : { bg: 'rgba(13,202,240,0.12)',  text: '#0aa2c0' },
-        success : { bg: 'rgba(25,135,84,0.12)',   text: '#198754' },
-        danger  : { bg: 'rgba(220,53,69,0.12)',   text: '#dc3545' },
-        secondary:{ bg: 'rgba(108,117,125,0.12)', text: '#6c757d' }
-    };
-    let hideTimer = null;
+function openModal(id){document.getElementById(id).classList.add('db-modal--open');document.body.style.overflow='hidden';}
+function closeModal(id){document.getElementById(id).classList.remove('db-modal--open');document.body.style.overflow='';}
+window.addEventListener('click',e=>{if(e.target.classList.contains('db-modal'))closeModal(e.target.id);});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelectorAll('.db-modal--open').forEach(m=>closeModal(m.id));});
+function openStatusModal(id,status){document.getElementById('status_request_id').value=id;document.getElementById('status_select').value=status;openModal('statusModal');}
+function openPaymentModal(id,paid){document.getElementById('payment_request_id').value=id;document.getElementById('payment_status_select').value=paid;openModal('paymentModal');}
+function exportToExcel(){alert('Excel export can be implemented with PHPSpreadsheet.');}
 
-    function positionCard(e) {
-        const margin = 16, cw = 340, ch = card.offsetHeight || 240;
-        const vw = window.innerWidth, vh = window.innerHeight;
-        let x = e.clientX + margin, y = e.clientY + margin;
-        if (x + cw > vw - margin) x = e.clientX - cw - margin;
-        if (y + ch > vh - margin) y = e.clientY - ch - margin;
-        card.style.left = x + 'px'; card.style.top = y + 'px';
-    }
-
-    function showCard(row, e) {
-        clearTimeout(hideTimer);
-        const color = row.dataset.previewColor || 'secondary';
-        const c = colorMap[color] || colorMap.secondary;
-        document.getElementById('reqPreviewTitle').textContent   = row.dataset.previewTitle;
-        document.getElementById('reqPreviewType').textContent    = row.dataset.previewType;
-        document.getElementById('reqPreviewMessage').textContent = row.dataset.previewMessage;
-        document.getElementById('reqPreviewTime').textContent    = row.dataset.previewTime;
-        document.getElementById('reqPreviewName').textContent    = row.dataset.previewName;
-        document.getElementById('reqPreviewEmail').textContent   = row.dataset.previewEmail;
-        document.getElementById('reqPreviewFee').textContent     = row.dataset.previewFee;
-        document.getElementById('reqPreviewPay').textContent     = row.dataset.previewPay;
-        icon.className = 'fas ' + row.dataset.previewIcon;
-        iconBox.style.background = c.bg; icon.style.color = c.text;
-        positionCard(e); card.style.display = 'block';
-    }
-
-    document.querySelectorAll('.request-row').forEach(row => {
-        row.addEventListener('mouseenter', function(e) { showCard(this, e); });
-        row.addEventListener('mousemove',  function(e) { positionCard(e); });
-        row.addEventListener('mouseleave', function() {
-            hideTimer = setTimeout(() => { if (!card.matches(':hover')) card.style.display = 'none'; }, 150);
-        });
+(function(){
+    const card=document.getElementById('dbPreview');
+    if(!card)return;
+    const iconBox=card.querySelector('#dbPrevIcon'),iconEl=card.querySelector('#dbPrevIconI');
+    const cmap={amber:{bg:'rgba(245,158,11,.1)',text:'#b45309'},sky:{bg:'rgba(14,165,233,.1)',text:'#0ea5e9'},success:{bg:'rgba(16,185,129,.1)',text:'#10b981'},rose:{bg:'rgba(225,29,72,.1)',text:'#e11d48'},muted:{bg:'rgba(148,163,184,.1)',text:'#64748b'}};
+    let timer;
+    function pos(e){const cw=340,ch=card.offsetHeight||240,m=14;let x=e.clientX+m,y=e.clientY+m;if(x+cw>window.innerWidth-m)x=e.clientX-cw-m;if(y+ch>window.innerHeight-m)y=e.clientY-ch-m;card.style.left=x+'px';card.style.top=y+'px';}
+    document.querySelectorAll('.req-row').forEach(row=>{
+        row.addEventListener('mouseenter',function(e){clearTimeout(timer);const c=cmap[this.dataset.pc]||cmap.muted;document.getElementById('dbPrevTitle').textContent=this.dataset.pt;document.getElementById('dbPrevType').textContent=this.dataset.ptype;document.getElementById('dbPrevMsg').textContent=this.dataset.pm;document.getElementById('dbPrevTime').textContent=this.dataset.ptime;document.getElementById('dbPrevName').textContent=this.dataset.pname;document.getElementById('dbPrevEmail').textContent=this.dataset.pemail;document.getElementById('dbPrevFee').textContent=this.dataset.pfee;document.getElementById('dbPrevPay').textContent=this.dataset.ppay;iconEl.className='fas '+this.dataset.picon;iconBox.style.background=c.bg;iconEl.style.color=c.text;pos(e);card.style.display='block';});
+        row.addEventListener('mousemove',pos);
+        row.addEventListener('mouseleave',()=>{timer=setTimeout(()=>{if(!card.matches(':hover'))card.style.display='none';},150);});
+        row.addEventListener('click',function(){if(this.dataset.url)location.href=this.dataset.url;});
     });
 })();
 
-<?php if ($active_tab === 'reports'): ?>
-document.addEventListener('DOMContentLoaded', function () {
-    const typeCtx = document.getElementById('requestTypeChart');
-    if (typeCtx) {
-        new Chart(typeCtx.getContext('2d'), {
-            type: 'doughnut',
-            data: {
-                labels: [<?php if ($type_distribution && $type_distribution->num_rows > 0) { $type_distribution->data_seek(0); while ($row = $type_distribution->fetch_assoc()) echo "'" . addslashes($row['request_type_name'] ?? 'Unknown') . "',"; } ?>],
-                datasets: [{ data: [<?php if ($type_distribution && $type_distribution->num_rows > 0) { $type_distribution->data_seek(0); while ($row = $type_distribution->fetch_assoc()) echo $row['count'] . ','; } ?>], backgroundColor: ['#0d6efd','#6610f2','#6f42c1','#d63384','#dc3545','#fd7e14','#ffc107','#198754','#20c997','#0dcaf0'] }]
-            },
-            options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { position: 'bottom' } } }
-        });
-    }
-    const statusCtx = document.getElementById('statusChart');
-    if (statusCtx) {
-        new Chart(statusCtx.getContext('2d'), {
-            type: 'pie',
-            data: {
-                labels: ['Pending','Approved','Released','Rejected'],
-                datasets: [{ data: [<?= $report_stats['pending'] ?>,<?= $report_stats['approved'] ?>,<?= $report_stats['released'] ?>,<?= $report_stats['rejected'] ?>], backgroundColor: ['#ffc107','#0dcaf0','#198754','#dc3545'] }]
-            },
-            options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { position: 'bottom' } } }
-        });
-    }
+setTimeout(()=>document.querySelectorAll('.db-alert').forEach(a=>{a.style.opacity='0';setTimeout(()=>a.remove(),400);}),5000);
+
+<?php if ($active_tab==='reports'): ?>
+document.addEventListener('DOMContentLoaded',function(){
+    const tc=document.getElementById('typeChart');
+    if(tc){new Chart(tc.getContext('2d'),{type:'doughnut',data:{labels:[<?php if($type_distribution&&$type_distribution->num_rows>0){$type_distribution->data_seek(0);while($r=$type_distribution->fetch_assoc())echo"'".addslashes($r['request_type_name']??'Unknown')."',";} ?>],datasets:[{data:[<?php if($type_distribution&&$type_distribution->num_rows>0){$type_distribution->data_seek(0);while($r=$type_distribution->fetch_assoc())echo$r['count'].',';} ?>],backgroundColor:['#0d9488','#f59e0b','#0ea5e9','#6366f1','#e11d48','#10b981','#3b82f6','#a855f7']}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom'}}}});}
+    const sc=document.getElementById('statusChart');
+    if(sc){new Chart(sc.getContext('2d'),{type:'pie',data:{labels:['Pending','Approved','Released','Rejected'],datasets:[{data:[<?php echo $report_stats['pending'].','.$report_stats['approved'].','.$report_stats['released'].','.$report_stats['rejected']; ?>],backgroundColor:['#f59e0b','#0ea5e9','#10b981','#e11d48']}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom'}}}});}
 });
 <?php endif; ?>
-
-function exportToExcel() { alert('Excel export can be implemented with PHPSpreadsheet.'); }
-setTimeout(function() {
-    document.querySelectorAll('.alert-dismissible').forEach(a => new bootstrap.Alert(a).close());
-}, 5000);
 </script>
 
 <?php
-if (isset($manage_stmt)) $manage_stmt->close();
+if (isset($ms)) $ms->close();
 include '../../includes/footer.php';
 ?>

@@ -1,418 +1,339 @@
 <?php
-require_once('../../../config/config.php');
-
-// Check if user is logged in
+require_once '../../../config/config.php';
 requireLogin();
 
 $page_title = "Report Waste Issue";
 
-// Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'report') {
-    
-    // Validate required fields
     $errors = [];
-    
-    if (empty($_POST['issue_type'])) {
-        $errors[] = "Issue type is required";
-    }
-    if (empty($_POST['description'])) {
-        $errors[] = "Description is required";
-    }
-    if (empty($_POST['location'])) {
-        $errors[] = "Location is required";
-    }
-    if (empty($_POST['urgency'])) {
-        $errors[] = "Urgency level is required";
-    }
-    
+    if (empty($_POST['issue_type']))  $errors[] = "Issue type is required";
+    if (empty($_POST['description'])) $errors[] = "Description is required";
+    if (empty($_POST['location']))    $errors[] = "Location is required";
+    if (empty($_POST['urgency']))     $errors[] = "Urgency level is required";
+
     if (!empty($errors)) {
         setMessage(implode(', ', $errors), 'danger');
     } else {
-        // Sanitize inputs
-        $issue_type = sanitize($_POST['issue_type']);
-        $description = sanitize($_POST['description']);
-        $location = sanitize($_POST['location']);
-        $urgency = sanitize($_POST['urgency']);
-        $reporter_id = $_SESSION['user_id'];
-        
-        // Get reporter name and contact from user/resident data - FIXED: removed r.contact
-        $user_data = fetchOne($conn, 
-            "SELECT u.username, r.first_name, r.last_name, r.contact_number 
-             FROM tbl_users u 
-             LEFT JOIN tbl_residents r ON u.resident_id = r.resident_id 
-             WHERE u.user_id = ?", 
-            [$reporter_id], 'i'
+        $issue_type   = sanitize($_POST['issue_type']);
+        $description  = sanitize($_POST['description']);
+        $location     = sanitize($_POST['location']);
+        $urgency      = sanitize($_POST['urgency']);
+        $reporter_id  = $_SESSION['user_id'];
+
+        $user_data = fetchOne($conn,
+            "SELECT u.username, r.first_name, r.last_name, r.contact_number
+             FROM tbl_users u LEFT JOIN tbl_residents r ON u.resident_id = r.resident_id
+             WHERE u.user_id = ?", [$reporter_id], 'i'
         );
-        
-        // Build reporter name
-        if ($user_data && !empty($user_data['first_name'])) {
-            $reporter_name = trim($user_data['first_name'] . ' ' . ($user_data['last_name'] ?? ''));
-        } else {
-            $reporter_name = $user_data['username'] ?? 'User #' . $reporter_id;
-        }
-        
-        // Get contact number - FIXED: only use contact_number
+
+        $reporter_name    = ($user_data && !empty($user_data['first_name']))
+            ? trim($user_data['first_name'] . ' ' . ($user_data['last_name'] ?? ''))
+            : ($user_data['username'] ?? 'User #' . $reporter_id);
         $reporter_contact = $user_data['contact_number'] ?? 'N/A';
-        
-        // Handle file upload if present
+
         $photo_path = null;
         if (isset($_FILES['photo']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK) {
-            $allowed_types = ['image/jpeg', 'image/png', 'image/jpg', 'image/gif'];
-            $upload_result = uploadFile(
-                $_FILES['photo'],
-                '../../../uploads/waste_issues/',
-                $allowed_types,
-                5242880 // 5MB
-            );
-            
-            if ($upload_result['success']) {
-                $photo_path = 'uploads/waste_issues/' . $upload_result['filename'];
-            } else {
-                setMessage('Photo upload failed: ' . $upload_result['message'], 'warning');
-            }
+            $allowed_types = ['image/jpeg','image/png','image/jpg','image/gif'];
+            $upload_result = uploadFile($_FILES['photo'], '../../../uploads/waste_issues/', $allowed_types, 5242880);
+            if ($upload_result['success']) $photo_path = 'uploads/waste_issues/' . $upload_result['filename'];
+            else setMessage('Photo upload failed: ' . $upload_result['message'], 'warning');
         }
-        
-        // Prepare INSERT query matching your exact table structure
-        $sql = "INSERT INTO tbl_waste_issues 
-                (reporter_id, reporter_name, reporter_contact, issue_type, location, 
-                 description, urgency, photo_path, status, created_at) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW())";
-        
-        $params = [
-            $reporter_id,
-            $reporter_name,
-            $reporter_contact,
-            $issue_type,
-            $location,
-            $description,
-            $urgency,
-            $photo_path
-        ];
-        
-        $types = 'isssssss';
-        if ($photo_path === null) {
-            // If no photo, adjust the query
-            $sql = "INSERT INTO tbl_waste_issues 
-                    (reporter_id, reporter_name, reporter_contact, issue_type, location, 
-                     description, urgency, status, created_at) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NOW())";
-            $params = [
-                $reporter_id,
-                $reporter_name,
-                $reporter_contact,
-                $issue_type,
-                $location,
-                $description,
-                $urgency
-            ];
-            $types = 'issssss';
+
+        if ($photo_path) {
+            $sql    = "INSERT INTO tbl_waste_issues (reporter_id,reporter_name,reporter_contact,issue_type,location,description,urgency,photo_path,status,created_at) VALUES (?,?,?,?,?,?,?,?,'pending',NOW())";
+            $params = [$reporter_id,$reporter_name,$reporter_contact,$issue_type,$location,$description,$urgency,$photo_path];
+            $types  = 'isssssss';
+        } else {
+            $sql    = "INSERT INTO tbl_waste_issues (reporter_id,reporter_name,reporter_contact,issue_type,location,description,urgency,status,created_at) VALUES (?,?,?,?,?,?,?,'pending',NOW())";
+            $params = [$reporter_id,$reporter_name,$reporter_contact,$issue_type,$location,$description,$urgency];
+            $types  = 'issssss';
         }
-        
-        // Execute INSERT
+
         $stmt = $conn->prepare($sql);
         if (!$stmt) {
             setMessage('Failed to submit report. Database error.', 'danger');
-            if (defined('DEBUG_MODE') && DEBUG_MODE) {
-                error_log("Prepare failed: " . $conn->error);
-            }
         } else {
             $stmt->bind_param($types, ...$params);
-            
             if ($stmt->execute()) {
                 $issue_id = $conn->insert_id;
                 $stmt->close();
-                
-                // Log activity with the proper issue_id
-                if ($issue_id > 0 && function_exists('logActivity')) {
+                if ($issue_id > 0 && function_exists('logActivity'))
                     logActivity($conn, $reporter_id, 'Reported waste issue: ' . $issue_type, 'tbl_waste_issues', $issue_id);
-                }
-                
-                setMessage('Waste issue reported successfully! Reference ID: #' . $issue_id, 'success');
+                setMessage('Report submitted successfully! Reference ID: #' . $issue_id, 'success');
                 header('Location: my-reports.php');
                 exit();
             } else {
                 setMessage('Failed to submit report. Please try again.', 'danger');
-                if (defined('DEBUG_MODE') && DEBUG_MODE) {
-                    error_log("Execute failed: " . $stmt->error);
-                }
                 $stmt->close();
             }
         }
     }
 }
 
+$extra_css = '<link rel="stylesheet" href="../../../assets/css/waste-pages.css?v=' . time() . '">';
 require_once '../../../includes/header.php';
 ?>
 
-<div class="container-fluid">
-    <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-        <h1 class="h2"><i class="fas fa-exclamation-triangle me-2"></i><?php echo $page_title; ?></h1>
-        <div class="btn-toolbar mb-2 mb-md-0">
-            <a href="my-reports.php" class="btn btn-secondary">
-                <i class="fas fa-list me-1"></i>My Reports
+<!-- ── PAGE HERO ── -->
+<div class="wp-hero">
+    <div class="wp-hero__ring wp-hero__ring--1"></div>
+    <div class="wp-hero__ring wp-hero__ring--2"></div>
+    <div class="wp-hero__ring wp-hero__ring--3"></div>
+    <div class="wp-hero__inner">
+        <div class="wp-hero__left">
+            <div class="wp-hero__icon wp-hero__icon--rose">
+                <i class="fas fa-exclamation-triangle"></i>
+            </div>
+            <div>
+                <h1 class="wp-hero__title">Report Waste Issue</h1>
+                <p class="wp-hero__sub">Help keep our barangay clean by reporting waste concerns</p>
+            </div>
+        </div>
+        <div class="wp-hero__actions">
+            <a href="my-reports.php" class="wp-btn wp-btn--ghost">
+                <i class="fas fa-list"></i> My Reports
             </a>
         </div>
     </div>
+</div>
 
-    <?php echo displayMessage(); ?>
+<?php if ($msg = displayMessage()): ?>
+<div style="margin-bottom:16px"><?php echo $msg; ?></div>
+<?php endif; ?>
 
-    <div class="row">
-        <div class="col-lg-8 mx-auto">
-            <div class="card shadow">
-                <div class="card-header py-3">
-                    <h6 class="m-0 font-weight-bold text-primary">
-                        <i class="fas fa-file-alt me-2"></i>Report a Waste Issue
-                    </h6>
+<div class="wp-grid">
+
+    <!-- ── MAIN FORM ── -->
+    <div>
+        <div class="wp-panel">
+            <div class="wp-panel__header">
+                <div class="wp-panel__title">
+                    <span class="wp-panel__icon wp-panel__icon--rose"><i class="fas fa-file-alt"></i></span>
+                    <h2>Issue Details</h2>
                 </div>
-                <div class="card-body">
-                    <form method="POST" action="report-issue.php" enctype="multipart/form-data" id="reportForm">
-                        <input type="hidden" name="action" value="report">
-                        
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label for="issue_type" class="form-label">Issue Type *</label>
-                                <select class="form-select" id="issue_type" name="issue_type" required>
-                                    <option value="">Select Issue Type</option>
-                                    <option value="Missed Collection">Missed Collection</option>
-                                    <option value="Illegal Dumping">Illegal Dumping</option>
-                                    <option value="Overflowing Bin">Overflowing Bin</option>
-                                    <option value="Littering">Littering</option>
-                                    <option value="Hazardous Waste">Hazardous Waste</option>
-                                    <option value="Damaged Bin">Damaged Bin</option>
-                                    <option value="Blocked Access">Blocked Access</option>
-                                    <option value="Broken Collection Equipment">Broken Collection Equipment</option>
-                                    <option value="Unscheduled Collection">Unscheduled Collection</option>
-                                    <option value="Other">Other</option>
-                                </select>
-                            </div>
-                            
-                            <div class="col-md-6 mb-3">
-                                <label for="urgency" class="form-label">Urgency Level *</label>
-                                <select class="form-select" id="urgency" name="urgency" required>
-                                    <option value="">Select Urgency</option>
-                                    <option value="low">Low - Can wait a few days</option>
-                                    <option value="medium" selected>Medium - Needs attention soon</option>
-                                    <option value="high">High - Urgent attention required</option>
-                                    <option value="critical">Critical - Immediate action needed</option>
-                                </select>
-                            </div>
+                <span class="wp-badge wp-badge--muted"><i class="fas fa-info-circle"></i> All fields marked * are required</span>
+            </div>
+
+            <form method="POST" action="report-issue.php" enctype="multipart/form-data" id="reportForm">
+                <input type="hidden" name="action" value="report">
+                <div class="wp-panel__body" style="display:flex;flex-direction:column;gap:0">
+
+                    <div class="wp-field-row" style="margin-bottom:16px">
+                        <div class="wp-field" style="margin:0">
+                            <label>Issue Type <span class="req">*</span></label>
+                            <select name="issue_type" id="issue_type" class="wp-input" required>
+                                <option value="">Select Issue Type</option>
+                                <?php
+                                $types_list = ['Missed Collection','Illegal Dumping','Overflowing Bin','Littering','Hazardous Waste','Damaged Bin','Blocked Access','Broken Collection Equipment','Unscheduled Collection','Other'];
+                                foreach ($types_list as $t): ?>
+                                <option value="<?php echo $t; ?>"><?php echo $t; ?></option>
+                                <?php endforeach; ?>
+                            </select>
                         </div>
-                        
-                        <div class="mb-3">
-                            <label for="location" class="form-label">Location *</label>
-                            <input type="text" class="form-control" id="location" name="location" 
-                                   placeholder="Street address, landmark, or specific area" required>
-                            <small class="text-muted">Be as specific as possible to help us locate the issue</small>
+                        <div class="wp-field" style="margin:0">
+                            <label>Urgency Level <span class="req">*</span></label>
+                            <select name="urgency" id="urgency" class="wp-input" required>
+                                <option value="">Select Urgency</option>
+                                <option value="low">Low — can wait a few days</option>
+                                <option value="medium" selected>Medium — needs attention soon</option>
+                                <option value="high">High — urgent attention required</option>
+                                <option value="critical">Critical — immediate action needed</option>
+                            </select>
                         </div>
-                        
-                        <div class="mb-3">
-                            <label for="description" class="form-label">Description *</label>
-                            <textarea class="form-control" id="description" name="description" rows="4" 
-                                      placeholder="Please describe the waste issue in detail..." required></textarea>
-                            <small class="text-muted">Include any relevant details that might help resolve the issue</small>
+                    </div>
+
+                    <div class="wp-field">
+                        <label>Location <span class="req">*</span></label>
+                        <input type="text" name="location" id="location" class="wp-input"
+                               placeholder="Street address, landmark, or specific area…" required>
+                        <p style="font-size:11.5px;color:var(--db-muted);margin-top:4px"><i class="fas fa-info-circle" style="margin-right:4px"></i>Be as specific as possible to help us locate the issue quickly.</p>
+                    </div>
+
+                    <div class="wp-field">
+                        <label>Description <span class="req">*</span></label>
+                        <textarea name="description" id="description" class="wp-input" rows="5"
+                                  placeholder="Describe the waste issue in detail…" required></textarea>
+                        <p style="font-size:11.5px;color:var(--db-muted);margin-top:4px"><i class="fas fa-info-circle" style="margin-right:4px"></i>Include any relevant details that might help resolve the issue faster.</p>
+                    </div>
+
+                    <!-- Photo Upload -->
+                    <div class="wp-field">
+                        <label>Photo Evidence <span style="color:var(--db-muted);font-weight:400">(Optional)</span></label>
+                        <div class="wp-upload-area" id="uploadArea">
+                            <input type="file" name="photo" id="photo" accept="image/jpeg,image/png,image/jpg,image/gif">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                            <p>Click or drag & drop a photo here</p>
+                            <span>JPG, PNG, GIF up to 5MB</span>
                         </div>
-                        
-                        <div class="mb-3">
-                            <label for="photo" class="form-label">Photo (Optional)</label>
-                            <input type="file" class="form-control" id="photo" name="photo" 
-                                   accept="image/jpeg,image/png,image/jpg,image/gif">
-                            <small class="text-muted">Upload a photo of the issue (Max 5MB, JPG/PNG/GIF)</small>
-                            <div id="imagePreview" class="mt-2"></div>
-                        </div>
-                        
-                        <div class="alert alert-info">
-                            <i class="fas fa-info-circle me-2"></i>
-                            <strong>What happens next?</strong>
-                            <ul class="mb-0 mt-2">
-                                <li>Your report will be reviewed by our waste management team</li>
-                                <li>You'll receive updates on the status of your report</li>
-                                <li>We aim to respond to all reports within 24-48 hours</li>
-                                <li>You can track your report status in "My Reports"</li>
-                            </ul>
-                        </div>
-                        
-                        <div class="d-grid gap-2 d-md-flex justify-content-md-end">
-                            <button type="reset" class="btn btn-secondary">
-                                <i class="fas fa-redo me-1"></i>Reset
-                            </button>
-                            <button type="submit" class="btn btn-primary">
-                                <i class="fas fa-paper-plane me-1"></i>Submit Report
+                        <div class="wp-image-preview" id="imagePreview">
+                            <img id="previewImg" src="" alt="Preview">
+                            <button type="button" class="wp-image-preview__remove" id="removeImg">
+                                <i class="fas fa-times"></i>
                             </button>
                         </div>
-                    </form>
+                    </div>
+
+                    <!-- What happens next -->
+                    <div class="wp-info-box" style="margin-bottom:20px">
+                        <div class="wp-info-box__title"><i class="fas fa-info-circle"></i> What happens after you submit?</div>
+                        <ul style="margin:0;padding-left:18px;font-size:12.5px">
+                            <li>Your report will be reviewed by our waste management team</li>
+                            <li>We aim to respond to all reports within 24–48 hours</li>
+                            <li>You can track your report status anytime in "My Reports"</li>
+                        </ul>
+                    </div>
+
+                    <div style="display:flex;gap:10px;justify-content:flex-end">
+                        <button type="reset" class="wp-btn wp-btn--ghost"><i class="fas fa-redo"></i> Reset</button>
+                        <button type="submit" class="wp-btn wp-btn--primary"><i class="fas fa-paper-plane"></i> Submit Report</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ── SIDEBAR ── -->
+    <div>
+        <!-- Urgency Guide -->
+        <div class="wp-panel" style="margin-bottom:18px">
+            <div class="wp-panel__header">
+                <div class="wp-panel__title">
+                    <span class="wp-panel__icon wp-panel__icon--amber"><i class="fas fa-tachometer-alt"></i></span>
+                    <h2>Urgency Guide</h2>
                 </div>
             </div>
-            
-            <!-- Guidelines Card -->
-            <div class="card shadow mt-4">
-                <div class="card-header py-3">
-                    <h6 class="m-0 font-weight-bold text-success">
-                        <i class="fas fa-lightbulb me-2"></i>Reporting Guidelines
-                    </h6>
+            <div class="wp-panel__body" style="display:flex;flex-direction:column;gap:8px">
+                <?php
+                $urgs = [
+                    ['wp-badge--success', 'Low',      'fa-circle',            'Can wait a few days. Not an immediate concern.'],
+                    ['wp-badge--warning', 'Medium',   'fa-exclamation-circle','Needs attention within the week.'],
+                    ['wp-badge--danger',  'High',     'fa-exclamation-triangle','Requires urgent attention within 24 hrs.'],
+                    ['wp-badge--dark',    'Critical', 'fa-skull-crossbones',  'Immediate action required. Health/safety risk.'],
+                ];
+                foreach ($urgs as [$cls, $lbl, $ico, $desc]):
+                ?>
+                <div style="display:flex;align-items:flex-start;gap:10px;padding:10px;background:var(--db-surf2);border-radius:8px;font-size:12.5px">
+                    <span class="wp-badge <?php echo $cls; ?>" style="flex-shrink:0"><i class="fas <?php echo $ico; ?>"></i> <?php echo $lbl; ?></span>
+                    <span style="color:var(--db-muted);line-height:1.5"><?php echo $desc; ?></span>
                 </div>
-                <div class="card-body">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <h6><i class="fas fa-check-circle text-success me-2"></i>DO:</h6>
-                            <ul>
-                                <li>Provide specific location details</li>
-                                <li>Include photos when possible</li>
-                                <li>Describe the issue clearly and concisely</li>
-                                <li>Select the appropriate urgency level</li>
-                                <li>Report genuine concerns only</li>
-                            </ul>
-                        </div>
-                        <div class="col-md-6">
-                            <h6><i class="fas fa-times-circle text-danger me-2"></i>DON'T:</h6>
-                            <ul>
-                                <li>Submit duplicate reports for the same issue</li>
-                                <li>Provide false or misleading information</li>
-                                <li>Use offensive or inappropriate language</li>
-                                <li>Report non-waste related issues here</li>
-                                <li>Mark low-priority issues as critical</li>
-                            </ul>
-                        </div>
-                    </div>
-                    
-                    <hr>
-                    
-                    <div class="mt-3">
-                        <h6><i class="fas fa-question-circle text-primary me-2"></i>Need Help?</h6>
-                        <p class="mb-0">If you're unsure about the urgency level or issue type, contact the barangay office at:</p>
-                        <p class="mb-0"><i class="fas fa-phone me-2"></i>(123) 456-7890</p>
-                    </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+
+        <!-- Reporting Guidelines -->
+        <div class="wp-panel">
+            <div class="wp-panel__header">
+                <div class="wp-panel__title">
+                    <span class="wp-panel__icon wp-panel__icon--success"><i class="fas fa-lightbulb"></i></span>
+                    <h2>Reporting Guidelines</h2>
                 </div>
+            </div>
+            <div class="wp-panel__body" style="display:flex;flex-direction:column;gap:8px">
+                <?php
+                $dos = [
+                    'Provide specific location details',
+                    'Include photos when possible',
+                    'Describe the issue clearly and concisely',
+                    'Select the correct urgency level',
+                    'Report genuine concerns only',
+                ];
+                $donts = [
+                    'Submit duplicate reports for the same issue',
+                    'Provide false or misleading information',
+                    'Use offensive or inappropriate language',
+                    'Mark low-priority issues as critical',
+                ];
+                ?>
+                <p style="font-size:11px;font-weight:700;color:var(--db-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">DO</p>
+                <?php foreach ($dos as $d): ?>
+                <div class="wp-guideline wp-guideline--do">
+                    <i class="fas fa-check-circle"></i>
+                    <span class="wp-guideline__text"><?php echo $d; ?></span>
+                </div>
+                <?php endforeach; ?>
+                <p style="font-size:11px;font-weight:700;color:var(--db-muted);text-transform:uppercase;letter-spacing:.5px;margin:8px 0 4px">DON'T</p>
+                <?php foreach ($donts as $d): ?>
+                <div class="wp-guideline wp-guideline--dont">
+                    <i class="fas fa-times-circle"></i>
+                    <span class="wp-guideline__text"><?php echo $d; ?></span>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <div class="wp-panel__footer">
+                <span style="font-size:12px;color:var(--db-muted)">
+                    <i class="fas fa-phone-alt" style="color:var(--db-success);margin-right:6px"></i>
+                    Unsure? Call us at <strong>(123) 456-7890</strong>
+                </span>
             </div>
         </div>
     </div>
 </div>
 
 <script>
-// Image preview
-document.getElementById('photo').addEventListener('change', function(e) {
-    const file = e.target.files[0];
-    const preview = document.getElementById('imagePreview');
-    
-    if (file) {
-        // Check file size (5MB)
-        if (file.size > 5242880) {
-            alert('File size must be less than 5MB');
-            this.value = '';
-            preview.innerHTML = '';
-            return;
-        }
-        
-        // Check file type
-        const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/gif'];
-        if (!allowedTypes.includes(file.type)) {
-            alert('Only JPG, PNG, and GIF images are allowed');
-            this.value = '';
-            preview.innerHTML = '';
-            return;
-        }
-        
-        // Show preview
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            preview.innerHTML = `
-                <div class="position-relative d-inline-block">
-                    <img src="${e.target.result}" class="img-thumbnail" style="max-width: 300px; max-height: 300px;">
-                    <button type="button" class="btn btn-sm btn-danger position-absolute top-0 end-0 m-2" 
-                            onclick="document.getElementById('photo').value=''; document.getElementById('imagePreview').innerHTML='';">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </div>
-            `;
-        };
-        reader.readAsDataURL(file);
-    } else {
-        preview.innerHTML = '';
+// ── Image upload preview ──
+const photoInput  = document.getElementById('photo');
+const uploadArea  = document.getElementById('uploadArea');
+const previewWrap = document.getElementById('imagePreview');
+const previewImg  = document.getElementById('previewImg');
+const removeBtn   = document.getElementById('removeImg');
+
+photoInput.addEventListener('change', function() {
+    const file = this.files[0];
+    if (!file) return;
+    if (file.size > 5242880) { alert('File must be under 5MB'); this.value = ''; return; }
+    const allowed = ['image/jpeg','image/png','image/jpg','image/gif'];
+    if (!allowed.includes(file.type)) { alert('Only JPG, PNG, GIF allowed'); this.value = ''; return; }
+    const reader = new FileReader();
+    reader.onload = e => {
+        previewImg.src = e.target.result;
+        previewWrap.style.display = 'block';
+        uploadArea.style.display = 'none';
+    };
+    reader.readAsDataURL(file);
+});
+
+removeBtn.addEventListener('click', () => {
+    photoInput.value = '';
+    previewImg.src   = '';
+    previewWrap.style.display = 'none';
+    uploadArea.style.display  = 'block';
+});
+
+// Drag & drop
+uploadArea.addEventListener('dragover',  e => { e.preventDefault(); uploadArea.classList.add('dragover'); });
+uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+uploadArea.addEventListener('drop', e => {
+    e.preventDefault();
+    uploadArea.classList.remove('dragover');
+    if (e.dataTransfer.files.length) {
+        const dt = new DataTransfer();
+        dt.items.add(e.dataTransfer.files[0]);
+        photoInput.files = dt.files;
+        photoInput.dispatchEvent(new Event('change'));
     }
 });
 
-// Form validation
+// ── Form validation ──
 document.getElementById('reportForm').addEventListener('submit', function(e) {
-    const issueType = document.getElementById('issue_type').value;
-    const location = document.getElementById('location').value;
-    const description = document.getElementById('description').value;
-    const urgency = document.getElementById('urgency').value;
-    
-    if (!issueType || !location || !description || !urgency) {
-        e.preventDefault();
-        alert('Please fill in all required fields');
-        return false;
-    }
-    
-    if (description.length < 10) {
-        e.preventDefault();
-        alert('Please provide a more detailed description (at least 10 characters)');
-        return false;
-    }
-    
-    if (location.length < 5) {
-        e.preventDefault();
-        alert('Please provide a more specific location (at least 5 characters)');
-        return false;
-    }
-    
-    return true;
+    const loc  = document.getElementById('location').value;
+    const desc = document.getElementById('description').value;
+    if (desc.length < 10) { e.preventDefault(); alert('Please provide a more detailed description (min 10 chars)'); return; }
+    if (loc.length  < 5)  { e.preventDefault(); alert('Please provide a more specific location (min 5 chars)'); return; }
 });
 
-// Auto-save draft (optional enhancement)
-const form = document.getElementById('reportForm');
-const formFields = ['issue_type', 'location', 'description', 'urgency'];
-
-// Load saved draft
-window.addEventListener('load', function() {
-    formFields.forEach(field => {
-        const saved = localStorage.getItem('waste_issue_' + field);
-        if (saved) {
-            const element = document.getElementById(field);
-            if (element) {
-                element.value = saved;
-            }
-        }
-    });
+// ── Auto-save draft ──
+const FIELDS = ['issue_type','location','description','urgency'];
+window.addEventListener('load', () => FIELDS.forEach(f => {
+    const el = document.getElementById(f);
+    const sv = localStorage.getItem('wi_' + f);
+    if (el && sv) el.value = sv;
+}));
+FIELDS.forEach(f => {
+    const el = document.getElementById(f);
+    if (el) el.addEventListener('change', () => localStorage.setItem('wi_' + f, el.value));
 });
-
-// Save draft on change
-formFields.forEach(field => {
-    const element = document.getElementById(field);
-    if (element) {
-        element.addEventListener('change', function() {
-            localStorage.setItem('waste_issue_' + field, this.value);
-        });
-    }
-});
-
-// Clear draft on successful submit
-form.addEventListener('submit', function() {
-    formFields.forEach(field => {
-        localStorage.removeItem('waste_issue_' + field);
-    });
-});
-
-// Clear draft on reset
-form.addEventListener('reset', function() {
-    formFields.forEach(field => {
-        localStorage.removeItem('waste_issue_' + field);
-    });
-    document.getElementById('imagePreview').innerHTML = '';
-});
+document.getElementById('reportForm').addEventListener('submit',  () => FIELDS.forEach(f => localStorage.removeItem('wi_' + f)));
+document.getElementById('reportForm').addEventListener('reset',   () => FIELDS.forEach(f => localStorage.removeItem('wi_' + f)));
 </script>
-
-<style>
-.card {
-    transition: box-shadow 0.3s ease-in-out;
-}
-
-.card:hover {
-    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
-}
-
-#imagePreview img {
-    object-fit: cover;
-}
-</style>
 
 <?php require_once '../../../includes/footer.php'; ?>

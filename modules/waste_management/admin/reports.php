@@ -1,816 +1,500 @@
 <?php
 require_once('../../../config/config.php');
-
-// Check if user is logged in and has appropriate role
 requireLogin();
 requireRole(['Super Admin', 'Admin', 'Staff']);
 
 $page_title = "Waste Collection Reports";
 
-// Handle form submissions
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (isset($_POST['action'])) {
-        switch ($_POST['action']) {
-            case 'add':
-                $collection_date = sanitize($_POST['collection_date']);
-                $area_zone = sanitize($_POST['area_zone']);
-                $waste_type = sanitize($_POST['waste_type']);
-                $quantity_kg = sanitize($_POST['quantity_kg']);
-                $collector_name = sanitize($_POST['collector_name']);
-                $status = sanitize($_POST['status']);
-                
-                $sql = "INSERT INTO tbl_waste_collection_reports 
-                        (collection_date, area_zone, waste_type, quantity_kg, collector_name, 
-                         status, created_at) 
-                        VALUES (?, ?, ?, ?, ?, ?, NOW())";
-                
-                if (execute($conn, $sql, [
-                    $collection_date, $area_zone, $waste_type, $quantity_kg, 
-                    $collector_name, $status
-                ], 'sssdss')) {
-                    setMessage('Collection report added successfully!', 'success');
-                } else {
-                    setMessage('Error adding collection report.', 'danger');
-                }
-                header('Location: reports.php');
-                exit();
-                break;
-                
-            case 'edit':
-                $id = (int)$_POST['id'];
-                $collection_date = sanitize($_POST['collection_date']);
-                $area_zone = sanitize($_POST['area_zone']);
-                $waste_type = sanitize($_POST['waste_type']);
-                $quantity_kg = sanitize($_POST['quantity_kg']);
-                $collector_name = sanitize($_POST['collector_name']);
-                $status = sanitize($_POST['status']);
-                
-                $sql = "UPDATE tbl_waste_collection_reports 
-                        SET collection_date = ?, area_zone = ?, waste_type = ?, quantity_kg = ?, 
-                            collector_name = ?, status = ? 
-                        WHERE id = ?";
-                
-                if (execute($conn, $sql, [
-                    $collection_date, $area_zone, $waste_type, $quantity_kg, 
-                    $collector_name, $status, $id
-                ], 'sssdssi')) {
-                    setMessage('Collection report updated successfully!', 'success');
-                } else {
-                    setMessage('Error updating collection report.', 'danger');
-                }
-                header('Location: reports.php');
-                exit();
-                break;
-                
-            case 'delete':
-                $id = (int)$_POST['id'];
-                
-                // Add validation
-                if ($id <= 0) {
-                    setMessage('Invalid report ID.', 'danger');
-                    header('Location: reports.php');
-                    exit();
-                }
-                
-                $sql = "DELETE FROM tbl_waste_collection_reports WHERE id = ?";
-                
-                if (execute($conn, $sql, [$id], 'i')) {
-                    setMessage('Collection report deleted successfully!', 'success');
-                } else {
-                    setMessage('Error deleting collection report.', 'danger');
-                }
-                header('Location: reports.php');
-                exit();
-                break;
-        }
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    switch ($_POST['action']) {
+        case 'add':
+            $sql = "INSERT INTO tbl_waste_collection_reports (collection_date,area_zone,waste_type,quantity_kg,collector_name,status,created_at) VALUES(?,?,?,?,?,?,NOW())";
+            $ok = execute($conn, $sql, [sanitize($_POST['collection_date']),sanitize($_POST['area_zone']),sanitize($_POST['waste_type']),(float)$_POST['quantity_kg'],sanitize($_POST['collector_name']),sanitize($_POST['status'])], 'sssdss');
+            $_SESSION['temp_success'] = $ok ? 'Report added successfully!' : 'Error adding report.';
+            header('Location: reports.php'); exit;
+        case 'edit':
+            $id = (int)$_POST['id'];
+            $sql = "UPDATE tbl_waste_collection_reports SET collection_date=?,area_zone=?,waste_type=?,quantity_kg=?,collector_name=?,status=? WHERE id=?";
+            $ok = execute($conn, $sql, [sanitize($_POST['collection_date']),sanitize($_POST['area_zone']),sanitize($_POST['waste_type']),(float)$_POST['quantity_kg'],sanitize($_POST['collector_name']),sanitize($_POST['status']),$id], 'sssdssi');
+            $_SESSION['temp_success'] = $ok ? 'Report updated successfully!' : 'Error updating report.';
+            header('Location: reports.php'); exit;
+        case 'delete':
+            $id = (int)$_POST['id'];
+            if ($id > 0) {
+                $ok = execute($conn, "DELETE FROM tbl_waste_collection_reports WHERE id=?", [$id], 'i');
+                $_SESSION['temp_success'] = $ok ? 'Report deleted successfully!' : 'Error deleting report.';
+            } else { $_SESSION['temp_error'] = 'Invalid report ID.'; }
+            header('Location: reports.php'); exit;
     }
 }
 
-// Filtering and pagination
-$where_conditions = [];
-$params = [];
-$types = '';
+$success_message = $error_message = '';
+if (isset($_SESSION['temp_success'])) { $success_message=$_SESSION['temp_success']; unset($_SESSION['temp_success']); }
+if (isset($_SESSION['temp_error']))   { $error_message=$_SESSION['temp_error'];   unset($_SESSION['temp_error']); }
 
-// Filter by date range
-$date_from = isset($_GET['date_from']) ? sanitize($_GET['date_from']) : '';
-$date_to = isset($_GET['date_to']) ? sanitize($_GET['date_to']) : '';
+// Filters
+$date_from    = sanitize($_GET['date_from'] ?? '');
+$date_to      = sanitize($_GET['date_to'] ?? '');
+$filter_area  = sanitize($_GET['area'] ?? '');
+$filter_type  = sanitize($_GET['waste_type'] ?? '');
+$filter_status= sanitize($_GET['status'] ?? '');
 
-if ($date_from) {
-    $where_conditions[] = "collection_date >= ?";
-    $params[] = $date_from;
-    $types .= 's';
-}
-if ($date_to) {
-    $where_conditions[] = "collection_date <= ?";
-    $params[] = $date_to;
-    $types .= 's';
-}
-
-// Filter by area
-$filter_area = isset($_GET['area']) ? sanitize($_GET['area']) : '';
-if ($filter_area) {
-    $where_conditions[] = "area_zone = ?";
-    $params[] = $filter_area;
-    $types .= 's';
-}
-
-// Filter by waste type
-$filter_type = isset($_GET['waste_type']) ? sanitize($_GET['waste_type']) : '';
-if ($filter_type) {
-    $where_conditions[] = "waste_type = ?";
-    $params[] = $filter_type;
-    $types .= 's';
-}
-
-// Filter by status
-$filter_status = isset($_GET['status']) ? sanitize($_GET['status']) : '';
-if ($filter_status) {
-    $where_conditions[] = "status = ?";
-    $params[] = $filter_status;
-    $types .= 's';
-}
-
-// Build WHERE clause
-$where_sql = '';
-if (!empty($where_conditions)) {
-    $where_sql = 'WHERE ' . implode(' AND ', $where_conditions);
-}
+$where=[]; $params=[]; $types='';
+if ($date_from)    { $where[]="collection_date>=?"; $params[]=$date_from;    $types.='s'; }
+if ($date_to)      { $where[]="collection_date<=?"; $params[]=$date_to;      $types.='s'; }
+if ($filter_area)  { $where[]="area_zone=?";        $params[]=$filter_area;  $types.='s'; }
+if ($filter_type)  { $where[]="waste_type=?";       $params[]=$filter_type;  $types.='s'; }
+if ($filter_status){ $where[]="status=?";           $params[]=$filter_status;$types.='s'; }
+$where_sql = $where ? 'WHERE '.implode(' AND ',$where) : '';
 
 // Pagination
-$page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
-$records_per_page = 20;
-$offset = ($page - 1) * $records_per_page;
+$page     = max(1,(int)($_GET['page']??1));
+$per_page = 20;
+$offset   = ($page-1)*$per_page;
 
-// Get total records
-$count_sql = "SELECT COUNT(*) as count FROM tbl_waste_collection_reports $where_sql";
-$total_records = fetchOne($conn, $count_sql, $params, $types)['count'] ?? 0;
-$total_pages = ceil($total_records / $records_per_page);
+$total    = fetchOne($conn,"SELECT COUNT(*) as c FROM tbl_waste_collection_reports $where_sql",$params,$types)['c']??0;
+$pages    = ceil($total/$per_page);
 
-// Get reports
-$sql = "SELECT * FROM tbl_waste_collection_reports 
-        $where_sql 
-        ORDER BY collection_date DESC, created_at DESC 
-        LIMIT ? OFFSET ?";
-$params[] = $records_per_page;
-$params[] = $offset;
-$types .= 'ii';
+$rp = array_merge($params,[$per_page,$offset]); $rt=$types.'ii';
+$reports = fetchAll($conn,"SELECT * FROM tbl_waste_collection_reports $where_sql ORDER BY collection_date DESC,created_at DESC LIMIT ? OFFSET ?",$rp,$rt);
 
-$reports = fetchAll($conn, $sql, $params, $types);
+$areas = fetchAll($conn,"SELECT DISTINCT area_zone FROM tbl_waste_collection_reports WHERE area_zone IS NOT NULL AND area_zone!='' ORDER BY area_zone",[],'' );
 
-// Get distinct areas for filter dropdown
-$areas = fetchAll($conn, "SELECT DISTINCT area_zone FROM tbl_waste_collection_reports WHERE area_zone IS NOT NULL AND area_zone != '' ORDER BY area_zone", [], '');
+$stp = array_slice($params,0,count($params));
+$stats = fetchOne($conn,"SELECT COUNT(*) as total_collections, COALESCE(SUM(quantity_kg),0) as total_waste, COALESCE(AVG(quantity_kg),0) as avg_waste, COALESCE(SUM(CASE WHEN waste_type='biodegradable' THEN quantity_kg ELSE 0 END),0) as bio, COALESCE(SUM(CASE WHEN waste_type='non-biodegradable' THEN quantity_kg ELSE 0 END),0) as non_bio, COALESCE(SUM(CASE WHEN waste_type='recyclable' THEN quantity_kg ELSE 0 END),0) as rec, COALESCE(SUM(CASE WHEN waste_type='hazardous' THEN quantity_kg ELSE 0 END),0) as haz FROM tbl_waste_collection_reports $where_sql",$stp,$types);
 
-// Calculate statistics for current filters
-$stats_sql = "SELECT 
-                COUNT(*) as total_collections,
-                COALESCE(SUM(quantity_kg), 0) as total_waste,
-                COALESCE(AVG(quantity_kg), 0) as avg_waste,
-                COALESCE(SUM(CASE WHEN waste_type = 'biodegradable' THEN quantity_kg ELSE 0 END), 0) as biodegradable_total,
-                COALESCE(SUM(CASE WHEN waste_type = 'non-biodegradable' THEN quantity_kg ELSE 0 END), 0) as non_biodegradable_total,
-                COALESCE(SUM(CASE WHEN waste_type = 'recyclable' THEN quantity_kg ELSE 0 END), 0) as recyclable_total,
-                COALESCE(SUM(CASE WHEN waste_type = 'hazardous' THEN quantity_kg ELSE 0 END), 0) as hazardous_total
-              FROM tbl_waste_collection_reports 
-              $where_sql";
-$stats = fetchOne($conn, $stats_sql, array_slice($params, 0, -2), rtrim($types, 'ii'));
+function bqs($exclude=[]){ $p=$_GET; foreach($exclude as $k) unset($p[$k]); return $p?'&'.http_build_query($p):''; }
 
+$extra_css = '<link rel="stylesheet" href="../../../assets/css/dashboard-index.css?v=' . time() . '">';
 require_once '../../../includes/header.php';
 ?>
 
-<div class="container-fluid">
-    <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-        <h1 class="h2"><i class="fas fa-clipboard-list me-2"></i><?php echo $page_title; ?></h1>
-        <div class="btn-toolbar mb-2 mb-md-0">
-            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addReportModal">
-                <i class="fas fa-plus me-1"></i>Add Collection Report
+<!-- ═══ HERO ═══ -->
+<div class="db-hero">
+    <div class="db-hero__ring db-hero__ring--1"></div>
+    <div class="db-hero__ring db-hero__ring--2"></div>
+    <div class="db-hero__ring db-hero__ring--3"></div>
+    <div class="db-hero__inner">
+        <div class="db-hero__left">
+            <div class="db-hero__avatar" style="background:linear-gradient(135deg,#0ea5e9,#0369a1);">
+                <i class="fas fa-clipboard-list" style="font-size:22px;color:#fff;"></i>
+            </div>
+            <div class="db-hero__text">
+                <div class="db-hero__role-badge badge-staff">
+                    <span class="db-hero__role-dot"></span>
+                    Waste Management
+                </div>
+                <h1 class="db-hero__title">Waste Collection Reports</h1>
+                <p class="db-hero__sub">Track and manage all barangay waste collection activities</p>
+            </div>
+        </div>
+        <div class="db-hero__right">
+            <button class="db-btn db-btn--primary" onclick="openModal('addReportModal')">
+                <i class="fas fa-plus"></i> Add Report
             </button>
         </div>
     </div>
+</div>
 
-    <?php echo displayMessage(); ?>
+<?php if ($success_message): ?>
+<div class="db-alert db-alert--success">
+    <div class="db-alert__icon"><i class="fas fa-check-circle"></i></div>
+    <span><?php echo htmlspecialchars($success_message); ?></span>
+    <button class="db-alert__close" onclick="this.parentElement.remove()">×</button>
+</div>
+<?php endif; ?>
+<?php if ($error_message): ?>
+<div class="db-alert db-alert--error">
+    <div class="db-alert__icon"><i class="fas fa-exclamation-circle"></i></div>
+    <span><?php echo htmlspecialchars($error_message); ?></span>
+    <button class="db-alert__close" onclick="this.parentElement.remove()">×</button>
+</div>
+<?php endif; ?>
 
-    <!-- Statistics Cards -->
-    <?php if ($stats && $stats['total_collections'] > 0): ?>
-    <div class="row mb-4">
-        <div class="col-xl-3 col-md-6 mb-4">
-            <div class="card border-left-primary shadow h-100 py-2">
-                <div class="card-body">
-                    <div class="row no-gutters align-items-center">
-                        <div class="col mr-2">
-                            <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">
-                                Total Collections</div>
-                            <div class="h5 mb-0 font-weight-bold text-gray-800"><?php echo number_format($stats['total_collections']); ?></div>
-                        </div>
-                        <div class="col-auto">
-                            <i class="fas fa-clipboard-check fa-2x text-gray-300"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
+
+<!-- ═══ STAT CARDS ═══ -->
+<?php if ($stats && $stats['total_collections'] > 0): ?>
+<div class="db-stats-row">
+    <div class="db-stat-card">
+        <div class="db-stat-card__icon db-stat-card__icon--blue"><i class="fas fa-clipboard-check"></i></div>
+        <div class="db-stat-card__body">
+            <div class="db-stat-card__num"><?php echo number_format($stats['total_collections']); ?></div>
+            <div class="db-stat-card__label">Total Collections</div>
         </div>
-
-        <div class="col-xl-3 col-md-6 mb-4">
-            <div class="card border-left-success shadow h-100 py-2">
-                <div class="card-body">
-                    <div class="row no-gutters align-items-center">
-                        <div class="col mr-2">
-                            <div class="text-xs font-weight-bold text-success text-uppercase mb-1">
-                                Total Waste Collected</div>
-                            <div class="h5 mb-0 font-weight-bold text-gray-800"><?php echo number_format($stats['total_waste'], 2); ?> kg</div>
-                        </div>
-                        <div class="col-auto">
-                            <i class="fas fa-weight fa-2x text-gray-300"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
+        <div class="db-stat-card__sparkline db-stat-card__sparkline--blue"></div>
+    </div>
+    <div class="db-stat-card">
+        <div class="db-stat-card__icon db-stat-card__icon--teal"><i class="fas fa-weight"></i></div>
+        <div class="db-stat-card__body">
+            <div class="db-stat-card__num" style="font-size:20px;"><?php echo number_format($stats['total_waste'],1); ?><span style="font-size:13px;font-weight:500;color:var(--db-muted);"> kg</span></div>
+            <div class="db-stat-card__label">Total Waste</div>
         </div>
-
-        <div class="col-xl-3 col-md-6 mb-4">
-            <div class="card border-left-info shadow h-100 py-2">
-                <div class="card-body">
-                    <div class="row no-gutters align-items-center">
-                        <div class="col mr-2">
-                            <div class="text-xs font-weight-bold text-info text-uppercase mb-1">
-                                Average per Collection</div>
-                            <div class="h5 mb-0 font-weight-bold text-gray-800"><?php echo number_format($stats['avg_waste'], 2); ?> kg</div>
-                        </div>
-                        <div class="col-auto">
-                            <i class="fas fa-chart-line fa-2x text-gray-300"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
+        <div class="db-stat-card__sparkline db-stat-card__sparkline--teal"></div>
+    </div>
+    <div class="db-stat-card">
+        <div class="db-stat-card__icon db-stat-card__icon--indigo"><i class="fas fa-chart-line"></i></div>
+        <div class="db-stat-card__body">
+            <div class="db-stat-card__num" style="font-size:20px;"><?php echo number_format($stats['avg_waste'],1); ?><span style="font-size:13px;font-weight:500;color:var(--db-muted);"> kg</span></div>
+            <div class="db-stat-card__label">Avg / Collection</div>
         </div>
+        <div class="db-stat-card__sparkline db-stat-card__sparkline--indigo"></div>
+    </div>
+    <div class="db-stat-card">
+        <div class="db-stat-card__icon db-stat-card__icon--amber"><i class="fas fa-recycle"></i></div>
+        <div class="db-stat-card__body">
+            <div class="db-stat-card__num" style="font-size:20px;"><?php echo number_format($stats['rec'],1); ?><span style="font-size:13px;font-weight:500;color:var(--db-muted);"> kg</span></div>
+            <div class="db-stat-card__label">Recyclable</div>
+        </div>
+        <div class="db-stat-card__sparkline db-stat-card__sparkline--amber"></div>
+    </div>
+</div>
 
-        <div class="col-xl-3 col-md-6 mb-4">
-            <div class="card border-left-warning shadow h-100 py-2">
-                <div class="card-body">
-                    <div class="row no-gutters align-items-center">
-                        <div class="col mr-2">
-                            <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">
-                                Recyclable Collected</div>
-                            <div class="h5 mb-0 font-weight-bold text-gray-800"><?php echo number_format($stats['recyclable_total'], 2); ?> kg</div>
-                        </div>
-                        <div class="col-auto">
-                            <i class="fas fa-recycle fa-2x text-gray-300"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
+<!-- ═══ WASTE TYPE BREAKDOWN ═══ -->
+<div class="db-panel">
+    <div class="db-panel__header">
+        <div class="db-panel__title">
+            <span class="db-panel__icon db-panel__icon--teal"><i class="fas fa-chart-pie"></i></span>
+            <h2>Waste Type Breakdown</h2>
         </div>
     </div>
-
-    <!-- Waste Type Breakdown -->
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="card shadow">
-                <div class="card-header py-3">
-                    <h6 class="m-0 font-weight-bold text-primary">
-                        <i class="fas fa-chart-pie me-2"></i>Waste Type Breakdown
-                    </h6>
-                </div>
-                <div class="card-body">
-                    <div class="row text-center">
-                        <div class="col-md-3">
-                            <div class="mb-2">
-                                <i class="fas fa-leaf fa-2x text-success"></i>
-                            </div>
-                            <h5 class="text-success"><?php echo number_format($stats['biodegradable_total'], 2); ?> kg</h5>
-                            <p class="text-muted mb-0">Biodegradable</p>
-                            <small class="text-muted">
-                                <?php 
-                                $bio_percent = $stats['total_waste'] > 0 ? ($stats['biodegradable_total'] / $stats['total_waste']) * 100 : 0;
-                                echo number_format($bio_percent, 1) . '%';
-                                ?>
-                            </small>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="mb-2">
-                                <i class="fas fa-trash fa-2x text-danger"></i>
-                            </div>
-                            <h5 class="text-danger"><?php echo number_format($stats['non_biodegradable_total'], 2); ?> kg</h5>
-                            <p class="text-muted mb-0">Non-Biodegradable</p>
-                            <small class="text-muted">
-                                <?php 
-                                $non_bio_percent = $stats['total_waste'] > 0 ? ($stats['non_biodegradable_total'] / $stats['total_waste']) * 100 : 0;
-                                echo number_format($non_bio_percent, 1) . '%';
-                                ?>
-                            </small>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="mb-2">
-                                <i class="fas fa-recycle fa-2x text-info"></i>
-                            </div>
-                            <h5 class="text-info"><?php echo number_format($stats['recyclable_total'], 2); ?> kg</h5>
-                            <p class="text-muted mb-0">Recyclable</p>
-                            <small class="text-muted">
-                                <?php 
-                                $rec_percent = $stats['total_waste'] > 0 ? ($stats['recyclable_total'] / $stats['total_waste']) * 100 : 0;
-                                echo number_format($rec_percent, 1) . '%';
-                                ?>
-                            </small>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="mb-2">
-                                <i class="fas fa-radiation fa-2x text-warning"></i>
-                            </div>
-                            <h5 class="text-warning"><?php echo number_format($stats['hazardous_total'], 2); ?> kg</h5>
-                            <p class="text-muted mb-0">Hazardous</p>
-                            <small class="text-muted">
-                                <?php 
-                                $haz_percent = $stats['total_waste'] > 0 ? ($stats['hazardous_total'] / $stats['total_waste']) * 100 : 0;
-                                echo number_format($haz_percent, 1) . '%';
-                                ?>
-                            </small>
-                        </div>
-                    </div>
-                </div>
-            </div>
+    <?php
+    $total_w = $stats['total_waste'] ?: 1;
+    $breakdown = [
+        ['label'=>'Biodegradable',    'val'=>$stats['bio'],     'icon'=>'fa-leaf',         'color'=>'var(--db-success)', 'bg'=>'var(--db-success-light)'],
+        ['label'=>'Non-Biodegradable','val'=>$stats['non_bio'], 'icon'=>'fa-times-circle',  'color'=>'var(--db-rose)',    'bg'=>'var(--db-rose-light)'],
+        ['label'=>'Recyclable',       'val'=>$stats['rec'],     'icon'=>'fa-recycle',       'color'=>'var(--db-sky)',     'bg'=>'var(--db-sky-light)'],
+        ['label'=>'Hazardous',        'val'=>$stats['haz'],     'icon'=>'fa-radiation',     'color'=>'var(--db-amber-dark)', 'bg'=>'var(--db-amber-light)'],
+    ];
+    ?>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1px;background:var(--db-border);">
+    <?php foreach ($breakdown as $b):
+        $pct = round($b['val']/$total_w*100,1);
+    ?>
+    <div style="background:var(--db-surf);padding:22px 20px;text-align:center;">
+        <div style="width:48px;height:48px;border-radius:12px;background:<?php echo $b['bg']; ?>;display:flex;align-items:center;justify-content:center;margin:0 auto 10px;">
+            <i class="fas <?php echo $b['icon']; ?>" style="font-size:20px;color:<?php echo $b['color']; ?>;"></i>
         </div>
+        <div style="font-size:20px;font-weight:800;letter-spacing:-0.5px;"><?php echo number_format($b['val'],2); ?> kg</div>
+        <div style="font-size:11px;color:var(--db-muted);font-weight:500;margin-top:2px;"><?php echo $b['label']; ?></div>
+        <div style="font-family:'DM Mono',monospace;font-size:11px;color:<?php echo $b['color']; ?>;font-weight:600;margin-top:4px;"><?php echo $pct; ?>%</div>
+        <!-- Progress bar -->
+        <div style="height:3px;background:var(--db-border);border-radius:2px;margin-top:8px;overflow:hidden;">
+            <div style="height:100%;width:<?php echo $pct; ?>%;background:<?php echo $b['color']; ?>;border-radius:2px;"></div>
+        </div>
+    </div>
+    <?php endforeach; ?>
+    </div>
+</div>
+<?php endif; ?>
+
+
+<!-- ═══ FILTERS ═══ -->
+<div class="db-panel">
+    <div class="db-panel__header">
+        <div class="db-panel__title">
+            <span class="db-panel__icon db-panel__icon--blue"><i class="fas fa-filter"></i></span>
+            <h2>Filters</h2>
+        </div>
+    </div>
+    <div style="padding:16px 22px;">
+        <form method="GET" action="reports.php" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">
+            <div class="db-field" style="flex:1;min-width:130px;margin-bottom:0;"><label>Date From</label><input type="date" class="db-input" name="date_from" value="<?php echo htmlspecialchars($date_from); ?>"></div>
+            <div class="db-field" style="flex:1;min-width:130px;margin-bottom:0;"><label>Date To</label><input type="date" class="db-input" name="date_to" value="<?php echo htmlspecialchars($date_to); ?>"></div>
+            <div class="db-field" style="flex:1;min-width:130px;margin-bottom:0;"><label>Area/Zone</label>
+                <select class="db-input" name="area">
+                    <option value="">All Areas</option>
+                    <?php foreach ($areas as $a): ?>
+                    <option value="<?php echo htmlspecialchars($a['area_zone']); ?>" <?php echo $filter_area===$a['area_zone']?'selected':''; ?>><?php echo htmlspecialchars($a['area_zone']); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="db-field" style="flex:1;min-width:130px;margin-bottom:0;"><label>Waste Type</label>
+                <select class="db-input" name="waste_type">
+                    <option value="">All Types</option>
+                    <?php foreach (['biodegradable','non-biodegradable','recyclable','hazardous'] as $wt): ?>
+                    <option value="<?php echo $wt; ?>" <?php echo $filter_type===$wt?'selected':''; ?>><?php echo ucfirst($wt); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="db-field" style="flex:1;min-width:130px;margin-bottom:0;"><label>Status</label>
+                <select class="db-input" name="status">
+                    <option value="">All Status</option>
+                    <?php foreach (['completed','partial','cancelled'] as $st): ?>
+                    <option value="<?php echo $st; ?>" <?php echo $filter_status===$st?'selected':''; ?>><?php echo ucfirst($st); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div style="display:flex;gap:8px;padding-bottom:0;">
+                <button type="submit" class="db-btn db-btn--primary"><i class="fas fa-search"></i> Filter</button>
+                <a href="reports.php" class="db-btn db-btn--ghost"><i class="fas fa-times"></i> Clear</a>
+                <button type="button" class="db-btn db-btn--ghost" onclick="exportCSV()"><i class="fas fa-file-excel"></i> CSV</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+
+<!-- ═══ REPORTS TABLE ═══ -->
+<div class="db-panel">
+    <div class="db-panel__header">
+        <div class="db-panel__title">
+            <span class="db-panel__icon db-panel__icon--blue"><i class="fas fa-clipboard-list"></i></span>
+            <h2>Collection Reports <span style="font-family:'DM Mono',monospace;font-size:12px;color:var(--db-muted);font-weight:400;">(<?php echo number_format($total); ?> total)</span></h2>
+        </div>
+        <button class="db-btn db-btn--primary db-btn--sm" onclick="openModal('addReportModal')"><i class="fas fa-plus"></i> Add Report</button>
+    </div>
+
+    <?php if (!empty($reports)): ?>
+    <div class="db-table-wrap">
+        <table class="db-table" id="reportsTable">
+            <thead>
+                <tr><th>ID</th><th>Date</th><th>Area / Zone</th><th>Waste Type</th><th>Quantity</th><th>Collector</th><th>Status</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+            <?php
+            $type_badges  = ['biodegradable'=>'db-badge--success','non-biodegradable'=>'db-badge--danger','recyclable'=>'db-badge--info','hazardous'=>'db-badge--warning'];
+            $status_badges= ['completed'=>'db-badge--success','partial'=>'db-badge--warning','cancelled'=>'db-badge--muted'];
+            $type_icons   = ['biodegradable'=>'fa-leaf','non-biodegradable'=>'fa-times-circle','recyclable'=>'fa-recycle','hazardous'=>'fa-radiation'];
+            foreach ($reports as $r):
+                $tb = $type_badges[$r['waste_type']] ?? 'db-badge--muted';
+                $sb = $status_badges[$r['status']] ?? 'db-badge--muted';
+                $ti = $type_icons[$r['waste_type']] ?? 'fa-trash-alt';
+            ?>
+            <tr>
+                <td><span class="db-id">#<?php echo (int)$r['id']; ?></span></td>
+                <td><span class="db-text-sm"><?php echo date('M d, Y', strtotime($r['collection_date'])); ?></span></td>
+                <td><strong><?php echo htmlspecialchars($r['area_zone']); ?></strong></td>
+                <td>
+                    <span class="db-badge <?php echo $tb; ?>">
+                        <i class="fas <?php echo $ti; ?> me-1"></i><?php echo ucfirst($r['waste_type']); ?>
+                    </span>
+                </td>
+                <td><span style="font-family:'DM Mono',monospace;font-size:12px;"><?php echo number_format($r['quantity_kg'],2); ?> kg</span></td>
+                <td><?php echo htmlspecialchars($r['collector_name'] ?? '—'); ?></td>
+                <td><span class="db-badge <?php echo $sb; ?>"><?php echo ucfirst($r['status']); ?></span></td>
+                <td>
+                    <div class="db-btn-group">
+                        <button class="db-icon-btn db-icon-btn--info" onclick='viewReport(<?php echo htmlspecialchars(json_encode($r),ENT_QUOTES); ?>)' title="View"><i class="fas fa-eye"></i></button>
+                        <button class="db-icon-btn db-icon-btn--primary" onclick='editReport(<?php echo htmlspecialchars(json_encode($r),ENT_QUOTES); ?>)' title="Edit"><i class="fas fa-edit"></i></button>
+                        <button class="db-icon-btn db-icon-btn--danger" onclick="openDeleteModal(<?php echo (int)$r['id']; ?>,'<?php echo htmlspecialchars($r['area_zone'],ENT_QUOTES); ?>','<?php echo htmlspecialchars($r['collection_date'],ENT_QUOTES); ?>')" title="Delete"><i class="fas fa-trash"></i></button>
+                    </div>
+                </td>
+            </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    <?php if ($pages > 1): ?>
+    <div class="db-panel__footer" style="display:flex;justify-content:center;gap:4px;flex-wrap:wrap;">
+        <?php if ($page > 1): ?><a href="?page=<?php echo $page-1; ?><?php echo bqs(['page']); ?>" class="db-btn db-btn--ghost db-btn--sm"><i class="fas fa-chevron-left"></i></a><?php endif; ?>
+        <?php for ($i=max(1,$page-2);$i<=min($pages,$page+2);$i++): ?>
+        <a href="?page=<?php echo $i; ?><?php echo bqs(['page']); ?>" class="db-btn db-btn--sm <?php echo $i===$page?'db-btn--primary':'db-btn--ghost'; ?>"><?php echo $i; ?></a>
+        <?php endfor; ?>
+        <?php if ($page < $pages): ?><a href="?page=<?php echo $page+1; ?><?php echo bqs(['page']); ?>" class="db-btn db-btn--ghost db-btn--sm"><i class="fas fa-chevron-right"></i></a><?php endif; ?>
     </div>
     <?php endif; ?>
 
-    <!-- Filters -->
-    <div class="card shadow mb-4">
-        <div class="card-header py-3">
-            <h6 class="m-0 font-weight-bold text-primary">
-                <i class="fas fa-filter me-2"></i>Filters
-            </h6>
+    <?php else: ?>
+    <div class="db-empty">
+        <i class="fas fa-clipboard-list"></i>
+        <p>No collection reports found<?php echo ($date_from||$filter_area||$filter_type||$filter_status) ? ' matching your filters.' : '. Add your first report!'; ?></p>
+        <button class="db-btn db-btn--primary db-btn--sm" onclick="openModal('addReportModal')"><i class="fas fa-plus"></i> Add Report</button>
+    </div>
+    <?php endif; ?>
+</div>
+
+
+<!-- ═══ ADD REPORT MODAL ═══ -->
+<div id="addReportModal" class="db-modal">
+    <div class="db-modal__box">
+        <div class="db-modal__header">
+            <h3><i class="fas fa-plus-circle"></i> Add Collection Report</h3>
+            <button class="db-modal__close" onclick="closeModal('addReportModal')">×</button>
         </div>
-        <div class="card-body">
-            <form method="GET" action="reports.php" class="row g-3">
-                <div class="col-md-3">
-                    <label for="date_from" class="form-label">Date From</label>
-                    <input type="date" class="form-control" id="date_from" name="date_from" 
-                           value="<?php echo htmlspecialchars($date_from); ?>">
-                </div>
-                <div class="col-md-3">
-                    <label for="date_to" class="form-label">Date To</label>
-                    <input type="date" class="form-control" id="date_to" name="date_to" 
-                           value="<?php echo htmlspecialchars($date_to); ?>">
-                </div>
-                <div class="col-md-2">
-                    <label for="area" class="form-label">Area/Zone</label>
-                    <select class="form-select" id="area" name="area">
-                        <option value="">All Areas</option>
-                        <?php foreach ($areas as $area): ?>
-                            <option value="<?php echo htmlspecialchars($area['area_zone']); ?>" 
-                                    <?php echo $filter_area === $area['area_zone'] ? 'selected' : ''; ?>>
-                                <?php echo htmlspecialchars($area['area_zone']); ?>
-                            </option>
+        <form method="POST" action="reports.php" class="db-modal__body">
+            <input type="hidden" name="action" value="add">
+            <div class="db-field-row">
+                <div class="db-field"><label>Collection Date <span class="req">*</span></label><input type="date" class="db-input" name="collection_date" value="<?php echo date('Y-m-d'); ?>" required></div>
+                <div class="db-field"><label>Area / Zone <span class="req">*</span></label><input type="text" class="db-input" name="area_zone" placeholder="e.g., Zone A" required></div>
+            </div>
+            <div class="db-field-row">
+                <div class="db-field"><label>Waste Type <span class="req">*</span></label>
+                    <select class="db-input" name="waste_type" required>
+                        <option value="">Select Type</option>
+                        <?php foreach(['biodegradable','non-biodegradable','recyclable','hazardous'] as $wt): ?>
+                        <option value="<?php echo $wt; ?>"><?php echo ucfirst($wt); ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="col-md-2">
-                    <label for="waste_type" class="form-label">Waste Type</label>
-                    <select class="form-select" id="waste_type" name="waste_type">
-                        <option value="">All Types</option>
-                        <option value="biodegradable" <?php echo $filter_type === 'biodegradable' ? 'selected' : ''; ?>>Biodegradable</option>
-                        <option value="non-biodegradable" <?php echo $filter_type === 'non-biodegradable' ? 'selected' : ''; ?>>Non-Biodegradable</option>
-                        <option value="recyclable" <?php echo $filter_type === 'recyclable' ? 'selected' : ''; ?>>Recyclable</option>
-                        <option value="hazardous" <?php echo $filter_type === 'hazardous' ? 'selected' : ''; ?>>Hazardous</option>
+                <div class="db-field"><label>Quantity (kg) <span class="req">*</span></label><input type="number" class="db-input" name="quantity_kg" step="0.01" min="0" required></div>
+            </div>
+            <div class="db-field-row">
+                <div class="db-field"><label>Collector Name <span class="req">*</span></label><input type="text" class="db-input" name="collector_name" required></div>
+                <div class="db-field"><label>Status <span class="req">*</span></label>
+                    <select class="db-input" name="status" required>
+                        <option value="completed">Completed</option>
+                        <option value="partial">Partial</option>
+                        <option value="cancelled">Cancelled</option>
                     </select>
                 </div>
-                <div class="col-md-2">
-                    <label for="status" class="form-label">Status</label>
-                    <select class="form-select" id="status" name="status">
-                        <option value="">All Status</option>
-                        <option value="completed" <?php echo $filter_status === 'completed' ? 'selected' : ''; ?>>Completed</option>
-                        <option value="partial" <?php echo $filter_status === 'partial' ? 'selected' : ''; ?>>Partial</option>
-                        <option value="cancelled" <?php echo $filter_status === 'cancelled' ? 'selected' : ''; ?>>Cancelled</option>
+            </div>
+            <button type="submit" class="db-btn db-btn--primary db-btn--full"><i class="fas fa-save"></i> Save Report</button>
+        </form>
+    </div>
+</div>
+
+<!-- ═══ EDIT REPORT MODAL ═══ -->
+<div id="editReportModal" class="db-modal">
+    <div class="db-modal__box">
+        <div class="db-modal__header">
+            <h3><i class="fas fa-edit"></i> Edit Collection Report</h3>
+            <button class="db-modal__close" onclick="closeModal('editReportModal')">×</button>
+        </div>
+        <form method="POST" action="reports.php" class="db-modal__body">
+            <input type="hidden" name="action" value="edit">
+            <input type="hidden" name="id" id="edit_id">
+            <div class="db-field-row">
+                <div class="db-field"><label>Collection Date <span class="req">*</span></label><input type="date" class="db-input" id="edit_date" name="collection_date" required></div>
+                <div class="db-field"><label>Area / Zone <span class="req">*</span></label><input type="text" class="db-input" id="edit_area" name="area_zone" required></div>
+            </div>
+            <div class="db-field-row">
+                <div class="db-field"><label>Waste Type <span class="req">*</span></label>
+                    <select class="db-input" id="edit_waste_type" name="waste_type" required>
+                        <?php foreach(['biodegradable','non-biodegradable','recyclable','hazardous'] as $wt): ?>
+                        <option value="<?php echo $wt; ?>"><?php echo ucfirst($wt); ?></option>
+                        <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="col-12">
-                    <button type="submit" class="btn btn-primary">
-                        <i class="fas fa-search me-1"></i>Apply Filters
-                    </button>
-                    <a href="reports.php" class="btn btn-secondary">
-                        <i class="fas fa-times me-1"></i>Clear Filters
-                    </a>
-                    <button type="button" class="btn btn-success" onclick="exportToCSV()">
-                        <i class="fas fa-file-excel me-1"></i>Export to CSV
-                    </button>
+                <div class="db-field"><label>Quantity (kg) <span class="req">*</span></label><input type="number" class="db-input" id="edit_qty" name="quantity_kg" step="0.01" min="0" required></div>
+            </div>
+            <div class="db-field-row">
+                <div class="db-field"><label>Collector Name <span class="req">*</span></label><input type="text" class="db-input" id="edit_collector" name="collector_name" required></div>
+                <div class="db-field"><label>Status <span class="req">*</span></label>
+                    <select class="db-input" id="edit_status" name="status" required>
+                        <option value="completed">Completed</option>
+                        <option value="partial">Partial</option>
+                        <option value="cancelled">Cancelled</option>
+                    </select>
                 </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Reports Table -->
-    <div class="card shadow mb-4">
-        <div class="card-header py-3">
-            <h6 class="m-0 font-weight-bold text-primary">
-                Collection Reports (<?php echo number_format($total_records); ?> total)
-            </h6>
-        </div>
-        <div class="card-body">
-            <?php if (empty($reports)): ?>
-                <div class="alert alert-info text-center">
-                    <i class="fas fa-info-circle me-2"></i>No collection reports found. Add your first report to get started!
-                </div>
-            <?php else: ?>
-                <div class="table-responsive">
-                    <table class="table table-bordered table-hover" id="reportsTable">
-                        <thead class="table-light">
-                            <tr>
-                                <th>ID</th>
-                                <th>Date</th>
-                                <th>Area/Zone</th>
-                                <th>Waste Type</th>
-                                <th>Quantity (kg)</th>
-                                <th>Collector</th>
-                                <th>Status</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($reports as $report): ?>
-                            <tr>
-                                <td><?php echo (int)$report['id']; ?></td>
-                                <td><?php echo formatDate($report['collection_date']); ?></td>
-                                <td><?php echo htmlspecialchars($report['area_zone']); ?></td>
-                                <td>
-                                    <?php 
-                                    $type_badges = [
-                                        'biodegradable' => 'success',
-                                        'non-biodegradable' => 'danger',
-                                        'recyclable' => 'info',
-                                        'hazardous' => 'warning'
-                                    ];
-                                    $type_badge_class = $type_badges[$report['waste_type']] ?? 'secondary';
-                                    ?>
-                                    <span class="badge bg-<?php echo $type_badge_class; ?>">
-                                        <?php echo ucfirst($report['waste_type']); ?>
-                                    </span>
-                                </td>
-                                <td class="text-end"><?php echo number_format($report['quantity_kg'], 2); ?></td>
-                                <td><?php echo htmlspecialchars($report['collector_name']); ?></td>
-                                <td>
-                                    <?php 
-                                    $status_badges = [
-                                        'completed' => 'success',
-                                        'partial' => 'warning',
-                                        'cancelled' => 'danger'
-                                    ];
-                                    $status_badge_class = $status_badges[$report['status']] ?? 'secondary';
-                                    ?>
-                                    <span class="badge bg-<?php echo $status_badge_class; ?>">
-                                        <?php echo ucfirst($report['status']); ?>
-                                    </span>
-                                </td>
-                                <td>
-                                    <button type="button" class="btn btn-sm btn-info" 
-                                            onclick="viewReport(<?php echo htmlspecialchars(json_encode($report), ENT_QUOTES, 'UTF-8'); ?>)">
-                                        <i class="fas fa-eye"></i>
-                                    </button>
-                                    <button type="button" class="btn btn-sm btn-warning" 
-                                            onclick="editReport(<?php echo htmlspecialchars(json_encode($report), ENT_QUOTES, 'UTF-8'); ?>)">
-                                        <i class="fas fa-edit"></i>
-                                    </button>
-                                    <button type="button" class="btn btn-sm btn-danger delete-btn" 
-                                            data-id="<?php echo (int)$report['id']; ?>" 
-                                            data-area="<?php echo htmlspecialchars($report['area_zone'], ENT_QUOTES, 'UTF-8'); ?>"
-                                            data-date="<?php echo htmlspecialchars($report['collection_date'], ENT_QUOTES, 'UTF-8'); ?>">
-                                        <i class="fas fa-trash"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-
-                <!-- Pagination -->
-                <?php if ($total_pages > 1): ?>
-                <nav aria-label="Reports pagination">
-                    <ul class="pagination justify-content-center">
-                        <li class="page-item <?php echo $page <= 1 ? 'disabled' : ''; ?>">
-                            <a class="page-link" href="?page=<?php echo $page - 1; ?><?php echo buildQueryString(['page']); ?>">Previous</a>
-                        </li>
-                        
-                        <?php for ($i = 1; $i <= $total_pages; $i++): ?>
-                            <?php if ($i == 1 || $i == $total_pages || abs($i - $page) <= 2): ?>
-                                <li class="page-item <?php echo $i == $page ? 'active' : ''; ?>">
-                                    <a class="page-link" href="?page=<?php echo $i; ?><?php echo buildQueryString(['page']); ?>">
-                                        <?php echo $i; ?>
-                                    </a>
-                                </li>
-                            <?php elseif (abs($i - $page) == 3): ?>
-                                <li class="page-item disabled"><span class="page-link">...</span></li>
-                            <?php endif; ?>
-                        <?php endfor; ?>
-                        
-                        <li class="page-item <?php echo $page >= $total_pages ? 'disabled' : ''; ?>">
-                            <a class="page-link" href="?page=<?php echo $page + 1; ?><?php echo buildQueryString(['page']); ?>">Next</a>
-                        </li>
-                    </ul>
-                </nav>
-                <?php endif; ?>
-            <?php endif; ?>
-        </div>
+            </div>
+            <button type="submit" class="db-btn db-btn--primary db-btn--full"><i class="fas fa-save"></i> Update Report</button>
+        </form>
     </div>
 </div>
 
-<!-- Add Report Modal -->
-<div class="modal fade" id="addReportModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title"><i class="fas fa-plus-circle me-2"></i>Add Collection Report</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <form method="POST" action="reports.php">
-                <input type="hidden" name="action" value="add">
-                <div class="modal-body">
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Collection Date *</label>
-                            <input type="date" class="form-control" name="collection_date" value="<?php echo date('Y-m-d'); ?>" required>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Area/Zone *</label>
-                            <input type="text" class="form-control" name="area_zone" placeholder="e.g., Zone A" required>
-                        </div>
-                    </div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Waste Type *</label>
-                            <select class="form-select" name="waste_type" required>
-                                <option value="">Select Type</option>
-                                <option value="biodegradable">Biodegradable</option>
-                                <option value="non-biodegradable">Non-Biodegradable</option>
-                                <option value="recyclable">Recyclable</option>
-                                <option value="hazardous">Hazardous</option>
-                            </select>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Quantity (kg) *</label>
-                            <input type="number" class="form-control" name="quantity_kg" step="0.01" min="0" required>
-                        </div>
-                    </div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Collector Name *</label>
-                            <input type="text" class="form-control" name="collector_name" required>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Status *</label>
-                            <select class="form-select" name="status" required>
-                                <option value="completed">Completed</option>
-                                <option value="partial">Partial</option>
-                                <option value="cancelled">Cancelled</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i>Save Report</button>
-                </div>
-            </form>
+<!-- ═══ VIEW REPORT MODAL ═══ -->
+<div id="viewReportModal" class="db-modal">
+    <div class="db-modal__box db-modal__box--sm">
+        <div class="db-modal__header">
+            <h3><i class="fas fa-file-alt"></i> Report Details</h3>
+            <button class="db-modal__close" onclick="closeModal('viewReportModal')">×</button>
         </div>
+        <div class="db-modal__body" id="viewReportContent"></div>
     </div>
 </div>
 
-<!-- Edit Report Modal -->
-<div class="modal fade" id="editReportModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title"><i class="fas fa-edit me-2"></i>Edit Collection Report</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <form method="POST" action="reports.php">
-                <input type="hidden" name="action" value="edit">
-                <input type="hidden" name="id" id="edit_id">
-                <div class="modal-body">
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Collection Date *</label>
-                            <input type="date" class="form-control" id="edit_collection_date" name="collection_date" required>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Area/Zone *</label>
-                            <input type="text" class="form-control" id="edit_area_zone" name="area_zone" required>
-                        </div>
-                    </div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Waste Type *</label>
-                            <select class="form-select" id="edit_waste_type" name="waste_type" required>
-                                <option value="">Select Type</option>
-                                <option value="biodegradable">Biodegradable</option>
-                                <option value="non-biodegradable">Non-Biodegradable</option>
-                                <option value="recyclable">Recyclable</option>
-                                <option value="hazardous">Hazardous</option>
-                            </select>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Quantity (kg) *</label>
-                            <input type="number" class="form-control" id="edit_quantity_kg" name="quantity_kg" step="0.01" min="0" required>
-                        </div>
-                    </div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Collector Name *</label>
-                            <input type="text" class="form-control" id="edit_collector_name" name="collector_name" required>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Status *</label>
-                            <select class="form-select" id="edit_status" name="status" required>
-                                <option value="completed">Completed</option>
-                                <option value="partial">Partial</option>
-                                <option value="cancelled">Cancelled</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i>Update Report</button>
-                </div>
-            </form>
+<!-- ═══ DELETE CONFIRM MODAL ═══ -->
+<div id="deleteReportModal" class="db-modal">
+    <div class="db-modal__box db-modal__box--sm">
+        <div class="db-modal__header db-modal__header--danger">
+            <h3><i class="fas fa-trash"></i> Confirm Deletion</h3>
+            <button class="db-modal__close" onclick="closeModal('deleteReportModal')">×</button>
         </div>
-    </div>
-</div>
-
-<!-- View Report Modal -->
-<div class="modal fade" id="viewReportModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title"><i class="fas fa-file-alt me-2"></i>Collection Report Details</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body" id="viewReportContent"></div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Delete Confirmation Modal -->
-<div class="modal fade" id="deleteModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header bg-danger text-white">
-                <h5 class="modal-title"><i class="fas fa-exclamation-triangle me-2"></i>Confirm Deletion</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
+        <div class="db-modal__body">
+            <p>Are you sure you want to delete this collection report?</p>
+            <div class="db-delete-target" id="delete_report_label"></div>
+            <p class="db-delete-warn"><i class="fas fa-info-circle"></i> This action cannot be undone.</p>
             <form method="POST" action="reports.php">
                 <input type="hidden" name="action" value="delete">
-                <input type="hidden" name="id" id="delete_id">
-                <div class="modal-body">
-                    <p>Are you sure you want to delete this collection report?</p>
-                    <p class="text-muted mb-1"><strong>Report ID:</strong> <span id="delete_report_id"></span></p>
-                    <p class="text-muted mb-1"><strong>Area:</strong> <span id="delete_area"></span></p>
-                    <p class="text-muted mb-3"><strong>Date:</strong> <span id="delete_date"></span></p>
-                    <div class="alert alert-warning">
-                        <i class="fas fa-exclamation-circle me-2"></i>This action cannot be undone.
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-danger"><i class="fas fa-trash me-1"></i>Delete Report</button>
+                <input type="hidden" name="id" id="delete_report_id">
+                <div style="display:flex;gap:.75rem;margin-top:1.5rem;">
+                    <button type="button" class="db-btn db-btn--ghost db-btn--full" onclick="closeModal('deleteReportModal')">Cancel</button>
+                    <button type="submit" class="db-btn db-btn--danger db-btn--full"><i class="fas fa-trash"></i> Delete</button>
                 </div>
             </form>
         </div>
     </div>
 </div>
 
-<style>
-.border-left-primary { border-left: 4px solid #4e73df !important; }
-.border-left-success { border-left: 4px solid #1cc88a !important; }
-.border-left-info { border-left: 4px solid #36b9cc !important; }
-.border-left-warning { border-left: 4px solid #f6c23e !important; }
-</style>
-
 <script>
-function escapeHtml(text) {
-    if (!text) return '';
-    const map = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'};
-    return String(text).replace(/[&<>"']/g, m => map[m]);
+function openModal(id)  { document.getElementById(id).classList.add('db-modal--open');    document.body.style.overflow='hidden'; }
+function closeModal(id) { document.getElementById(id).classList.remove('db-modal--open'); document.body.style.overflow=''; }
+window.addEventListener('click', e => { if (e.target.classList.contains('db-modal')) closeModal(e.target.id); });
+document.addEventListener('keydown', e => { if (e.key==='Escape') document.querySelectorAll('.db-modal--open').forEach(m=>closeModal(m.id)); });
+
+const typeBadgeClasses  = {biodegradable:'db-badge--success','non-biodegradable':'db-badge--danger',recyclable:'db-badge--info',hazardous:'db-badge--warning'};
+const statusBadgeClasses= {completed:'db-badge--success',partial:'db-badge--warning',cancelled:'db-badge--muted'};
+
+function editReport(r) {
+    document.getElementById('edit_id').value        = r.id;
+    document.getElementById('edit_date').value      = r.collection_date;
+    document.getElementById('edit_area').value      = r.area_zone;
+    document.getElementById('edit_waste_type').value= r.waste_type;
+    document.getElementById('edit_qty').value       = r.quantity_kg;
+    document.getElementById('edit_collector').value = r.collector_name || '';
+    document.getElementById('edit_status').value    = r.status;
+    openModal('editReportModal');
 }
 
-function capitalizeFirst(str) {
-    if (!str) return '';
-    return str.charAt(0).toUpperCase() + str.slice(1);
+function viewReport(r) {
+    const tb = typeBadgeClasses[r.waste_type]   || 'db-badge--muted';
+    const sb = statusBadgeClasses[r.status]     || 'db-badge--muted';
+    document.getElementById('viewReportContent').innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div><div style="font-size:10.5px;color:var(--db-muted);font-weight:600;text-transform:uppercase;margin-bottom:3px;">Report ID</div><span class="db-id">#${r.id}</span></div>
+            <div><div style="font-size:10.5px;color:var(--db-muted);font-weight:600;text-transform:uppercase;margin-bottom:3px;">Date</div>${new Date(r.collection_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
+            <div><div style="font-size:10.5px;color:var(--db-muted);font-weight:600;text-transform:uppercase;margin-bottom:3px;">Area / Zone</div><strong>${r.area_zone}</strong></div>
+            <div><div style="font-size:10.5px;color:var(--db-muted);font-weight:600;text-transform:uppercase;margin-bottom:3px;">Collector</div>${r.collector_name||'—'}</div>
+            <div><div style="font-size:10.5px;color:var(--db-muted);font-weight:600;text-transform:uppercase;margin-bottom:3px;">Waste Type</div><span class="db-badge ${tb}">${r.waste_type.charAt(0).toUpperCase()+r.waste_type.slice(1)}</span></div>
+            <div><div style="font-size:10.5px;color:var(--db-muted);font-weight:600;text-transform:uppercase;margin-bottom:3px;">Quantity</div><span style="font-family:'DM Mono',monospace;font-size:14px;font-weight:700;">${parseFloat(r.quantity_kg).toFixed(2)} kg</span></div>
+            <div><div style="font-size:10.5px;color:var(--db-muted);font-weight:600;text-transform:uppercase;margin-bottom:3px;">Status</div><span class="db-badge ${sb}">${r.status.charAt(0).toUpperCase()+r.status.slice(1)}</span></div>
+        </div>
+        <div style="margin-top:16px;">
+            <button class="db-btn db-btn--ghost db-btn--sm" onclick="closeModal('viewReportModal')">Close</button>
+        </div>
+    `;
+    openModal('viewReportModal');
 }
 
-function formatDate(dateString) {
-    if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleDateString('en-US', {year: 'numeric', month: 'short', day: 'numeric'});
+function openDeleteModal(id, area, date) {
+    document.getElementById('delete_report_id').value    = id;
+    document.getElementById('delete_report_label').textContent = `Report #${id} — ${area} (${date})`;
+    openModal('deleteReportModal');
 }
 
-function formatDateTime(dateString) {
-    if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleDateString('en-US', {
-        year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-    });
-}
-
-function editReport(report) {
-    console.log('Edit report:', report); // Debug
-    document.getElementById('edit_id').value = report.id;
-    document.getElementById('edit_collection_date').value = report.collection_date;
-    document.getElementById('edit_area_zone').value = report.area_zone;
-    document.getElementById('edit_waste_type').value = report.waste_type;
-    document.getElementById('edit_quantity_kg').value = report.quantity_kg;
-    document.getElementById('edit_collector_name').value = report.collector_name || '';
-    document.getElementById('edit_status').value = report.status;
-    new bootstrap.Modal(document.getElementById('editReportModal')).show();
-}
-
-function viewReport(report) {
-    console.log('View report:', report); // Debug
-    const typeBadges = {'biodegradable': 'success', 'non-biodegradable': 'danger', 'recyclable': 'info', 'hazardous': 'warning'};
-    const statusBadges = {'completed': 'success', 'partial': 'warning', 'cancelled': 'danger'};
-    
-    const content = `
-        <div class="row">
-            <div class="col-md-6">
-                <table class="table table-borderless">
-                    <tr><th width="40%">Report ID:</th><td>${report.id}</td></tr>
-                    <tr><th>Collection Date:</th><td>${formatDate(report.collection_date)}</td></tr>
-                    <tr><th>Area/Zone:</th><td>${escapeHtml(report.area_zone)}</td></tr>
-                    <tr><th>Waste Type:</th><td><span class="badge bg-${typeBadges[report.waste_type] || 'secondary'}">${capitalizeFirst(report.waste_type)}</span></td></tr>
-                    <tr><th>Quantity:</th><td><strong>${parseFloat(report.quantity_kg || 0).toFixed(2)} kg</strong></td></tr>
-                </table>
-            </div>
-            <div class="col-md-6">
-                <table class="table table-borderless">
-                    <tr><th width="40%">Collector:</th><td>${escapeHtml(report.collector_name || 'N/A')}</td></tr>
-                    <tr><th>Status:</th><td><span class="badge bg-${statusBadges[report.status] || 'secondary'}">${capitalizeFirst(report.status)}</span></td></tr>
-                    <tr><th>Recorded:</th><td>${formatDateTime(report.created_at)}</td></tr>
-                    ${report.remarks ? `<tr><th>Remarks:</th><td>${escapeHtml(report.remarks)}</td></tr>` : ''}
-                </table>
-            </div>
-        </div>`;
-    
-    document.getElementById('viewReportContent').innerHTML = content;
-    new bootstrap.Modal(document.getElementById('viewReportModal')).show();
-}
-
-function exportToCSV() {
+function exportCSV() {
     const table = document.getElementById('reportsTable');
+    if (!table) return;
     let csv = [];
-    
-    // Headers
     const headers = [];
-    table.querySelectorAll('thead th').forEach((th, index) => {
-        if (index < table.querySelectorAll('thead th').length - 1) {
-            headers.push(th.textContent.trim());
-        }
-    });
+    table.querySelectorAll('thead th').forEach((th,i,arr) => { if(i<arr.length-1) headers.push(th.textContent.trim()); });
     csv.push(headers.join(','));
-    
-    // Data rows
     table.querySelectorAll('tbody tr').forEach(row => {
-        const rowData = [];
-        row.querySelectorAll('td').forEach((td, index) => {
-            if (index < row.querySelectorAll('td').length - 1) {
-                let text = td.textContent.trim().replace(/"/g, '""');
-                if (text.includes(',') || text.includes('"') || text.includes('\n')) {
-                    text = '"' + text + '"';
-                }
-                rowData.push(text);
+        const cells = []; let i=0;
+        row.querySelectorAll('td').forEach((td,idx,arr) => {
+            if (idx < arr.length-1) {
+                let t = td.textContent.trim().replace(/"/g,'""');
+                if (t.includes(',') || t.includes('"') || t.includes('\n')) t='"'+t+'"';
+                cells.push(t);
             }
         });
-        csv.push(rowData.join(','));
+        csv.push(cells.join(','));
     });
-    
-    // Download
-    const blob = new Blob([csv.join('\n')], {type: 'text/csv;charset=utf-8;'});
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = 'waste_collection_reports_' + new Date().toISOString().split('T')[0] + '.csv';
-    link.click();
+    const blob = new Blob([csv.join('\n')],{type:'text/csv;charset=utf-8;'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'waste_reports_' + new Date().toISOString().split('T')[0] + '.csv';
+    a.click();
 }
 
-// Event delegation for delete buttons
-document.addEventListener('DOMContentLoaded', function() {
-    document.body.addEventListener('click', function(e) {
-        if (e.target.closest('.delete-btn')) {
-            const btn = e.target.closest('.delete-btn');
-            const id = btn.getAttribute('data-id');
-            const area = btn.getAttribute('data-area');
-            const date = btn.getAttribute('data-date');
-            
-            console.log('Delete button clicked - ID:', id, 'Area:', area, 'Date:', date); // Debug
-            
-            if (!id || id === 'null' || id === 'undefined' || id === '0') {
-                alert('Error: Invalid report ID. Please refresh the page and try again.');
-                return;
-            }
-            
-            document.getElementById('delete_id').value = id;
-            document.getElementById('delete_report_id').textContent = id;
-            document.getElementById('delete_area').textContent = area || 'N/A';
-            document.getElementById('delete_date').textContent = date || 'N/A';
-            new bootstrap.Modal(document.getElementById('deleteModal')).show();
-        }
+setTimeout(() => {
+    document.querySelectorAll('.db-alert').forEach(a => {
+        a.style.opacity='0'; a.style.transform='translateY(-8px)';
+        setTimeout(()=>a.remove(),400);
     });
-});
+}, 5000);
 </script>
 
-<?php require_once '../../../includes/footer.php'; ?>   
+<?php require_once '../../../includes/footer.php'; ?>

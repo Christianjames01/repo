@@ -5,7 +5,6 @@ requireLogin();
 $user_role = getCurrentUserRole();
 $resident_id = null;
 
-// Get resident ID
 if ($user_role === 'Resident') {
     $user_id = getCurrentUserId();
     $user_sql = "SELECT resident_id FROM tbl_users WHERE user_id = ?";
@@ -15,36 +14,34 @@ if ($user_role === 'Resident') {
 
 $page_title = 'Apply for Scholarship';
 
-// Get resident info
 $resident_info = null;
 if ($resident_id) {
     $resident_sql = "SELECT * FROM tbl_residents WHERE resident_id = ?";
     $resident_info = fetchOne($conn, $resident_sql, [$resident_id], 'i');
 }
 
-// Get available scholarships
 $scholarships_sql = "SELECT * FROM tbl_education_scholarships 
                      WHERE status = 'active' 
                      AND (application_end IS NULL OR application_end >= CURDATE())";
 $scholarships = fetchAll($conn, $scholarships_sql);
 
-// Handle form submission
+$success_message = '';
+$error_message   = '';
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $errors = [];
-    
-    // Validate required fields
-    if (empty($_POST['first_name'])) $errors[] = "First name is required";
-    if (empty($_POST['last_name'])) $errors[] = "Last name is required";
-    if (empty($_POST['birth_date'])) $errors[] = "Birth date is required";
-    if (empty($_POST['gender'])) $errors[] = "Gender is required";
-    if (empty($_POST['contact_number'])) $errors[] = "Contact number is required";
-    if (empty($_POST['address'])) $errors[] = "Address is required";
-    if (empty($_POST['school_name'])) $errors[] = "School name is required";
-    if (empty($_POST['grade_level'])) $errors[] = "Grade level is required";
-    if (empty($_POST['school_year'])) $errors[] = "School year is required";
+    if (empty($_POST['first_name']))           $errors[] = "First name is required";
+    if (empty($_POST['last_name']))            $errors[] = "Last name is required";
+    if (empty($_POST['birth_date']))           $errors[] = "Birth date is required";
+    if (empty($_POST['gender']))               $errors[] = "Gender is required";
+    if (empty($_POST['contact_number']))       $errors[] = "Contact number is required";
+    if (empty($_POST['address']))              $errors[] = "Address is required";
+    if (empty($_POST['school_name']))          $errors[] = "School name is required";
+    if (empty($_POST['grade_level']))          $errors[] = "Grade level is required";
+    if (empty($_POST['school_year']))          $errors[] = "School year is required";
     if (empty($_POST['parent_guardian_name'])) $errors[] = "Parent/Guardian name is required";
-    if (empty($_POST['parent_contact'])) $errors[] = "Parent/Guardian contact is required";
-    
+    if (empty($_POST['parent_contact']))       $errors[] = "Parent/Guardian contact is required";
+
     if (empty($errors)) {
         $sql = "INSERT INTO tbl_education_students (
             resident_id, first_name, last_name, middle_name, birth_date, gender,
@@ -53,264 +50,276 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             parent_occupation, monthly_income, scholarship_type, scholarship_status,
             application_date
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW())";
-        
+
         $params = [
             $resident_id,
-            $_POST['first_name'],
-            $_POST['last_name'],
-            $_POST['middle_name'] ?? null,
-            $_POST['birth_date'],
-            $_POST['gender'],
-            $_POST['contact_number'],
-            $_POST['email'] ?? null,
-            $_POST['address'],
-            $_POST['school_name'],
-            $_POST['school_address'] ?? null,
-            $_POST['grade_level'],
-            $_POST['course'] ?? null,
-            $_POST['school_year'],
-            $_POST['gwa_grade'] ?? null,
-            $_POST['parent_guardian_name'],
-            $_POST['parent_contact'],
-            $_POST['parent_occupation'] ?? null,
-            $_POST['monthly_income'] ?? null,
+            $_POST['first_name'], $_POST['last_name'], $_POST['middle_name'] ?? null,
+            $_POST['birth_date'], $_POST['gender'], $_POST['contact_number'],
+            $_POST['email'] ?? null, $_POST['address'], $_POST['school_name'],
+            $_POST['school_address'] ?? null, $_POST['grade_level'],
+            $_POST['course'] ?? null, $_POST['school_year'], $_POST['gwa_grade'] ?? null,
+            $_POST['parent_guardian_name'], $_POST['parent_contact'],
+            $_POST['parent_occupation'] ?? null, $_POST['monthly_income'] ?? null,
             $_POST['scholarship_type'] ?? null
         ];
-        
-        $types = "isssssssssssssdsssds";
-        
-        if (executeQuery($conn, $sql, $params, $types)) {
-            setMessage('Scholarship application submitted successfully! Please wait for admin approval.', 'success');
+
+        if (executeQuery($conn, $sql, $params, "isssssssssssssdsssds")) {
+            $_SESSION['temp_success'] = 'Scholarship application submitted successfully! Please wait for admin approval.';
             header('Location: student-portal.php');
             exit();
         } else {
-            $errors[] = "Failed to submit application. Please try again.";
+            $error_message = "Failed to submit application. Please try again.";
         }
-    }
-    
-    if (!empty($errors)) {
-        foreach ($errors as $error) {
-            setMessage($error, 'error');
-        }
+    } else {
+        $error_message = implode('<br>', $errors);
     }
 }
 
+if (isset($_SESSION['temp_success'])) { $success_message = $_SESSION['temp_success']; unset($_SESSION['temp_success']); }
+if (isset($_SESSION['temp_error']))   { $error_message   = $_SESSION['temp_error'];   unset($_SESSION['temp_error']); }
+
+$extra_css = '<link rel="stylesheet" href="../../../assets/css/dashboard-index.css?v=' . time() . '">';
 include '../../../includes/header.php';
 ?>
 
-<style>
-.form-section {
-    background: #f8f9fa;
-    padding: 1.5rem;
-    border-radius: 10px;
-    margin-bottom: 1.5rem;
-}
-.section-title {
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: #495057;
-    margin-bottom: 1rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 2px solid #007bff;
-}
-.required-field::after {
-    content: " *";
-    color: red;
-}
-</style>
-
-<div class="container-fluid py-4">
-    <div class="row justify-content-center">
-        <div class="col-md-10">
-            <!-- Header -->
-            <div class="card border-0 shadow-sm mb-4">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h3 class="mb-1">
-                                <i class="fas fa-graduation-cap me-2 text-primary"></i>Scholarship Application Form
-                            </h3>
-                            <p class="text-muted mb-0">Complete all required fields marked with *</p>
-                        </div>
-                        <a href="student-portal.php" class="btn btn-outline-secondary">
-                            <i class="fas fa-arrow-left me-1"></i>Back
-                        </a>
-                    </div>
-                </div>
+<!-- HERO -->
+<div class="db-hero">
+    <div class="db-hero__ring db-hero__ring--1"></div>
+    <div class="db-hero__ring db-hero__ring--2"></div>
+    <div class="db-hero__ring db-hero__ring--3"></div>
+    <div class="db-hero__inner">
+        <div class="db-hero__left">
+            <div class="db-hero__avatar" style="background: linear-gradient(135deg, #6366f1, #4f46e5);">
+                <i class="fas fa-graduation-cap" style="font-size:22px;"></i>
             </div>
-
-            <?php echo displayMessage(); ?>
-
-            <!-- Application Form -->
-            <form method="POST" enctype="multipart/form-data">
-                <div class="card border-0 shadow-sm">
-                    <div class="card-body p-4">
-                        
-                        <!-- Personal Information -->
-                        <div class="form-section">
-                            <h5 class="section-title">
-                                <i class="fas fa-user me-2"></i>Personal Information
-                            </h5>
-                            <div class="row">
-                                <div class="col-md-4 mb-3">
-                                    <label class="form-label required-field">First Name</label>
-                                    <input type="text" name="first_name" class="form-control" 
-                                           value="<?php echo $resident_info['first_name'] ?? ''; ?>" required>
-                                </div>
-                                <div class="col-md-4 mb-3">
-                                    <label class="form-label">Middle Name</label>
-                                    <input type="text" name="middle_name" class="form-control"
-                                           value="<?php echo $resident_info['middle_name'] ?? ''; ?>">
-                                </div>
-                                <div class="col-md-4 mb-3">
-                                    <label class="form-label required-field">Last Name</label>
-                                    <input type="text" name="last_name" class="form-control"
-                                           value="<?php echo $resident_info['last_name'] ?? ''; ?>" required>
-                                </div>
-                                <div class="col-md-4 mb-3">
-                                    <label class="form-label required-field">Birth Date</label>
-                                    <input type="date" name="birth_date" class="form-control"
-                                           value="<?php echo $resident_info['birth_date'] ?? ''; ?>" required>
-                                </div>
-                                <div class="col-md-4 mb-3">
-                                    <label class="form-label required-field">Gender</label>
-                                    <select name="gender" class="form-select" required>
-                                        <option value="">Select Gender</option>
-                                        <option value="Male" <?php echo ($resident_info['gender'] ?? '') == 'Male' ? 'selected' : ''; ?>>Male</option>
-                                        <option value="Female" <?php echo ($resident_info['gender'] ?? '') == 'Female' ? 'selected' : ''; ?>>Female</option>
-                                    </select>
-                                </div>
-                                <div class="col-md-4 mb-3">
-                                    <label class="form-label required-field">Contact Number</label>
-                                    <input type="tel" name="contact_number" class="form-control"
-                                           value="<?php echo $resident_info['contact_number'] ?? ''; ?>" required>
-                                </div>
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label">Email Address</label>
-                                    <input type="email" name="email" class="form-control"
-                                           value="<?php echo $resident_info['email'] ?? ''; ?>">
-                                </div>
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label required-field">Complete Address</label>
-                                    <textarea name="address" class="form-control" rows="2" required><?php echo $resident_info['address'] ?? ''; ?></textarea>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Educational Information -->
-                        <div class="form-section">
-                            <h5 class="section-title">
-                                <i class="fas fa-school me-2"></i>Educational Information
-                            </h5>
-                            <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label required-field">School Name</label>
-                                    <input type="text" name="school_name" class="form-control" required>
-                                </div>
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label">School Address</label>
-                                    <input type="text" name="school_address" class="form-control">
-                                </div>
-                                <div class="col-md-4 mb-3">
-                                    <label class="form-label required-field">Grade Level / Year</label>
-                                    <select name="grade_level" class="form-select" required>
-                                        <option value="">Select Level</option>
-                                        <option value="Grade 7">Grade 7</option>
-                                        <option value="Grade 8">Grade 8</option>
-                                        <option value="Grade 9">Grade 9</option>
-                                        <option value="Grade 10">Grade 10</option>
-                                        <option value="Grade 11">Grade 11</option>
-                                        <option value="Grade 12">Grade 12</option>
-                                        <option value="1st Year College">1st Year College</option>
-                                        <option value="2nd Year College">2nd Year College</option>
-                                        <option value="3rd Year College">3rd Year College</option>
-                                        <option value="4th Year College">4th Year College</option>
-                                        <option value="5th Year College">5th Year College</option>
-                                    </select>
-                                </div>
-                                <div class="col-md-4 mb-3">
-                                    <label class="form-label">Course (For College)</label>
-                                    <input type="text" name="course" class="form-control">
-                                </div>
-                                <div class="col-md-4 mb-3">
-                                    <label class="form-label required-field">School Year</label>
-                                    <input type="text" name="school_year" class="form-control" 
-                                           placeholder="e.g., 2024-2025" required>
-                                </div>
-                                <div class="col-md-12 mb-3">
-                                    <label class="form-label">General Weighted Average (GWA)</label>
-                                    <input type="number" step="0.01" name="gwa_grade" class="form-control"
-                                           placeholder="e.g., 90.50">
-                                    <small class="text-muted">Enter your latest GWA or general average</small>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Parent/Guardian Information -->
-                        <div class="form-section">
-                            <h5 class="section-title">
-                                <i class="fas fa-users me-2"></i>Parent/Guardian Information
-                            </h5>
-                            <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label required-field">Parent/Guardian Name</label>
-                                    <input type="text" name="parent_guardian_name" class="form-control" required>
-                                </div>
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label required-field">Parent/Guardian Contact</label>
-                                    <input type="tel" name="parent_contact" class="form-control" required>
-                                </div>
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label">Occupation</label>
-                                    <input type="text" name="parent_occupation" class="form-control">
-                                </div>
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label">Monthly Family Income</label>
-                                    <input type="number" step="0.01" name="monthly_income" class="form-control"
-                                           placeholder="0.00">
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Scholarship Selection -->
-                        <div class="form-section">
-                            <h5 class="section-title">
-                                <i class="fas fa-award me-2"></i>Scholarship Selection
-                            </h5>
-                            <div class="row">
-                                <div class="col-md-12 mb-3">
-                                    <label class="form-label">Select Scholarship Program (Optional)</label>
-                                    <select name="scholarship_type" class="form-select">
-                                        <option value="">General Application</option>
-                                        <?php foreach ($scholarships as $scholarship): ?>
-                                            <option value="<?php echo htmlspecialchars($scholarship['scholarship_name']); ?>">
-                                                <?php echo htmlspecialchars($scholarship['scholarship_name']); ?>
-                                                - ₱<?php echo number_format($scholarship['amount'], 2); ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                    <small class="text-muted">Leave blank for general scholarship application</small>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Submit Buttons -->
-                        <div class="text-center pt-3">
-                            <button type="submit" class="btn btn-primary btn-lg px-5">
-                                <i class="fas fa-paper-plane me-2"></i>Submit Application
-                            </button>
-                            <a href="student-portal.php" class="btn btn-outline-secondary btn-lg px-5 ms-2">
-                                <i class="fas fa-times me-2"></i>Cancel
-                            </a>
-                        </div>
-                    </div>
+            <div class="db-hero__text">
+                <div class="db-hero__role-badge badge-resident">
+                    <span class="db-hero__role-dot"></span>
+                    Education Module
                 </div>
-            </form>
+                <h1 class="db-hero__title">Scholarship Application Form</h1>
+                <p class="db-hero__sub">Complete all required fields to submit your application</p>
+            </div>
+        </div>
+        <div class="db-hero__right">
+            <a href="student-portal.php" class="db-btn db-btn--ghost db-btn--sm"
+               style="color:#fff;border-color:rgba(255,255,255,.25);background:rgba(255,255,255,.08);">
+                <i class="fas fa-arrow-left"></i> Back to Portal
+            </a>
         </div>
     </div>
 </div>
 
-<?php
-$conn->close();
-include '../../../includes/footer.php';
-?>
+<?php if ($success_message): ?>
+<div class="db-alert db-alert--success">
+    <div class="db-alert__icon"><i class="fas fa-check-circle"></i></div>
+    <span><?php echo $success_message; ?></span>
+    <button class="db-alert__close" onclick="this.parentElement.remove()">×</button>
+</div>
+<?php endif; ?>
+<?php if ($error_message): ?>
+<div class="db-alert db-alert--error">
+    <div class="db-alert__icon"><i class="fas fa-exclamation-circle"></i></div>
+    <span><?php echo $error_message; ?></span>
+    <button class="db-alert__close" onclick="this.parentElement.remove()">×</button>
+</div>
+<?php endif; ?>
+
+
+<form method="POST" enctype="multipart/form-data">
+
+<!-- ── Personal Information ── -->
+<div class="db-panel">
+    <div class="db-panel__header">
+        <div class="db-panel__title">
+            <span class="db-panel__icon db-panel__icon--indigo"><i class="fas fa-user"></i></span>
+            <h2>Personal Information</h2>
+        </div>
+        <span class="db-badge db-badge--muted"><i class="fas fa-asterisk" style="font-size:8px;"></i> Required fields</span>
+    </div>
+    <div style="padding:22px;">
+        <div class="db-field-row" style="grid-template-columns:1fr 1fr 1fr;">
+            <div class="db-field">
+                <label>First Name <span class="req">*</span></label>
+                <input type="text" name="first_name" class="db-input"
+                       value="<?php echo htmlspecialchars($resident_info['first_name'] ?? ''); ?>" required>
+            </div>
+            <div class="db-field">
+                <label>Middle Name</label>
+                <input type="text" name="middle_name" class="db-input"
+                       value="<?php echo htmlspecialchars($resident_info['middle_name'] ?? ''); ?>">
+            </div>
+            <div class="db-field">
+                <label>Last Name <span class="req">*</span></label>
+                <input type="text" name="last_name" class="db-input"
+                       value="<?php echo htmlspecialchars($resident_info['last_name'] ?? ''); ?>" required>
+            </div>
+        </div>
+        <div class="db-field-row">
+            <div class="db-field">
+                <label>Birth Date <span class="req">*</span></label>
+                <input type="date" name="birth_date" class="db-input"
+                       value="<?php echo htmlspecialchars($resident_info['birth_date'] ?? ''); ?>" required>
+            </div>
+            <div class="db-field">
+                <label>Gender <span class="req">*</span></label>
+                <select name="gender" class="db-input" required>
+                    <option value="">Select Gender</option>
+                    <option value="Male"   <?php echo ($resident_info['gender'] ?? '') === 'Male'   ? 'selected' : ''; ?>>Male</option>
+                    <option value="Female" <?php echo ($resident_info['gender'] ?? '') === 'Female' ? 'selected' : ''; ?>>Female</option>
+                </select>
+            </div>
+        </div>
+        <div class="db-field-row">
+            <div class="db-field">
+                <label>Contact Number <span class="req">*</span></label>
+                <input type="tel" name="contact_number" class="db-input"
+                       value="<?php echo htmlspecialchars($resident_info['contact_number'] ?? ''); ?>" required>
+            </div>
+            <div class="db-field">
+                <label>Email Address</label>
+                <input type="email" name="email" class="db-input"
+                       value="<?php echo htmlspecialchars($resident_info['email'] ?? ''); ?>">
+            </div>
+        </div>
+        <div class="db-field">
+            <label>Complete Address <span class="req">*</span></label>
+            <textarea name="address" class="db-input" rows="2" required><?php echo htmlspecialchars($resident_info['address'] ?? ''); ?></textarea>
+        </div>
+    </div>
+</div>
+
+
+<!-- ── Educational Information ── -->
+<div class="db-panel">
+    <div class="db-panel__header">
+        <div class="db-panel__title">
+            <span class="db-panel__icon db-panel__icon--blue"><i class="fas fa-school"></i></span>
+            <h2>Educational Information</h2>
+        </div>
+    </div>
+    <div style="padding:22px;">
+        <div class="db-field-row">
+            <div class="db-field">
+                <label>School Name <span class="req">*</span></label>
+                <input type="text" name="school_name" class="db-input" required>
+            </div>
+            <div class="db-field">
+                <label>School Address</label>
+                <input type="text" name="school_address" class="db-input">
+            </div>
+        </div>
+        <div class="db-field-row" style="grid-template-columns:1fr 1fr 1fr;">
+            <div class="db-field">
+                <label>Grade Level / Year <span class="req">*</span></label>
+                <select name="grade_level" class="db-input" required>
+                    <option value="">Select Level</option>
+                    <?php
+                    $levels = ['Grade 7','Grade 8','Grade 9','Grade 10','Grade 11','Grade 12',
+                               '1st Year College','2nd Year College','3rd Year College','4th Year College','5th Year College'];
+                    foreach ($levels as $l) echo "<option value=\"$l\">$l</option>";
+                    ?>
+                </select>
+            </div>
+            <div class="db-field">
+                <label>Course <span style="color:var(--db-muted);font-weight:400;">(College)</span></label>
+                <input type="text" name="course" class="db-input" placeholder="e.g. BSCS">
+            </div>
+            <div class="db-field">
+                <label>School Year <span class="req">*</span></label>
+                <input type="text" name="school_year" class="db-input" placeholder="e.g. 2024-2025" required>
+            </div>
+        </div>
+        <div class="db-field" style="max-width:240px;">
+            <label>General Weighted Average (GWA)</label>
+            <input type="number" step="0.01" name="gwa_grade" class="db-input" placeholder="e.g. 90.50">
+            <small style="color:var(--db-muted);font-size:11.5px;">Enter your latest GWA or general average</small>
+        </div>
+    </div>
+</div>
+
+
+<!-- ── Parent / Guardian Information ── -->
+<div class="db-panel">
+    <div class="db-panel__header">
+        <div class="db-panel__title">
+            <span class="db-panel__icon db-panel__icon--teal"><i class="fas fa-users"></i></span>
+            <h2>Parent / Guardian Information</h2>
+        </div>
+    </div>
+    <div style="padding:22px;">
+        <div class="db-field-row">
+            <div class="db-field">
+                <label>Parent/Guardian Name <span class="req">*</span></label>
+                <input type="text" name="parent_guardian_name" class="db-input" required>
+            </div>
+            <div class="db-field">
+                <label>Contact Number <span class="req">*</span></label>
+                <input type="tel" name="parent_contact" class="db-input" required>
+            </div>
+        </div>
+        <div class="db-field-row">
+            <div class="db-field">
+                <label>Occupation</label>
+                <input type="text" name="parent_occupation" class="db-input">
+            </div>
+            <div class="db-field">
+                <label>Monthly Family Income</label>
+                <div style="display:flex;align-items:center;">
+                    <span style="padding:9px 13px;background:var(--db-surf2);border:1.5px solid var(--db-border);border-right:none;border-radius:var(--db-radius-sm) 0 0 var(--db-radius-sm);font-weight:700;color:var(--db-teal);font-size:14px;">₱</span>
+                    <input type="number" step="0.01" name="monthly_income" class="db-input" placeholder="0.00"
+                           style="border-radius:0 var(--db-radius-sm) var(--db-radius-sm) 0;">
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- ── Scholarship Selection ── -->
+<div class="db-panel">
+    <div class="db-panel__header">
+        <div class="db-panel__title">
+            <span class="db-panel__icon db-panel__icon--amber"><i class="fas fa-award"></i></span>
+            <h2>Scholarship Selection</h2>
+        </div>
+    </div>
+    <div style="padding:22px;">
+        <div class="db-field" style="max-width:480px;">
+            <label>Select Scholarship Program <span style="color:var(--db-muted);font-weight:400;">(Optional)</span></label>
+            <select name="scholarship_type" class="db-input">
+                <option value="">— General Application —</option>
+                <?php foreach ($scholarships as $s): ?>
+                <option value="<?php echo htmlspecialchars($s['scholarship_name']); ?>">
+                    <?php echo htmlspecialchars($s['scholarship_name']); ?> — ₱<?php echo number_format($s['amount'], 2); ?>
+                </option>
+                <?php endforeach; ?>
+            </select>
+            <small style="color:var(--db-muted);font-size:11.5px;">Leave blank for a general scholarship application</small>
+        </div>
+    </div>
+</div>
+
+
+<!-- Submit -->
+<div style="display:flex;gap:10px;margin-bottom:24px;">
+    <button type="submit" class="db-btn db-btn--primary" style="font-size:14px;padding:10px 28px;">
+        <i class="fas fa-paper-plane"></i> Submit Application
+    </button>
+    <a href="student-portal.php" class="db-btn db-btn--ghost" style="font-size:14px;padding:10px 24px;">
+        <i class="fas fa-times"></i> Cancel
+    </a>
+</div>
+
+</form>
+
+<script>
+setTimeout(() => {
+    document.querySelectorAll('.db-alert').forEach(a => {
+        a.style.opacity = '0'; a.style.transform = 'translateY(-8px)';
+        setTimeout(() => a.remove(), 400);
+    });
+}, 5000);
+</script>
+
+<?php $conn->close(); include '../../../includes/footer.php'; ?>

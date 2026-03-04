@@ -1,678 +1,377 @@
 <?php
-// Path: modules/waste_management/admin/reports-issues.php
 require_once('../../../config/config.php');
-
-// Check if user is logged in and has appropriate role
 requireLogin();
 requireRole(['Super Admin', 'Admin', 'Staff']);
 
 $page_title = 'Waste Issues & Reports';
 
-// Handle status updates
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
-    if ($_POST['action'] === 'update_status') {
-        $issue_id = $_POST['issue_id'];
-        $status = $_POST['status'];
-        
-        // Removed admin_remarks from the update - column doesn't exist in database
-        $stmt = $conn->prepare("UPDATE tbl_waste_issues SET status = ?, updated_at = NOW() WHERE issue_id = ?");
-        $stmt->bind_param("si", $status, $issue_id);
-        
-        if ($stmt->execute()) {
-            $_SESSION['success'] = "Issue status updated successfully!";
-        } else {
-            $_SESSION['error'] = "Failed to update issue status.";
-        }
-        header('Location: reports-issues.php');
-        exit;
-    }
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_status') {
+    $issue_id = (int)$_POST['issue_id'];
+    $status   = $_POST['status'];
+    $stmt = $conn->prepare("UPDATE tbl_waste_issues SET status=?, updated_at=NOW() WHERE issue_id=?");
+    $stmt->bind_param("si", $status, $issue_id);
+    $_SESSION['temp_success'] = $stmt->execute() ? "Issue status updated successfully!" : "Failed to update status.";
+    header('Location: reports-issues.php'); exit;
 }
 
-// Pagination settings
-$records_per_page = 15;
-$current_page = isset($_GET['page']) && is_numeric($_GET['page']) ? (int)$_GET['page'] : 1;
-$offset = ($current_page - 1) * $records_per_page;
+$success_message = $error_message = '';
+if (isset($_SESSION['temp_success'])) { $success_message = $_SESSION['temp_success']; unset($_SESSION['temp_success']); }
 
-// Filter settings
-$status_filter = isset($_GET['status']) ? $_GET['status'] : '';
-$urgency_filter = isset($_GET['urgency']) ? $_GET['urgency'] : '';
+// Pagination & filters
+$per_page      = 15;
+$current_page  = max(1, (int)($_GET['page'] ?? 1));
+$offset        = ($current_page - 1) * $per_page;
+$status_filter = $_GET['status'] ?? '';
+$urgency_filter = $_GET['urgency'] ?? '';
 
-// Build WHERE clause for filters
-$where_conditions = [];
-$filter_params = [];
-$filter_types = '';
+$where = []; $params = []; $types = '';
+if ($status_filter)  { $where[] = "status=?";  $params[] = $status_filter;  $types .= 's'; }
+if ($urgency_filter) { $where[] = "urgency=?"; $params[] = $urgency_filter; $types .= 's'; }
+$where_sql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
-if (!empty($status_filter)) {
-    $where_conditions[] = "status = ?";
-    $filter_params[] = $status_filter;
-    $filter_types .= 's';
-}
+// Total count
+$count_sql = "SELECT COUNT(*) as total FROM tbl_waste_issues $where_sql";
+if ($params) { $cs=$conn->prepare($count_sql); $cs->bind_param($types,...$params); $cs->execute(); $cr=$cs->get_result()->fetch_assoc(); }
+else { $cr = $conn->query($count_sql)->fetch_assoc(); }
+$total_records = $cr['total'];
+$total_pages   = ceil($total_records / $per_page);
 
-if (!empty($urgency_filter)) {
-    $where_conditions[] = "urgency = ?";
-    $filter_params[] = $urgency_filter;
-    $filter_types .= 's';
-}
+// Issues
+$issues_sql = "SELECT * FROM tbl_waste_issues $where_sql ORDER BY CASE WHEN status='pending' THEN 1 WHEN status='in progress' THEN 2 WHEN status='acknowledged' THEN 3 WHEN status='resolved' THEN 4 ELSE 5 END, CASE urgency WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 END, created_at DESC LIMIT ? OFFSET ?";
+$ip = array_merge($params, [$per_page, $offset]); $it = $types . 'ii';
+$is=$conn->prepare($issues_sql); $is->bind_param($it,...$ip); $is->execute();
+$issues_result = $is->get_result();
 
-$where_clause = !empty($where_conditions) ? 'WHERE ' . implode(' AND ', $where_conditions) : '';
+// Stats
+$stats = $conn->query("SELECT COUNT(*) as total, SUM(status='pending') as pending, SUM(status='in progress') as in_progress, SUM(status='resolved') as resolved, SUM(urgency='critical') as critical, SUM(urgency='high') as high FROM tbl_waste_issues")->fetch_assoc();
 
-// Get total count
-$count_sql = "SELECT COUNT(*) as total FROM tbl_waste_issues $where_clause";
-if (!empty($filter_params)) {
-    $count_stmt = $conn->prepare($count_sql);
-    $count_stmt->bind_param($filter_types, ...$filter_params);
-    $count_stmt->execute();
-    $count_result = $count_stmt->get_result()->fetch_assoc();
-} else {
-    $count_result = $conn->query($count_sql)->fetch_assoc();
-}
-$total_records = $count_result['total'];
-$total_pages = ceil($total_records / $records_per_page);
-
-// Fetch all reported issues with pagination
-$issues_query = "
-    SELECT * FROM tbl_waste_issues
-    $where_clause
-    ORDER BY 
-        CASE 
-            WHEN status = 'pending' THEN 1
-            WHEN status = 'in progress' THEN 2
-            WHEN status = 'acknowledged' THEN 3
-            WHEN status = 'resolved' THEN 4
-            ELSE 5
-        END,
-        CASE urgency
-            WHEN 'critical' THEN 1
-            WHEN 'high' THEN 2
-            WHEN 'medium' THEN 3
-            WHEN 'low' THEN 4
-        END,
-        created_at DESC
-    LIMIT ? OFFSET ?
-";
-
-if (!empty($filter_params)) {
-    $issues_stmt = $conn->prepare($issues_query);
-    $filter_params[] = $records_per_page;
-    $filter_params[] = $offset;
-    $filter_types .= 'ii';
-    $issues_stmt->bind_param($filter_types, ...$filter_params);
-    $issues_stmt->execute();
-    $issues_result = $issues_stmt->get_result();
-} else {
-    $issues_stmt = $conn->prepare($issues_query);
-    $issues_stmt->bind_param('ii', $records_per_page, $offset);
-    $issues_stmt->execute();
-    $issues_result = $issues_stmt->get_result();
-}
-
-// Get statistics
-$stats_sql = "SELECT 
-                COUNT(*) as total,
-                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
-                SUM(CASE WHEN status = 'in progress' THEN 1 ELSE 0 END) as in_progress,
-                SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END) as resolved,
-                SUM(CASE WHEN urgency = 'critical' THEN 1 ELSE 0 END) as critical,
-                SUM(CASE WHEN urgency = 'high' THEN 1 ELSE 0 END) as high
-              FROM tbl_waste_issues";
-$stats_result = $conn->query($stats_sql)->fetch_assoc();
-
-// Helper function for urgency badge
-if (!function_exists('getUrgencyBadge')) {
-    function getUrgencyBadge($urgency) {
-        $urgency = strtolower(trim($urgency));
-        $badges = [
-            'low' => '<span class="badge bg-success"><i class="fas fa-circle me-1"></i>Low</span>',
-            'medium' => '<span class="badge bg-warning text-dark"><i class="fas fa-exclamation-circle me-1"></i>Medium</span>',
-            'high' => '<span class="badge bg-danger"><i class="fas fa-exclamation-triangle me-1"></i>High</span>',
-            'critical' => '<span class="badge bg-dark"><i class="fas fa-skull-crossbones me-1"></i>Critical</span>'
-        ];
-        
-        return $badges[$urgency] ?? '<span class="badge bg-secondary">Unknown</span>';
-    }
-}
-
+$extra_css = '<link rel="stylesheet" href="../../../assets/css/dashboard-index.css?v=' . time() . '">';
 include('../../../includes/header.php');
+
+function urg_badge($u) {
+    $map = ['low'=>'db-badge--success','medium'=>'db-badge--warning','high'=>'db-badge--danger','critical'=>'db-badge--dark'];
+    $icons = ['low'=>'fa-circle','medium'=>'fa-exclamation-circle','high'=>'fa-exclamation-triangle','critical'=>'fa-skull-crossbones'];
+    $u = strtolower(trim($u));
+    return '<span class="db-badge '.($map[$u]??'db-badge--muted').'"><i class="fas '.($icons[$u]??'fa-circle').' me-1"></i>'.ucfirst($u).'</span>';
+}
+function stat_badge($s) {
+    $map = ['resolved'=>'db-badge--success','in progress'=>'db-badge--primary','pending'=>'db-badge--warning','acknowledged'=>'db-badge--info','closed'=>'db-badge--muted'];
+    $s = strtolower(trim($s));
+    return '<span class="db-badge '.($map[$s]??'db-badge--muted').'">'.ucfirst($s).'</span>';
+}
+function build_qs($exclude=[]) {
+    $p = $_GET; foreach ($exclude as $k) unset($p[$k]);
+    return $p ? '&'.http_build_query($p) : '';
+}
 ?>
 
-<div class="container-fluid">
-    <!-- Page Header -->
-    <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-        <h1 class="h2">
-            <i class="fas fa-exclamation-circle text-warning me-2"></i>
-            Waste Issues & Reports
-        </h1>
+<!-- ═══ HERO ═══ -->
+<div class="db-hero">
+    <div class="db-hero__ring db-hero__ring--1"></div>
+    <div class="db-hero__ring db-hero__ring--2"></div>
+    <div class="db-hero__ring db-hero__ring--3"></div>
+    <div class="db-hero__inner">
+        <div class="db-hero__left">
+            <div class="db-hero__avatar" style="background:linear-gradient(135deg,#f59e0b,#b45309);">
+                <i class="fas fa-exclamation-circle" style="font-size:22px;color:#fff;"></i>
+            </div>
+            <div class="db-hero__text">
+                <div class="db-hero__role-badge badge-staff">
+                    <span class="db-hero__role-dot"></span>
+                    Waste Management
+                </div>
+                <h1 class="db-hero__title">Waste Issues & Reports</h1>
+                <p class="db-hero__sub">Review, track, and resolve reported waste issues from the community</p>
+            </div>
+        </div>
+        <div class="db-hero__right">
+            <div class="db-hero__datetime">
+                <div class="db-hero__date"><i class="fas fa-calendar-day"></i><span><?php echo date('F j, Y'); ?></span></div>
+                <div class="db-hero__time" id="db-live-time"><?php echo date('g:i:s A'); ?></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<?php if ($success_message): ?>
+<div class="db-alert db-alert--success">
+    <div class="db-alert__icon"><i class="fas fa-check-circle"></i></div>
+    <span><?php echo htmlspecialchars($success_message); ?></span>
+    <button class="db-alert__close" onclick="this.parentElement.remove()">×</button>
+</div>
+<?php endif; ?>
+
+<!-- ═══ STAT CARDS ═══ -->
+<div class="db-stats-row">
+    <div class="db-stat-card">
+        <div class="db-stat-card__icon db-stat-card__icon--indigo"><i class="fas fa-clipboard-list"></i></div>
+        <div class="db-stat-card__body">
+            <div class="db-stat-card__num"><?php echo number_format($stats['total']); ?></div>
+            <div class="db-stat-card__label">Total Reports</div>
+        </div>
+        <div class="db-stat-card__sparkline db-stat-card__sparkline--indigo"></div>
+    </div>
+    <div class="db-stat-card">
+        <div class="db-stat-card__icon db-stat-card__icon--amber"><i class="fas fa-clock"></i></div>
+        <div class="db-stat-card__body">
+            <div class="db-stat-card__num"><?php echo number_format($stats['pending']); ?></div>
+            <div class="db-stat-card__label">Pending</div>
+        </div>
+        <div class="db-stat-card__sparkline db-stat-card__sparkline--amber"></div>
+    </div>
+    <div class="db-stat-card">
+        <div class="db-stat-card__icon db-stat-card__icon--blue"><i class="fas fa-spinner"></i></div>
+        <div class="db-stat-card__body">
+            <div class="db-stat-card__num"><?php echo number_format($stats['in_progress']); ?></div>
+            <div class="db-stat-card__label">In Progress</div>
+        </div>
+        <div class="db-stat-card__sparkline db-stat-card__sparkline--blue"></div>
+    </div>
+    <div class="db-stat-card">
+        <div class="db-stat-card__icon db-stat-card__icon--teal"><i class="fas fa-check-circle"></i></div>
+        <div class="db-stat-card__body">
+            <div class="db-stat-card__num"><?php echo number_format($stats['resolved']); ?></div>
+            <div class="db-stat-card__label">Resolved</div>
+        </div>
+        <div class="db-stat-card__sparkline db-stat-card__sparkline--teal"></div>
+    </div>
+    <div class="db-stat-card">
+        <div class="db-stat-card__icon db-stat-card__icon--rose"><i class="fas fa-skull-crossbones"></i></div>
+        <div class="db-stat-card__body">
+            <div class="db-stat-card__num"><?php echo number_format($stats['critical']); ?></div>
+            <div class="db-stat-card__label">Critical</div>
+        </div>
+        <div class="db-stat-card__sparkline db-stat-card__sparkline--rose"></div>
+    </div>
+</div>
+
+<!-- ═══ FILTERS ═══ -->
+<div class="db-panel">
+    <div class="db-panel__header">
+        <div class="db-panel__title">
+            <span class="db-panel__icon db-panel__icon--blue"><i class="fas fa-filter"></i></span>
+            <h2>Filter Issues</h2>
+        </div>
+    </div>
+    <div style="padding:16px 22px;">
+        <form method="GET" action="reports-issues.php" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">
+            <div class="db-field" style="flex:1;min-width:160px;margin-bottom:0;">
+                <label>Status</label>
+                <select name="status" class="db-input">
+                    <option value="">All Statuses</option>
+                    <?php foreach (['pending','in progress','resolved','closed','acknowledged'] as $s): ?>
+                    <option value="<?php echo $s; ?>" <?php echo $status_filter===$s?'selected':''; ?>><?php echo ucfirst($s); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="db-field" style="flex:1;min-width:160px;margin-bottom:0;">
+                <label>Urgency</label>
+                <select name="urgency" class="db-input">
+                    <option value="">All Urgency Levels</option>
+                    <?php foreach (['low','medium','high','critical'] as $u): ?>
+                    <option value="<?php echo $u; ?>" <?php echo $urgency_filter===$u?'selected':''; ?>><?php echo ucfirst($u); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div style="display:flex;gap:8px;padding-bottom:0;">
+                <button type="submit" class="db-btn db-btn--primary"><i class="fas fa-search"></i> Filter</button>
+                <a href="reports-issues.php" class="db-btn db-btn--ghost"><i class="fas fa-redo"></i> Reset</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ═══ ISSUES TABLE ═══ -->
+<div class="db-panel">
+    <div class="db-panel__header">
+        <div class="db-panel__title">
+            <span class="db-panel__icon db-panel__icon--amber"><i class="fas fa-list"></i></span>
+            <h2>Reported Issues <span style="font-family:'DM Mono',monospace;font-size:12px;color:var(--db-muted);font-weight:400;">(<?php echo number_format($total_records); ?> total)</span></h2>
+        </div>
     </div>
 
-    <!-- Alerts -->
-    <?php if (isset($_SESSION['success'])): ?>
-        <div class="alert alert-success alert-dismissible fade show" role="alert">
-            <i class="fas fa-check-circle me-2"></i>
-            <?php echo $_SESSION['success']; unset($_SESSION['success']); ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
+    <?php if ($issues_result && $issues_result->num_rows > 0): ?>
+    <div class="db-table-wrap">
+        <table class="db-table">
+            <thead>
+                <tr><th>ID</th><th>Issue Type</th><th>Location</th><th>Reporter</th><th>Urgency</th><th>Status</th><th>Date</th><th>Photo</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+            <?php while ($issue = $issues_result->fetch_assoc()): ?>
+            <tr>
+                <td><span class="db-id">#<?php echo $issue['issue_id']; ?></span></td>
+                <td>
+                    <strong><?php echo htmlspecialchars($issue['issue_type']); ?></strong>
+                </td>
+                <td>
+                    <span class="db-text-sm">
+                        <i class="fas fa-map-marker-alt me-1" style="color:var(--db-rose)"></i>
+                        <?php echo htmlspecialchars(substr($issue['location'],0,32)).(strlen($issue['location'])>32?'…':''); ?>
+                    </span>
+                </td>
+                <td>
+                    <?php echo htmlspecialchars($issue['reporter_name'] ?? 'N/A'); ?><br>
+                    <span class="db-text-sm"><?php echo htmlspecialchars($issue['reporter_contact'] ?? ''); ?></span>
+                </td>
+                <td><?php echo urg_badge($issue['urgency']); ?></td>
+                <td><?php echo stat_badge($issue['status']); ?></td>
+                <td><span class="db-text-sm"><?php echo date('M d, Y', strtotime($issue['created_at'])); ?></span></td>
+                <td>
+                    <?php if (!empty($issue['photo_path'])): ?>
+                    <button class="db-icon-btn db-icon-btn--info" onclick="viewPhoto('<?php echo htmlspecialchars($issue['photo_path']); ?>',<?php echo $issue['issue_id']; ?>)" title="View Photo">
+                        <i class="fas fa-image"></i>
+                    </button>
+                    <?php else: ?>
+                    <span class="db-text-muted" style="font-size:11px;">—</span>
+                    <?php endif; ?>
+                </td>
+                <td>
+                    <div class="db-btn-group">
+                        <button class="db-icon-btn db-icon-btn--info" onclick='viewIssue(<?php echo json_encode($issue); ?>)' title="View"><i class="fas fa-eye"></i></button>
+                        <button class="db-icon-btn db-icon-btn--primary" onclick="openStatusModal(<?php echo $issue['issue_id']; ?>,'<?php echo htmlspecialchars($issue['status']); ?>')" title="Update Status"><i class="fas fa-edit"></i></button>
+                    </div>
+                </td>
+            </tr>
+            <?php endwhile; ?>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    <?php if ($total_pages > 1): ?>
+    <div class="db-panel__footer" style="display:flex;justify-content:center;gap:4px;flex-wrap:wrap;">
+        <?php if ($current_page > 1): ?>
+        <a href="?page=<?php echo $current_page-1; ?><?php echo build_qs(['page']); ?>" class="db-btn db-btn--ghost db-btn--sm"><i class="fas fa-chevron-left"></i></a>
+        <?php endif; ?>
+        <?php for ($i=max(1,$current_page-2); $i<=min($total_pages,$current_page+2); $i++): ?>
+        <a href="?page=<?php echo $i; ?><?php echo build_qs(['page']); ?>"
+           class="db-btn db-btn--sm <?php echo $i===$current_page ? 'db-btn--primary' : 'db-btn--ghost'; ?>"><?php echo $i; ?></a>
+        <?php endfor; ?>
+        <?php if ($current_page < $total_pages): ?>
+        <a href="?page=<?php echo $current_page+1; ?><?php echo build_qs(['page']); ?>" class="db-btn db-btn--ghost db-btn--sm"><i class="fas fa-chevron-right"></i></a>
+        <?php endif; ?>
+    </div>
     <?php endif; ?>
 
-    <?php if (isset($_SESSION['error'])): ?>
-        <div class="alert alert-danger alert-dismissible fade show" role="alert">
-            <i class="fas fa-exclamation-circle me-2"></i>
-            <?php echo $_SESSION['error']; unset($_SESSION['error']); ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
+    <?php else: ?>
+    <div class="db-empty">
+        <i class="fas fa-inbox"></i>
+        <p>No issues found<?php echo ($status_filter||$urgency_filter) ? ' matching your filters.' : ' yet.'; ?></p>
+        <?php if ($status_filter||$urgency_filter): ?>
+        <a href="reports-issues.php" class="db-btn db-btn--ghost db-btn--sm"><i class="fas fa-redo"></i> Clear Filters</a>
+        <?php endif; ?>
+    </div>
     <?php endif; ?>
+</div>
 
-    <!-- Statistics Cards -->
-    <div class="row mb-4">
-        <div class="col-xl-3 col-md-6 mb-3">
-            <div class="card border-left-primary shadow h-100 py-2">
-                <div class="card-body">
-                    <div class="row no-gutters align-items-center">
-                        <div class="col mr-2">
-                            <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">Total Reports</div>
-                            <div class="h5 mb-0 font-weight-bold text-gray-800"><?php echo number_format($stats_result['total']); ?></div>
-                        </div>
-                        <div class="col-auto">
-                            <i class="fas fa-clipboard-list fa-2x text-gray-300"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
+
+<!-- ═══ VIEW ISSUE MODAL ═══ -->
+<div id="viewIssueModal" class="db-modal">
+    <div class="db-modal__box" style="max-width:680px;">
+        <div class="db-modal__header">
+            <h3><i class="fas fa-file-alt"></i> Issue Details</h3>
+            <button class="db-modal__close" onclick="closeModal('viewIssueModal')">×</button>
         </div>
-
-        <div class="col-xl-3 col-md-6 mb-3">
-            <div class="card border-left-warning shadow h-100 py-2">
-                <div class="card-body">
-                    <div class="row no-gutters align-items-center">
-                        <div class="col mr-2">
-                            <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">Pending</div>
-                            <div class="h5 mb-0 font-weight-bold text-gray-800"><?php echo number_format($stats_result['pending']); ?></div>
-                        </div>
-                        <div class="col-auto">
-                            <i class="fas fa-clock fa-2x text-gray-300"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-xl-3 col-md-6 mb-3">
-            <div class="card border-left-info shadow h-100 py-2">
-                <div class="card-body">
-                    <div class="row no-gutters align-items-center">
-                        <div class="col mr-2">
-                            <div class="text-xs font-weight-bold text-info text-uppercase mb-1">In Progress</div>
-                            <div class="h5 mb-0 font-weight-bold text-gray-800"><?php echo number_format($stats_result['in_progress']); ?></div>
-                        </div>
-                        <div class="col-auto">
-                            <i class="fas fa-spinner fa-2x text-gray-300"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-xl-3 col-md-6 mb-3">
-            <div class="card border-left-success shadow h-100 py-2">
-                <div class="card-body">
-                    <div class="row no-gutters align-items-center">
-                        <div class="col mr-2">
-                            <div class="text-xs font-weight-bold text-success text-uppercase mb-1">Resolved</div>
-                            <div class="h5 mb-0 font-weight-bold text-gray-800"><?php echo number_format($stats_result['resolved']); ?></div>
-                        </div>
-                        <div class="col-auto">
-                            <i class="fas fa-check-circle fa-2x text-gray-300"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Filters -->
-    <div class="card shadow mb-4">
-        <div class="card-header py-3">
-            <h6 class="m-0 font-weight-bold text-primary">
-                <i class="fas fa-filter me-2"></i>Filter Reports
-            </h6>
-        </div>
-        <div class="card-body">
-            <form method="GET" action="reports-issues.php" class="row g-3">
-                <div class="col-md-4">
-                    <label for="status" class="form-label">Status</label>
-                    <select class="form-select" id="status" name="status">
-                        <option value="">All Statuses</option>
-                        <option value="pending" <?php echo $status_filter === 'pending' ? 'selected' : ''; ?>>Pending</option>
-                        <option value="in progress" <?php echo $status_filter === 'in progress' ? 'selected' : ''; ?>>In Progress</option>
-                        <option value="resolved" <?php echo $status_filter === 'resolved' ? 'selected' : ''; ?>>Resolved</option>
-                        <option value="closed" <?php echo $status_filter === 'closed' ? 'selected' : ''; ?>>Closed</option>
-                    </select>
-                </div>
-
-                <div class="col-md-4">
-                    <label for="urgency" class="form-label">Urgency</label>
-                    <select class="form-select" id="urgency" name="urgency">
-                        <option value="">All Urgency Levels</option>
-                        <option value="low" <?php echo $urgency_filter === 'low' ? 'selected' : ''; ?>>Low</option>
-                        <option value="medium" <?php echo $urgency_filter === 'medium' ? 'selected' : ''; ?>>Medium</option>
-                        <option value="high" <?php echo $urgency_filter === 'high' ? 'selected' : ''; ?>>High</option>
-                        <option value="critical" <?php echo $urgency_filter === 'critical' ? 'selected' : ''; ?>>Critical</option>
-                    </select>
-                </div>
-
-                <div class="col-md-4 d-flex align-items-end">
-                    <button type="submit" class="btn btn-primary me-2">
-                        <i class="fas fa-search me-1"></i>Filter
-                    </button>
-                    <a href="reports-issues.php" class="btn btn-secondary">
-                        <i class="fas fa-redo me-1"></i>Reset
-                    </a>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Issues Table -->
-    <div class="card shadow mb-4">
-        <div class="card-header py-3">
-            <h6 class="m-0 font-weight-bold text-primary">
-                <i class="fas fa-list me-2"></i>Reported Issues (<?php echo number_format($total_records); ?> total)
-            </h6>
-        </div>
-        <div class="card-body">
-            <div class="table-responsive">
-                <table class="table table-hover" id="issuesTable">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Issue Type</th>
-                            <th>Location</th>
-                            <th>Reporter</th>
-                            <th>Urgency</th>
-                            <th>Status</th>
-                            <th>Date</th>
-                            <th>Photo</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if ($issues_result && $issues_result->num_rows > 0): ?>
-                            <?php while ($issue = $issues_result->fetch_assoc()): ?>
-                                <tr>
-                                    <td><strong>#<?php echo $issue['issue_id']; ?></strong></td>
-                                    <td>
-                                        <i class="fas fa-trash-alt me-1 text-muted"></i>
-                                        <?php echo htmlspecialchars($issue['issue_type']); ?>
-                                    </td>
-                                    <td>
-                                        <small><?php echo htmlspecialchars(substr($issue['location'], 0, 30)) . (strlen($issue['location']) > 30 ? '...' : ''); ?></small>
-                                    </td>
-                                    <td>
-                                        <?php echo htmlspecialchars($issue['reporter_name'] ?? 'N/A'); ?><br>
-                                        <small class="text-muted"><?php echo htmlspecialchars($issue['reporter_contact'] ?? 'N/A'); ?></small>
-                                    </td>
-                                    <td><?php echo getUrgencyBadge($issue['urgency']); ?></td>
-                                    <td>
-                                        <?php
-                                        $status_class = 'secondary';
-                                        if ($issue['status'] == 'resolved') $status_class = 'success';
-                                        elseif ($issue['status'] == 'in progress') $status_class = 'warning';
-                                        elseif ($issue['status'] == 'pending') $status_class = 'info';
-                                        ?>
-                                        <span class="badge bg-<?php echo $status_class; ?>">
-                                            <?php echo ucfirst(str_replace('_', ' ', $issue['status'])); ?>
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <small><?php echo date('M d, Y', strtotime($issue['created_at'])); ?></small>
-                                    </td>
-                                    <td>
-                                        <?php if (!empty($issue['photo_path'])): ?>
-                                            <button class="btn btn-sm btn-success" onclick="viewPhoto('<?php echo htmlspecialchars($issue['photo_path']); ?>', <?php echo $issue['issue_id']; ?>)" title="View Photo">
-                                                <i class="fas fa-image"></i>
-                                            </button>
-                                        <?php else: ?>
-                                            <span class="text-muted">
-                                                <i class="fas fa-image-slash"></i>
-                                            </span>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td>
-                                        <button class="btn btn-sm btn-primary" onclick='viewIssue(<?php echo json_encode($issue); ?>)' title="View Details">
-                                            <i class="fas fa-eye"></i>
-                                        </button>
-                                        <button class="btn btn-sm btn-info" onclick="updateStatus(<?php echo $issue['issue_id']; ?>, '<?php echo htmlspecialchars($issue['status']); ?>')" title="Update Status">
-                                            <i class="fas fa-edit"></i>
-                                        </button>
-                                    </td>
-                                </tr>
-                            <?php endwhile; ?>
-                        <?php else: ?>
-                            <tr>
-                                <td colspan="9" class="text-center py-4">
-                                    <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
-                                    <p class="text-muted">No issues reported yet</p>
-                                </td>
-                            </tr>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
-
-            <!-- Pagination -->
-            <?php if ($total_pages > 1): ?>
-                <div class="mt-4">
-                    <nav aria-label="Page navigation">
-                        <ul class="pagination justify-content-center">
-                            <!-- Previous Button -->
-                            <li class="page-item <?php echo ($current_page <= 1) ? 'disabled' : ''; ?>">
-                                <a class="page-link" href="?page=<?php echo $current_page - 1; ?><?php echo !empty($status_filter) ? '&status=' . urlencode($status_filter) : ''; ?><?php echo !empty($urgency_filter) ? '&urgency=' . urlencode($urgency_filter) : ''; ?>">
-                                    <i class="fas fa-chevron-left"></i>
-                                </a>
-                            </li>
-
-                            <!-- Page Numbers -->
-                            <?php
-                            $start_page = max(1, $current_page - 2);
-                            $end_page = min($total_pages, $current_page + 2);
-
-                            for ($i = $start_page; $i <= $end_page; $i++):
-                            ?>
-                                <li class="page-item <?php echo ($current_page == $i) ? 'active' : ''; ?>">
-                                    <a class="page-link" href="?page=<?php echo $i; ?><?php echo !empty($status_filter) ? '&status=' . urlencode($status_filter) : ''; ?><?php echo !empty($urgency_filter) ? '&urgency=' . urlencode($urgency_filter) : ''; ?>">
-                                        <?php echo $i; ?>
-                                    </a>
-                                </li>
-                            <?php endfor; ?>
-
-                            <!-- Next Button -->
-                            <li class="page-item <?php echo ($current_page >= $total_pages) ? 'disabled' : ''; ?>">
-                                <a class="page-link" href="?page=<?php echo $current_page + 1; ?><?php echo !empty($status_filter) ? '&status=' . urlencode($status_filter) : ''; ?><?php echo !empty($urgency_filter) ? '&urgency=' . urlencode($urgency_filter) : ''; ?>">
-                                    <i class="fas fa-chevron-right"></i>
-                                </a>
-                            </li>
-                        </ul>
-                    </nav>
-                </div>
-            <?php endif; ?>
-        </div>
+        <div class="db-modal__body" id="issueDetailsContent"></div>
     </div>
 </div>
 
-<!-- View Issue Modal -->
-<div class="modal fade" id="viewIssueModal" tabindex="-1">
-    <div class="modal-dialog modal-xl">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">
-                    <i class="fas fa-file-alt me-2"></i>Issue Details
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body" id="issueDetailsContent">
-                <!-- Content will be loaded dynamically -->
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button type="button" class="btn btn-info" onclick="updateStatusFromView()">
-                    <i class="fas fa-edit me-1"></i>Update Status
-                </button>
-            </div>
-        </div>
+<!-- ═══ PHOTO MODAL ═══ -->
+<div id="photoModal" class="db-modal db-modal--img">
+    <div class="db-imgview">
+        <button class="db-imgview__close" onclick="closeModal('photoModal')">×</button>
+        <img id="photoModalImage" src="" alt="Issue Photo">
+        <div id="photoCaption" class="db-imgview__cap"></div>
     </div>
 </div>
 
-<!-- Photo Modal -->
-<div class="modal fade" id="photoModal" tabindex="-1">
-    <div class="modal-dialog modal-xl modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">
-                    <i class="fas fa-image me-2"></i>Issue Photo - Report <span id="photoReportId"></span>
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body text-center bg-dark">
-                <img id="photoModalImage" src="" alt="Issue Photo" class="img-fluid" style="max-height: 80vh;">
-            </div>
-            <div class="modal-footer">
-                <a id="downloadPhotoLink" href="" download class="btn btn-primary">
-                    <i class="fas fa-download me-1"></i>Download Photo
-                </a>
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-            </div>
+<!-- ═══ UPDATE STATUS MODAL ═══ -->
+<div id="updateStatusModal" class="db-modal">
+    <div class="db-modal__box db-modal__box--sm">
+        <div class="db-modal__header">
+            <h3><i class="fas fa-edit"></i> Update Issue Status</h3>
+            <button class="db-modal__close" onclick="closeModal('updateStatusModal')">×</button>
         </div>
+        <form method="POST" class="db-modal__body">
+            <input type="hidden" name="action" value="update_status">
+            <input type="hidden" name="issue_id" id="status_issue_id">
+            <div class="db-field">
+                <label>New Status <span class="req">*</span></label>
+                <select name="status" id="status_select" class="db-input" required>
+                    <option value="pending">Pending</option>
+                    <option value="acknowledged">Acknowledged</option>
+                    <option value="in progress">In Progress</option>
+                    <option value="resolved">Resolved</option>
+                    <option value="closed">Closed</option>
+                </select>
+            </div>
+            <div style="background:var(--db-sky-light);border-radius:var(--db-radius-sm);padding:10px 14px;font-size:12.5px;color:#0369a1;margin-bottom:16px;">
+                <i class="fas fa-info-circle me-1"></i> The status will be updated immediately.
+            </div>
+            <div style="display:flex;gap:.75rem;">
+                <button type="button" class="db-btn db-btn--ghost db-btn--full" onclick="closeModal('updateStatusModal')">Cancel</button>
+                <button type="submit" class="db-btn db-btn--primary db-btn--full"><i class="fas fa-save"></i> Update Status</button>
+            </div>
+        </form>
     </div>
 </div>
-
-<!-- Update Status Modal -->
-<div class="modal fade" id="updateStatusModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <form method="POST">
-                <div class="modal-header">
-                    <h5 class="modal-title">
-                        <i class="fas fa-edit me-2"></i>Update Issue Status
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <input type="hidden" name="action" value="update_status">
-                    <input type="hidden" name="issue_id" id="status_issue_id">
-                    
-                    <div class="mb-3">
-                        <label class="form-label">Status *</label>
-                        <select name="status" id="status_select" class="form-control" required>
-                            <option value="pending">Pending</option>
-                            <option value="acknowledged">Acknowledged</option>
-                            <option value="in progress">In Progress</option>
-                            <option value="resolved">Resolved</option>
-                            <option value="closed">Closed</option>
-                        </select>
-                    </div>
-                    
-                    <div class="alert alert-info">
-                        <i class="fas fa-info-circle me-2"></i>
-                        <small>The status will be updated immediately. Residents will see the new status on their reports page.</small>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">
-                        <i class="fas fa-save me-1"></i>Update Status
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<style>
-.border-left-primary {
-    border-left: 0.25rem solid #4e73df !important;
-}
-
-.border-left-success {
-    border-left: 0.25rem solid #1cc88a !important;
-}
-
-.border-left-info {
-    border-left: 0.25rem solid #36b9cc !important;
-}
-
-.border-left-warning {
-    border-left: 0.25rem solid #f6c23e !important;
-}
-
-.table tbody tr {
-    transition: background-color 0.2s ease-in-out;
-}
-
-.table tbody tr:hover {
-    background-color: rgba(0, 123, 255, 0.05);
-}
-
-#photoModalImage {
-    border-radius: 8px;
-    box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
-}
-</style>
 
 <script>
-let currentIssueId = null;
+setInterval(function() {
+    const now = new Date(); let h=now.getHours(),m=now.getMinutes(),s=now.getSeconds();
+    const ap=h>=12?'PM':'AM'; h=h%12||12;
+    const el=document.getElementById('db-live-time');
+    if(el) el.textContent=`${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')} ${ap}`;
+},1000);
 
-function viewPhoto(photoPath, issueId) {
-    const photoUrl = '../../../' + photoPath;
-    document.getElementById('photoModalImage').src = photoUrl;
-    document.getElementById('downloadPhotoLink').href = photoUrl;
-    document.getElementById('photoReportId').textContent = '#' + issueId;
-    
-    var modal = new bootstrap.Modal(document.getElementById('photoModal'));
-    modal.show();
-}
+function openModal(id)  { document.getElementById(id).classList.add('db-modal--open');    document.body.style.overflow='hidden'; }
+function closeModal(id) { document.getElementById(id).classList.remove('db-modal--open'); document.body.style.overflow=''; }
+window.addEventListener('click', e => { if (e.target.classList.contains('db-modal')) closeModal(e.target.id); });
+document.addEventListener('keydown', e => { if (e.key==='Escape') document.querySelectorAll('.db-modal--open').forEach(m=>closeModal(m.id)); });
+
+const urgColors = {critical:'var(--db-rose)',high:'var(--db-danger)',medium:'var(--db-amber)',low:'var(--db-success)'};
+const statColors = {resolved:'var(--db-success)','in progress':'var(--db-sky)',pending:'var(--db-amber)',acknowledged:'var(--db-info)',closed:'var(--db-muted)'};
 
 function viewIssue(issue) {
-    currentIssueId = issue.issue_id;
-    
-    const urgencyBadge = issue.urgency === 'critical' ? 'dark' : (issue.urgency === 'high' ? 'danger' : (issue.urgency === 'medium' ? 'warning' : 'success'));
-    const statusBadge = issue.status === 'resolved' ? 'success' : (issue.status === 'in progress' ? 'warning' : (issue.status === 'pending' ? 'info' : 'secondary'));
-    
-    const photoSection = issue.photo_path ? `
-        <div class="col-12 mb-4">
-            <div class="card">
-                <div class="card-header">
-                    <strong><i class="fas fa-camera me-2"></i>Photo Evidence</strong>
-                </div>
-                <div class="card-body text-center">
-                    <img src="../../../${issue.photo_path}" alt="Issue Photo" class="img-fluid rounded shadow" style="max-height: 400px; cursor: pointer;" onclick="viewPhoto('${issue.photo_path}', ${issue.issue_id})">
-                    <p class="text-muted mt-2 mb-0">
-                        <small><i class="fas fa-info-circle me-1"></i>Click to view full size</small>
-                    </p>
-                </div>
-            </div>
+    const photoHtml = issue.photo_path
+        ? `<div style="margin-top:16px;"><div style="font-size:11px;font-weight:600;color:var(--db-muted);text-transform:uppercase;margin-bottom:6px;">Photo Evidence</div><img src="../../../${issue.photo_path}" alt="Photo" style="width:100%;border-radius:10px;cursor:pointer;max-height:260px;object-fit:cover;" onclick="viewPhoto('${issue.photo_path}',${issue.issue_id})"></div>`
+        : `<div style="background:var(--db-surf2);border-radius:var(--db-radius-sm);padding:10px 14px;font-size:12.5px;color:var(--db-muted);margin-top:12px;"><i class="fas fa-info-circle me-1"></i>No photo evidence provided.</div>`;
+    document.getElementById('issueDetailsContent').innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+            <div><div style="font-size:10.5px;color:var(--db-muted);font-weight:600;text-transform:uppercase;margin-bottom:3px;">Issue Type</div><div style="font-weight:700;font-size:15px;">${issue.issue_type}</div></div>
+            <div><div style="font-size:10.5px;color:var(--db-muted);font-weight:600;text-transform:uppercase;margin-bottom:3px;">Status</div><div style="font-weight:700;font-size:14px;color:${statColors[issue.status]??'var(--db-muted)'};">${issue.status.toUpperCase()}</div></div>
+            <div><div style="font-size:10.5px;color:var(--db-muted);font-weight:600;text-transform:uppercase;margin-bottom:3px;">Reporter</div><div>${issue.reporter_name??'N/A'}</div><div style="font-size:11.5px;color:var(--db-muted);">${issue.reporter_contact??''}</div></div>
+            <div><div style="font-size:10.5px;color:var(--db-muted);font-weight:600;text-transform:uppercase;margin-bottom:3px;">Urgency</div><div style="font-weight:700;color:${urgColors[issue.urgency]??'var(--db-muted)'};">${issue.urgency.toUpperCase()}</div></div>
         </div>
-    ` : `
-        <div class="col-12 mb-3">
-            <div class="alert alert-info">
-                <i class="fas fa-info-circle me-2"></i>No photo evidence was provided for this report.
-            </div>
+        <div style="margin-bottom:10px;"><div style="font-size:10.5px;color:var(--db-muted);font-weight:600;text-transform:uppercase;margin-bottom:3px;"><i class="fas fa-map-marker-alt me-1" style="color:var(--db-rose)"></i>Location</div><div>${issue.location}</div></div>
+        <div style="margin-bottom:10px;"><div style="font-size:10.5px;color:var(--db-muted);font-weight:600;text-transform:uppercase;margin-bottom:3px;">Description</div><div style="line-height:1.75;font-size:13px;">${issue.description.replace(/\n/g,'<br>')}</div></div>
+        ${photoHtml}
+        <div style="margin-top:16px;display:flex;gap:8px;">
+            <button class="db-btn db-btn--primary db-btn--sm" onclick="closeModal('viewIssueModal');setTimeout(()=>openStatusModal(${issue.issue_id},'${issue.status}'),250)"><i class="fas fa-edit"></i> Update Status</button>
+            <button class="db-btn db-btn--ghost db-btn--sm" onclick="closeModal('viewIssueModal')">Close</button>
         </div>
     `;
-    
-    const content = `
-        <div class="row">
-            <div class="col-md-6 mb-3">
-                <div class="card border-left-primary">
-                    <div class="card-body">
-                        <small class="text-muted">Issue ID</small>
-                        <h5 class="mb-0">#${issue.issue_id}</h5>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-6 mb-3">
-                <div class="card border-left-info">
-                    <div class="card-body">
-                        <small class="text-muted">Issue Type</small>
-                        <h5 class="mb-0">${issue.issue_type}</h5>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-6 mb-3">
-                <div class="card">
-                    <div class="card-body">
-                        <small class="text-muted">Reporter Name</small>
-                        <p class="mb-0"><i class="fas fa-user me-2"></i>${issue.reporter_name || 'N/A'}</p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-6 mb-3">
-                <div class="card">
-                    <div class="card-body">
-                        <small class="text-muted">Contact Number</small>
-                        <p class="mb-0"><i class="fas fa-phone me-2"></i>${issue.reporter_contact || 'N/A'}</p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-12 mb-3">
-                <div class="card">
-                    <div class="card-body">
-                        <small class="text-muted">Location</small>
-                        <p class="mb-0"><i class="fas fa-map-marker-alt me-2 text-danger"></i>${issue.location}</p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-12 mb-3">
-                <div class="card">
-                    <div class="card-body">
-                        <small class="text-muted">Description</small>
-                        <p class="mb-0 mt-2">${issue.description.replace(/\n/g, '<br>')}</p>
-                    </div>
-                </div>
-            </div>
-            ${photoSection}
-            <div class="col-md-4 mb-3">
-                <div class="card">
-                    <div class="card-body text-center">
-                        <small class="text-muted">Urgency Level</small>
-                        <p class="mb-0 mt-2">
-                            <span class="badge bg-${urgencyBadge} fs-6">
-                                ${issue.urgency.toUpperCase()}
-                            </span>
-                        </p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-4 mb-3">
-                <div class="card">
-                    <div class="card-body text-center">
-                        <small class="text-muted">Current Status</small>
-                        <p class="mb-0 mt-2">
-                            <span class="badge bg-${statusBadge} fs-6">
-                                ${issue.status.replace('_', ' ').toUpperCase()}
-                            </span>
-                        </p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-4 mb-3">
-                <div class="card">
-                    <div class="card-body text-center">
-                        <small class="text-muted">Date Reported</small>
-                        <p class="mb-0 mt-2">
-                            <i class="far fa-calendar me-1"></i>
-                            ${new Date(issue.created_at).toLocaleDateString()}
-                        </p>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
-    
-    document.getElementById('issueDetailsContent').innerHTML = content;
-    var modal = new bootstrap.Modal(document.getElementById('viewIssueModal'));
-    modal.show();
+    openModal('viewIssueModal');
 }
 
-function updateStatusFromView() {
-    if (currentIssueId) {
-        // Close view modal
-        var viewModal = bootstrap.Modal.getInstance(document.getElementById('viewIssueModal'));
-        viewModal.hide();
-        
-        // Open update modal
-        setTimeout(() => {
-            updateStatus(currentIssueId, '');
-        }, 300);
-    }
+function viewPhoto(path, id) {
+    document.getElementById('photoModalImage').src = '../../../' + path;
+    document.getElementById('photoCaption').textContent = 'Issue Report #' + id;
+    openModal('photoModal');
 }
 
-function updateStatus(issueId, currentStatus) {
-    document.getElementById('status_issue_id').value = issueId;
-    if (currentStatus) {
-        document.getElementById('status_select').value = currentStatus;
-    }
-    var modal = new bootstrap.Modal(document.getElementById('updateStatusModal'));
-    modal.show();
+function openStatusModal(id, currentStatus) {
+    document.getElementById('status_issue_id').value = id;
+    document.getElementById('status_select').value   = currentStatus || 'pending';
+    openModal('updateStatusModal');
 }
+
+setTimeout(() => {
+    document.querySelectorAll('.db-alert').forEach(a => {
+        a.style.opacity='0'; a.style.transform='translateY(-8px)';
+        setTimeout(()=>a.remove(),400);
+    });
+}, 5000);
 </script>
 
 <?php include('../../../includes/footer.php'); ?>

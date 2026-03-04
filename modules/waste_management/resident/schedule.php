@@ -1,312 +1,242 @@
 <?php
 require_once '../../../config/config.php';
-
 requireLogin();
 $user_role = getCurrentUserRole();
 $page_title = 'Waste Collection Schedule';
 
-// Get user's address/zone for filtering
-$user_id = getCurrentUserId();
-$user_info = fetchOne($conn, 
-    "SELECT r.address, r.purok 
-     FROM tbl_users u 
-     LEFT JOIN tbl_residents r ON u.resident_id = r.resident_id 
-     WHERE u.user_id = ?", 
+$user_id  = getCurrentUserId();
+$user_info = fetchOne($conn,
+    "SELECT r.address, r.purok FROM tbl_users u LEFT JOIN tbl_residents r ON u.resident_id = r.resident_id WHERE u.user_id = ?",
     [$user_id], 'i'
 );
 
-// Get all unique zones for filter
-$zones = fetchAll($conn, "SELECT DISTINCT area_zone FROM tbl_waste_schedules WHERE status = 'active' ORDER BY area_zone");
-
-// Filter by zone if specified
+$zones       = fetchAll($conn, "SELECT DISTINCT area_zone FROM tbl_waste_schedules WHERE status = 'active' ORDER BY area_zone");
 $filter_zone = $_GET['zone'] ?? '';
 
 $where_clause = "WHERE status = 'active'";
-$params = [];
-$types = '';
-
+$params = []; $types = '';
 if (!empty($filter_zone)) {
     $where_clause .= " AND (area_zone = ? OR area_zone = 'All Zones')";
-    $params[] = $filter_zone;
-    $types .= 's';
+    $params[] = $filter_zone; $types .= 's';
 }
 
-$schedules_sql = "SELECT * FROM tbl_waste_schedules 
-                  $where_clause 
-                  ORDER BY 
-                    FIELD(collection_day, 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'),
-                    collection_time ASC";
-$schedules = fetchAll($conn, $schedules_sql, $params, $types);
+$schedules = fetchAll($conn,
+    "SELECT * FROM tbl_waste_schedules $where_clause
+     ORDER BY FIELD(collection_day,'Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'), collection_time ASC",
+    $params, $types
+);
 
-// Group schedules by day
 $schedule_by_day = [];
-foreach ($schedules as $schedule) {
-    $schedule_by_day[$schedule['collection_day']][] = $schedule;
-}
+foreach ($schedules as $s) $schedule_by_day[$s['collection_day']][] = $s;
 
+$extra_css = '<link rel="stylesheet" href="../../../assets/css/waste-pages.css?v=' . time() . '">';
 include '../../../includes/header.php';
+
+$waste_config = [
+    'biodegradable'     => ['icon'=>'fa-leaf',           'color'=>'var(--db-success)', 'bg'=>'var(--db-success-light)', 'badge'=>'wp-badge--success', 'label'=>'Biodegradable Waste'],
+    'non-biodegradable' => ['icon'=>'fa-trash',          'color'=>'var(--db-muted)',   'bg'=>'var(--db-surf2)',         'badge'=>'wp-badge--muted',   'label'=>'Non-Biodegradable Waste'],
+    'recyclable'        => ['icon'=>'fa-recycle',        'color'=>'var(--db-sky)',     'bg'=>'var(--db-sky-light)',     'badge'=>'wp-badge--primary', 'label'=>'Recyclable Materials'],
+    'hazardous'         => ['icon'=>'fa-skull-crossbones','color'=>'var(--db-rose)',   'bg'=>'var(--db-rose-light)',    'badge'=>'wp-badge--danger',  'label'=>'Hazardous Waste'],
+    'mixed'             => ['icon'=>'fa-trash-alt',      'color'=>'var(--db-amber)',   'bg'=>'var(--db-amber-light)',   'badge'=>'wp-badge--warning', 'label'=>'Mixed Waste'],
+];
 ?>
 
-<style>
-.schedule-card {
-    border-left: 4px solid;
-    transition: all 0.3s;
-}
-.schedule-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-}
-.schedule-card.biodegradable { border-left-color: #28a745; }
-.schedule-card.non-biodegradable { border-left-color: #6c757d; }
-.schedule-card.recyclable { border-left-color: #17a2b8; }
-.schedule-card.hazardous { border-left-color: #dc3545; }
-.schedule-card.mixed { border-left-color: #ffc107; }
-.waste-icon {
-    font-size: 2.5rem;
-    opacity: 0.7;
-}
-.day-header {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-}
-</style>
-
-<div class="container-fluid py-4">
-    <!-- Header -->
-    <div class="row mb-4">
-        <div class="col-md-12">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <h2 class="mb-1">
-                        <i class="fas fa-trash-alt me-2 text-primary"></i>Waste Collection Schedule
-                    </h2>
-                    <p class="text-muted mb-0">View your area's garbage collection schedule</p>
-                </div>
-                <a href="report-issue.php" class="btn btn-danger">
-                    <i class="fas fa-exclamation-circle me-1"></i>Report Issue
-                </a>
+<!-- ── PAGE HERO ── -->
+<div class="wp-hero">
+    <div class="wp-hero__ring wp-hero__ring--1"></div>
+    <div class="wp-hero__ring wp-hero__ring--2"></div>
+    <div class="wp-hero__ring wp-hero__ring--3"></div>
+    <div class="wp-hero__inner">
+        <div class="wp-hero__left">
+            <div class="wp-hero__icon wp-hero__icon--sky">
+                <i class="fas fa-truck"></i>
+            </div>
+            <div>
+                <h1 class="wp-hero__title">Waste Collection Schedule</h1>
+                <p class="wp-hero__sub">View garbage collection days and times for your area</p>
             </div>
         </div>
-    </div>
-
-    <?php echo displayMessage(); ?>
-
-    <!-- Filter Section -->
-    <div class="row mb-4">
-        <div class="col-md-12">
-            <div class="card border-0 shadow-sm">
-                <div class="card-body">
-                    <form method="GET" class="row g-3">
-                        <div class="col-md-4">
-                            <label class="form-label">Filter by Zone</label>
-                            <select name="zone" class="form-select" onchange="this.form.submit()">
-                                <option value="">All Zones</option>
-                                <?php foreach ($zones as $zone): ?>
-                                    <option value="<?php echo htmlspecialchars($zone['area_zone']); ?>"
-                                        <?php echo $filter_zone === $zone['area_zone'] ? 'selected' : ''; ?>>
-                                        <?php echo htmlspecialchars($zone['area_zone']); ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div class="col-md-8 d-flex align-items-end">
-                            <button type="submit" class="btn btn-primary me-2">
-                                <i class="fas fa-filter me-1"></i>Filter
-                            </button>
-                            <?php if (!empty($filter_zone)): ?>
-                                <a href="?" class="btn btn-outline-secondary">
-                                    <i class="fas fa-times me-1"></i>Clear Filter
-                                </a>
-                            <?php endif; ?>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Important Reminders -->
-    <div class="row mb-4">
-        <div class="col-md-12">
-            <div class="alert alert-info border-0 shadow-sm">
-                <h5 class="alert-heading"><i class="fas fa-info-circle me-2"></i>Important Reminders</h5>
-                <ul class="mb-0">
-                    <li>Please segregate your waste properly: biodegradable and non-biodegradable</li>
-                    <li>Place your waste bins outside your gate before the scheduled collection time</li>
-                    <li>Use proper trash bags and ensure bins are covered</li>
-                    <li>Do not mix different types of waste</li>
-                    <li>For hazardous waste (batteries, chemicals, etc.), use special collection days only</li>
-                </ul>
-            </div>
-        </div>
-    </div>
-
-    <!-- Schedule by Day -->
-    <?php if (empty($schedules)): ?>
-        <div class="text-center py-5">
-            <i class="fas fa-calendar-times fa-4x text-muted mb-3"></i>
-            <h4 class="text-muted">No schedules available</h4>
-            <p class="text-muted">Please check back later or contact the barangay office.</p>
-        </div>
-    <?php else: ?>
-        <?php 
-        $days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-        foreach ($days as $day): 
-            if (!isset($schedule_by_day[$day])) continue;
-        ?>
-            <div class="row mb-4">
-                <div class="col-md-12">
-                    <div class="card border-0 shadow-sm">
-                        <div class="card-header day-header text-white py-3">
-                            <h4 class="mb-0">
-                                <i class="fas fa-calendar-day me-2"></i><?php echo $day; ?>
-                            </h4>
-                        </div>
-                        <div class="card-body p-0">
-                            <div class="row g-0">
-                                <?php foreach ($schedule_by_day[$day] as $schedule): ?>
-                                    <div class="col-md-6">
-                                        <div class="schedule-card <?php echo $schedule['waste_type']; ?> p-4 m-3">
-                                            <div class="d-flex justify-content-between align-items-start mb-3">
-                                                <div>
-                                                    <h5 class="mb-1">
-                                                        <?php 
-                                                        $type_labels = [
-                                                            'biodegradable' => 'Biodegradable Waste',
-                                                            'non-biodegradable' => 'Non-Biodegradable Waste',
-                                                            'recyclable' => 'Recyclable Materials',
-                                                            'hazardous' => 'Hazardous Waste',
-                                                            'mixed' => 'Mixed Waste'
-                                                        ];
-                                                        echo $type_labels[$schedule['waste_type']] ?? ucfirst($schedule['waste_type']);
-                                                        ?>
-                                                    </h5>
-                                                    <p class="text-muted mb-0">
-                                                        <i class="fas fa-map-marker-alt me-1"></i>
-                                                        <?php echo htmlspecialchars($schedule['area_zone']); ?>
-                                                        <?php if ($schedule['purok']): ?>
-                                                            - <?php echo htmlspecialchars($schedule['purok']); ?>
-                                                        <?php endif; ?>
-                                                    </p>
-                                                </div>
-                                                <div class="waste-icon">
-                                                    <?php
-                                                    $icons = [
-                                                        'biodegradable' => 'leaf',
-                                                        'non-biodegradable' => 'trash',
-                                                        'recyclable' => 'recycle',
-                                                        'hazardous' => 'skull-crossbones',
-                                                        'mixed' => 'trash-alt'
-                                                    ];
-                                                    $colors = [
-                                                        'biodegradable' => 'success',
-                                                        'non-biodegradable' => 'secondary',
-                                                        'recyclable' => 'info',
-                                                        'hazardous' => 'danger',
-                                                        'mixed' => 'warning'
-                                                    ];
-                                                    ?>
-                                                    <i class="fas fa-<?php echo $icons[$schedule['waste_type']] ?? 'trash'; ?> text-<?php echo $colors[$schedule['waste_type']] ?? 'secondary'; ?>"></i>
-                                                </div>
-                                            </div>
-                                            
-                                            <div class="row g-3">
-                                                <div class="col-6">
-                                                    <div class="d-flex align-items-center">
-                                                        <i class="fas fa-clock text-primary me-2"></i>
-                                                        <div>
-                                                            <small class="text-muted d-block">Collection Time</small>
-                                                            <strong><?php echo date('g:i A', strtotime($schedule['collection_time'])); ?></strong>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <?php if ($schedule['collector_name']): ?>
-                                                    <div class="col-6">
-                                                        <div class="d-flex align-items-center">
-                                                            <i class="fas fa-user text-primary me-2"></i>
-                                                            <div>
-                                                                <small class="text-muted d-block">Collector</small>
-                                                                <strong><?php echo htmlspecialchars($schedule['collector_name']); ?></strong>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                <?php endif; ?>
-                                                <?php if ($schedule['truck_number']): ?>
-                                                    <div class="col-6">
-                                                        <div class="d-flex align-items-center">
-                                                            <i class="fas fa-truck text-primary me-2"></i>
-                                                            <div>
-                                                                <small class="text-muted d-block">Truck</small>
-                                                                <strong><?php echo htmlspecialchars($schedule['truck_number']); ?></strong>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                <?php endif; ?>
-                                            </div>
-                                            
-                                            <?php if ($schedule['notes']): ?>
-                                                <div class="mt-3">
-                                                    <small class="text-muted">
-                                                        <i class="fas fa-info-circle me-1"></i>
-                                                        <?php echo htmlspecialchars($schedule['notes']); ?>
-                                                    </small>
-                                                </div>
-                                            <?php endif; ?>
-                                        </div>
-                                    </div>
-                                <?php endforeach; ?>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        <?php endforeach; ?>
-    <?php endif; ?>
-
-    <!-- Waste Segregation Guide -->
-    <div class="row">
-        <div class="col-md-12">
-            <div class="card border-0 shadow-sm">
-                <div class="card-header bg-white py-3">
-                    <h5 class="mb-0"><i class="fas fa-lightbulb me-2 text-warning"></i>Waste Segregation Guide</h5>
-                </div>
-                <div class="card-body">
-                    <div class="row">
-                        <div class="col-md-3">
-                            <div class="text-center p-3">
-                                <i class="fas fa-leaf fa-3x text-success mb-3"></i>
-                                <h6 class="text-success">Biodegradable</h6>
-                                <small class="text-muted">Food scraps, garden waste, paper, cardboard</small>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="text-center p-3">
-                                <i class="fas fa-trash fa-3x text-secondary mb-3"></i>
-                                <h6 class="text-secondary">Non-Biodegradable</h6>
-                                <small class="text-muted">Plastics, styrofoam, diapers, sanitary items</small>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="text-center p-3">
-                                <i class="fas fa-recycle fa-3x text-info mb-3"></i>
-                                <h6 class="text-info">Recyclable</h6>
-                                <small class="text-muted">Bottles, cans, clean paper, cardboard boxes</small>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="text-center p-3">
-                                <i class="fas fa-skull-crossbones fa-3x text-danger mb-3"></i>
-                                <h6 class="text-danger">Hazardous</h6>
-                                <small class="text-muted">Batteries, chemicals, electronics, medical waste</small>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+        <div class="wp-hero__actions">
+            <a href="report-issue.php" class="wp-btn wp-btn--rose" style="background:var(--db-rose);color:#fff">
+                <i class="fas fa-exclamation-circle"></i> Report Issue
+            </a>
         </div>
     </div>
 </div>
 
-<?php 
+<!-- ── ZONE FILTER ── -->
+<div class="wp-filter" style="margin-bottom:24px">
+    <div class="wp-filter__group">
+        <span class="wp-filter__label">Filter by Zone</span>
+        <form method="GET" style="display:flex;gap:8px;align-items:center">
+            <select name="zone" class="wp-input" onchange="this.form.submit()" style="min-width:200px">
+                <option value="">All Zones</option>
+                <?php foreach ($zones as $z): ?>
+                <option value="<?php echo htmlspecialchars($z['area_zone']); ?>"
+                    <?php echo $filter_zone === $z['area_zone'] ? 'selected' : ''; ?>>
+                    <?php echo htmlspecialchars($z['area_zone']); ?>
+                </option>
+                <?php endforeach; ?>
+            </select>
+            <?php if (!empty($filter_zone)): ?>
+            <a href="?" class="wp-btn wp-btn--ghost wp-btn--sm"><i class="fas fa-times"></i> Clear</a>
+            <?php endif; ?>
+        </form>
+    </div>
+    <?php if (!empty($filter_zone)): ?>
+    <div style="display:flex;align-items:flex-end;padding-bottom:2px">
+        <span class="wp-badge wp-badge--primary"><i class="fas fa-map-marker-alt"></i> Zone: <?php echo htmlspecialchars($filter_zone); ?></span>
+    </div>
+    <?php endif; ?>
+</div>
+
+<!-- ── REMINDER PANEL ── -->
+<div class="wp-panel" style="margin-bottom:24px">
+    <div class="wp-panel__header">
+        <div class="wp-panel__title">
+            <span class="wp-panel__icon wp-panel__icon--amber"><i class="fas fa-bell"></i></span>
+            <h2>Important Reminders</h2>
+        </div>
+    </div>
+    <div class="wp-panel__body">
+        <div style="display:flex;flex-wrap:wrap;gap:10px">
+            <?php
+            $reminders = [
+                ['fa-check-circle','var(--db-success)', 'Segregate your waste: biodegradable and non-biodegradable'],
+                ['fa-clock',       'var(--db-info)',    'Place bins outside before the scheduled collection time'],
+                ['fa-trash',       'var(--db-amber-dark)','Use proper trash bags and ensure bins are covered'],
+                ['fa-exclamation', 'var(--db-rose)',    'Do not mix different types of waste'],
+                ['fa-skull',       'var(--db-muted)',   'Hazardous waste must only be disposed on special collection days'],
+            ];
+            foreach ($reminders as [$ico, $col, $txt]):
+            ?>
+            <div style="display:flex;align-items:center;gap:8px;padding:9px 14px;background:var(--db-surf2);border-radius:8px;font-size:12.5px;flex:1 1 260px;border:1px solid var(--db-border)">
+                <i class="fas <?php echo $ico; ?>" style="color:<?php echo $col; ?>;width:16px;text-align:center;flex-shrink:0"></i>
+                <span><?php echo $txt; ?></span>
+            </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+</div>
+
+<!-- ── SCHEDULE BY DAY ── -->
+<?php if (empty($schedules)): ?>
+<div class="wp-panel">
+    <div class="wp-empty">
+        <i class="fas fa-calendar-times"></i>
+        <p>No schedules available for the selected zone. Please check back later or contact the barangay office.</p>
+    </div>
+</div>
+
+<?php else:
+$days = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+foreach ($days as $day):
+    if (!isset($schedule_by_day[$day])) continue;
+    // Day of week for "today" highlight
+    $today     = date('l');
+    $is_today  = ($day === $today);
+?>
+<div class="wp-schedule-day">
+    <div class="wp-schedule-day__header">
+        <?php if ($is_today): ?>
+        <div class="wp-schedule-day__dot" style="background:var(--db-amber);box-shadow:0 0 0 4px var(--db-amber-light)"></div>
+        <?php else: ?>
+        <div class="wp-schedule-day__dot" style="background:var(--db-muted);box-shadow:0 0 0 3px var(--db-border)"></div>
+        <?php endif; ?>
+        <div class="wp-schedule-day__name"><?php echo $day; ?></div>
+        <?php if ($is_today): ?>
+        <span class="wp-badge wp-badge--warning"><i class="fas fa-star"></i> Today</span>
+        <?php endif; ?>
+        <div class="wp-schedule-day__line"></div>
+        <span class="wp-badge wp-badge--muted"><?php echo count($schedule_by_day[$day]); ?> route<?php echo count($schedule_by_day[$day]) > 1 ? 's' : ''; ?></span>
+    </div>
+
+    <div class="wp-schedule-grid">
+        <?php foreach ($schedule_by_day[$day] as $sched):
+            $wtype = $sched['waste_type'] ?? 'mixed';
+            $conf  = $waste_config[$wtype] ?? $waste_config['mixed'];
+        ?>
+        <div class="wp-sched-card wp-sched-card--<?php echo $wtype; ?>">
+            <div class="wp-sched-card__head">
+                <div>
+                    <div class="wp-sched-card__title"><?php echo $conf['label']; ?></div>
+                    <div class="wp-sched-card__zone">
+                        <i class="fas fa-map-marker-alt" style="margin-right:3px;color:var(--db-rose)"></i>
+                        <?php echo htmlspecialchars($sched['area_zone']); ?>
+                        <?php if (!empty($sched['purok'])): ?> — <?php echo htmlspecialchars($sched['purok']); ?><?php endif; ?>
+                    </div>
+                </div>
+                <div class="wp-sched-card__type-icon" style="background:<?php echo $conf['bg']; ?>;color:<?php echo $conf['color']; ?>">
+                    <i class="fas <?php echo $conf['icon']; ?>"></i>
+                </div>
+            </div>
+            <div class="wp-sched-card__details">
+                <div class="wp-sched-card__detail">
+                    <i class="fas fa-clock" style="color:var(--db-navy)"></i>
+                    <span><strong><?php echo date('g:i A', strtotime($sched['collection_time'])); ?></strong></span>
+                    <span class="wp-badge <?php echo $conf['badge']; ?>" style="margin-left:auto"><?php echo ucfirst($wtype); ?></span>
+                </div>
+                <?php if (!empty($sched['collector_name'])): ?>
+                <div class="wp-sched-card__detail">
+                    <i class="fas fa-user"></i>
+                    <span><?php echo htmlspecialchars($sched['collector_name']); ?></span>
+                </div>
+                <?php endif; ?>
+                <?php if (!empty($sched['truck_number'])): ?>
+                <div class="wp-sched-card__detail">
+                    <i class="fas fa-truck"></i>
+                    <span>Truck <?php echo htmlspecialchars($sched['truck_number']); ?></span>
+                </div>
+                <?php endif; ?>
+            </div>
+            <?php if (!empty($sched['notes'])): ?>
+            <p class="wp-sched-card__notes"><i class="fas fa-info-circle" style="margin-right:4px"></i><?php echo htmlspecialchars($sched['notes']); ?></p>
+            <?php endif; ?>
+        </div>
+        <?php endforeach; ?>
+    </div>
+</div>
+<?php endforeach; endif; ?>
+
+<!-- ── WASTE SEGREGATION GUIDE ── -->
+<div class="wp-panel">
+    <div class="wp-panel__header">
+        <div class="wp-panel__title">
+            <span class="wp-panel__icon wp-panel__icon--teal"><i class="fas fa-recycle"></i></span>
+            <h2>Waste Segregation Guide</h2>
+        </div>
+    </div>
+    <div class="wp-panel__body">
+        <div style="display:flex;gap:14px;flex-wrap:wrap">
+            <?php foreach ($waste_config as $key => $c): ?>
+            <div class="wp-benefit-item">
+                <i class="fas <?php echo $c['icon']; ?>" style="color:<?php echo $c['color']; ?>"></i>
+                <div class="wp-benefit-item__title"><?php echo $c['label']; ?></div>
+                <div class="wp-benefit-item__desc">
+                    <?php
+                    $seg_examples = [
+                        'biodegradable'     => 'Food scraps, garden waste, paper, cardboard',
+                        'non-biodegradable' => 'Plastics, styrofoam, diapers, sanitary items',
+                        'recyclable'        => 'Bottles, cans, clean paper, cardboard boxes',
+                        'hazardous'         => 'Batteries, chemicals, electronics, medical waste',
+                        'mixed'             => 'General household waste not otherwise sorted',
+                    ];
+                    echo $seg_examples[$key] ?? '';
+                    ?>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+    <div class="wp-panel__footer">
+        <span style="font-size:12px;color:var(--db-muted)">
+            <i class="fas fa-phone-alt" style="color:var(--db-success);margin-right:6px"></i>
+            Questions? Contact the barangay office at <strong>(123) 456-7890</strong>
+        </span>
+    </div>
+</div>
+
+<?php
 $conn->close();
-include '../../../includes/footer.php'; 
+include '../../../includes/footer.php';
 ?>

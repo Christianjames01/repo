@@ -1,12 +1,9 @@
 <?php
 require_once('../../../config/config.php');
-
-// Check if user is logged in
 requireLogin();
 
 $page_title = "View Report Details";
 
-// Get report ID from URL
 if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
     setMessage('Invalid report ID', 'danger');
     header('Location: my-reports.php');
@@ -14,435 +11,403 @@ if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
 }
 
 $issue_id = (int)$_GET['id'];
-$user_id = $_SESSION['user_id'];
+$user_id  = $_SESSION['user_id'];
 
-// Fetch report details - ensure user can only view their own reports
-// Using only basic columns that should exist
-$sql = "SELECT 
-            w.issue_id,
-            w.reporter_id,
-            w.reporter_name,
-            w.reporter_contact,
-            w.issue_type,
-            w.location,
-            w.description,
-            w.urgency,
-            w.status,
-            w.photo_path,
-            w.created_at
-        FROM tbl_waste_issues w
-        WHERE w.issue_id = ? AND w.reporter_id = ?";
+$report = fetchOne($conn,
+    "SELECT issue_id, reporter_id, reporter_name, reporter_contact, issue_type,
+            location, description, urgency, status, photo_path, created_at
+     FROM tbl_waste_issues
+     WHERE issue_id = ? AND reporter_id = ?",
+    [$issue_id, $user_id], 'ii'
+);
 
-$report = fetchOne($conn, $sql, [$issue_id, $user_id], 'ii');
-
-// Check if report exists and belongs to user
 if (!$report) {
-    setMessage('Report not found or you do not have permission to view it', 'danger');
+    setMessage('Report not found or you do not have permission to view it.', 'danger');
     header('Location: my-reports.php');
     exit();
 }
 
-// Helper function for urgency badge if not in functions.php
-if (!function_exists('getUrgencyBadge')) {
-    function getUrgencyBadge($urgency) {
-        $urgency = strtolower(trim($urgency));
-        $badges = [
-            'low' => '<span class="badge bg-success"><i class="fas fa-circle me-1"></i>Low</span>',
-            'medium' => '<span class="badge bg-warning text-dark"><i class="fas fa-exclamation-circle me-1"></i>Medium</span>',
-            'high' => '<span class="badge bg-danger"><i class="fas fa-exclamation-triangle me-1"></i>High</span>',
-            'critical' => '<span class="badge bg-dark"><i class="fas fa-skull-crossbones me-1"></i>Critical</span>'
-        ];
-        
-        return $badges[$urgency] ?? '<span class="badge bg-secondary">Unknown</span>';
-    }
-}
-
+$extra_css = '<link rel="stylesheet" href="../../../assets/css/waste-pages.css?v=' . time() . '">';
 require_once '../../../includes/header.php';
+
+// Urgency config
+$urg_cfg = [
+    'low'      => ['wp-badge--success', 'fa-circle',           'Low',      'Can wait a few days'],
+    'medium'   => ['wp-badge--warning', 'fa-exclamation-circle','Medium',  'Needs attention soon'],
+    'high'     => ['wp-badge--danger',  'fa-exclamation-triangle','High',  'Urgent attention required'],
+    'critical' => ['wp-badge--dark',    'fa-skull-crossbones', 'Critical', 'Immediate action needed'],
+];
+$urg = $urg_cfg[strtolower(trim($report['urgency']))] ?? ['wp-badge--muted','fa-circle','Unknown',''];
+
+// Status config
+$st_cfg = [
+    'pending'     => ['wp-badge--warning', 'fa-clock',         'Pending'],
+    'in progress' => ['wp-badge--info',    'fa-spinner',       'In Progress'],
+    'resolved'    => ['wp-badge--success', 'fa-check-circle',  'Resolved'],
+    'closed'      => ['wp-badge--muted',   'fa-archive',       'Closed'],
+];
+$st = $st_cfg[strtolower(trim($report['status']))] ?? ['wp-badge--muted','fa-circle', ucfirst($report['status'])];
+
+// Timeline state
+$status_lc = strtolower(trim($report['status']));
 ?>
 
-<div class="container-fluid">
-    <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-        <h1 class="h2">
-            <i class="fas fa-file-alt me-2"></i>
-            <?php echo $page_title; ?>
-        </h1>
-        <div class="btn-toolbar mb-2 mb-md-0">
-            <a href="my-reports.php" class="btn btn-secondary me-2">
-                <i class="fas fa-arrow-left me-1"></i>Back to Reports
-            </a>
-            <a href="report-issue.php" class="btn btn-primary">
-                <i class="fas fa-plus me-1"></i>New Report
-            </a>
-        </div>
-    </div>
-
-    <?php echo displayMessage(); ?>
-
-    <div class="row">
-        <!-- Main Report Details -->
-        <div class="col-lg-8">
-            <div class="card shadow mb-4">
-                <div class="card-header py-3 d-flex justify-content-between align-items-center">
-                    <h6 class="m-0 font-weight-bold text-primary">
-                        <i class="fas fa-info-circle me-2"></i>Report #<?php echo $report['issue_id']; ?>
-                    </h6>
-                    <div>
-                        <?php echo getStatusBadge($report['status']); ?>
-                        <?php echo getUrgencyBadge($report['urgency']); ?>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <div class="row mb-4">
-                        <div class="col-md-6">
-                            <h6 class="text-muted mb-2">
-                                <i class="fas fa-exclamation-triangle me-2"></i>Issue Type
-                            </h6>
-                            <p class="font-weight-bold"><?php echo htmlspecialchars($report['issue_type']); ?></p>
-                        </div>
-                        <div class="col-md-6">
-                            <h6 class="text-muted mb-2">
-                                <i class="fas fa-map-marker-alt me-2"></i>Location
-                            </h6>
-                            <p class="font-weight-bold"><?php echo htmlspecialchars($report['location']); ?></p>
-                        </div>
-                    </div>
-
-                    <div class="mb-4">
-                        <h6 class="text-muted mb-2">
-                            <i class="fas fa-align-left me-2"></i>Description
-                        </h6>
-                        <p class="text-justify"><?php echo nl2br(htmlspecialchars($report['description'])); ?></p>
-                    </div>
-
-                    <?php if (!empty($report['photo_path'])): ?>
-                        <div class="mb-4">
-                            <h6 class="text-muted mb-2">
-                                <i class="fas fa-camera me-2"></i>Photo Evidence
-                            </h6>
-                            <div class="text-center">
-                                <img src="../../../<?php echo htmlspecialchars($report['photo_path']); ?>" 
-                                     alt="Issue Photo" 
-                                     class="img-fluid rounded shadow"
-                                     style="max-height: 500px; cursor: pointer;"
-                                     data-bs-toggle="modal" 
-                                     data-bs-target="#photoModal">
-                                <p class="text-muted mt-2">
-                                    <small><i class="fas fa-info-circle me-1"></i>Click to enlarge</small>
-                                </p>
-                            </div>
-                        </div>
-                    <?php endif; ?>
-
-                    <?php if ($report['status'] === 'resolved' || $report['status'] === 'closed'): ?>
-                        <div class="alert alert-success">
-                            <h6 class="alert-heading">
-                                <i class="fas fa-check-circle me-2"></i>Status Update
-                            </h6>
-                            <p class="mb-0">
-                                This issue has been marked as <strong><?php echo ucfirst($report['status']); ?></strong>.
-                                Thank you for helping keep our barangay clean!
-                            </p>
-                        </div>
-                    <?php elseif ($report['status'] === 'in progress'): ?>
-                        <div class="alert alert-info">
-                            <h6 class="alert-heading">
-                                <i class="fas fa-spinner me-2"></i>Status Update
-                            </h6>
-                            <p class="mb-0">
-                                Your issue is currently being addressed by our waste management team.
-                                We'll update you once it has been resolved.
-                            </p>
-                        </div>
-                    <?php endif; ?>
-                </div>
+<!-- ── PAGE HERO ── -->
+<div class="wp-hero">
+    <div class="wp-hero__ring wp-hero__ring--1"></div>
+    <div class="wp-hero__ring wp-hero__ring--2"></div>
+    <div class="wp-hero__ring wp-hero__ring--3"></div>
+    <div class="wp-hero__inner">
+        <div class="wp-hero__left">
+            <div class="wp-hero__icon wp-hero__icon--indigo">
+                <i class="fas fa-file-alt"></i>
             </div>
-
-            <!-- Timeline Card -->
-            <div class="card shadow">
-                <div class="card-header py-3">
-                    <h6 class="m-0 font-weight-bold text-primary">
-                        <i class="fas fa-history me-2"></i>Report Timeline
-                    </h6>
-                </div>
-                <div class="card-body">
-                    <div class="timeline">
-                        <!-- Reported -->
-                        <div class="timeline-item">
-                            <div class="timeline-marker bg-primary"></div>
-                            <div class="timeline-content">
-                                <h6 class="mb-1">
-                                    <i class="fas fa-flag me-1"></i>Report Submitted
-                                </h6>
-                                <p class="text-muted mb-0">
-                                    <?php echo formatDateTime($report['created_at']); ?>
-                                </p>
-                                <small class="text-muted">
-                                    <?php echo timeAgo($report['created_at']); ?>
-                                </small>
-                            </div>
-                        </div>
-
-                        <!-- Status-based timeline items -->
-                        <?php if ($report['status'] === 'in progress'): ?>
-                            <div class="timeline-item">
-                                <div class="timeline-marker bg-info"></div>
-                                <div class="timeline-content">
-                                    <h6 class="mb-1">
-                                        <i class="fas fa-cog me-1"></i>In Progress
-                                    </h6>
-                                    <p class="text-muted mb-0">
-                                        Your issue is being actively addressed
-                                    </p>
-                                </div>
-                            </div>
-                        <?php endif; ?>
-
-                        <?php if ($report['status'] === 'resolved'): ?>
-                            <div class="timeline-item">
-                                <div class="timeline-marker bg-success"></div>
-                                <div class="timeline-content">
-                                    <h6 class="mb-1">
-                                        <i class="fas fa-check-circle me-1"></i>Issue Resolved
-                                    </h6>
-                                    <p class="text-muted mb-0">
-                                        The reported issue has been resolved
-                                    </p>
-                                </div>
-                            </div>
-                        <?php endif; ?>
-
-                        <?php if ($report['status'] === 'closed'): ?>
-                            <div class="timeline-item">
-                                <div class="timeline-marker bg-secondary"></div>
-                                <div class="timeline-content">
-                                    <h6 class="mb-1">
-                                        <i class="fas fa-times-circle me-1"></i>Report Closed
-                                    </h6>
-                                    <p class="text-muted mb-0">
-                                        This report has been closed
-                                    </p>
-                                </div>
-                            </div>
-                        <?php endif; ?>
-                    </div>
-                </div>
+            <div>
+                <h1 class="wp-hero__title">Report <span class="wp-mono" style="color:var(--db-amber)">#<?php echo $report['issue_id']; ?></span></h1>
+                <p class="wp-hero__sub"><?php echo htmlspecialchars($report['issue_type']); ?> — <?php echo date('F j, Y', strtotime($report['created_at'])); ?></p>
             </div>
         </div>
-
-        <!-- Sidebar -->
-        <div class="col-lg-4">
-            <!-- Report Information -->
-            <div class="card shadow mb-4">
-                <div class="card-header py-3">
-                    <h6 class="m-0 font-weight-bold text-primary">
-                        <i class="fas fa-info me-2"></i>Report Information
-                    </h6>
-                </div>
-                <div class="card-body">
-                    <div class="mb-3">
-                        <label class="text-muted small">Report ID</label>
-                        <p class="font-weight-bold">#<?php echo $report['issue_id']; ?></p>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="text-muted small">Current Status</label>
-                        <p><?php echo getStatusBadge($report['status']); ?></p>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="text-muted small">Urgency Level</label>
-                        <p><?php echo getUrgencyBadge($report['urgency']); ?></p>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="text-muted small">Date Reported</label>
-                        <p class="mb-0">
-                            <i class="far fa-calendar me-1"></i>
-                            <?php echo formatDate($report['created_at']); ?>
-                        </p>
-                        <small class="text-muted">
-                            <?php echo timeAgo($report['created_at']); ?>
-                        </small>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Reporter Information -->
-            <div class="card shadow mb-4">
-                <div class="card-header py-3">
-                    <h6 class="m-0 font-weight-bold text-primary">
-                        <i class="fas fa-user me-2"></i>Reporter Information
-                    </h6>
-                </div>
-                <div class="card-body">
-                    <div class="mb-3">
-                        <label class="text-muted small">Name</label>
-                        <p class="mb-0">
-                            <i class="fas fa-user-circle me-1"></i>
-                            <?php echo htmlspecialchars($report['reporter_name']); ?>
-                        </p>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="text-muted small">Contact Number</label>
-                        <p class="mb-0">
-                            <i class="fas fa-phone me-1"></i>
-                            <?php echo htmlspecialchars($report['reporter_contact']); ?>
-                        </p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Status Help Card -->
-            <div class="card shadow">
-                <div class="card-header py-3 bg-info text-white">
-                    <h6 class="m-0 font-weight-bold">
-                        <i class="fas fa-question-circle me-2"></i>Need Help?
-                    </h6>
-                </div>
-                <div class="card-body">
-                    <p class="mb-3">
-                        <strong>What happens next?</strong>
-                    </p>
-                    <ul class="mb-3">
-                        <?php if ($report['status'] === 'pending'): ?>
-                            <li>Your report is being reviewed by our waste management team</li>
-                            <li>We typically respond within 24-48 hours</li>
-                            <li>You'll be notified of any status changes</li>
-                        <?php elseif ($report['status'] === 'in progress'): ?>
-                            <li>Your issue is being actively addressed</li>
-                            <li>Our team is working on resolving it</li>
-                            <li>You'll receive an update once resolved</li>
-                        <?php elseif ($report['status'] === 'resolved'): ?>
-                            <li>Your issue has been resolved</li>
-                            <li>Thank you for helping keep our barangay clean</li>
-                        <?php elseif ($report['status'] === 'closed'): ?>
-                            <li>This report has been closed</li>
-                            <li>If you still have concerns, please submit a new report</li>
-                        <?php endif; ?>
-                    </ul>
-
-                    <hr>
-
-                    <p class="mb-2">
-                        <strong>Contact Information:</strong>
-                    </p>
-                    <p class="mb-1">
-                        <i class="fas fa-phone-alt text-success me-2"></i>
-                        (123) 456-7890
-                    </p>
-                    <p class="mb-0">
-                        <i class="fas fa-envelope text-primary me-2"></i>
-                        waste@barangay.gov.ph
-                    </p>
-                </div>
-            </div>
+        <div class="wp-hero__actions">
+            <span class="wp-badge <?php echo $st[0]; ?>" style="padding:7px 14px;font-size:12px">
+                <i class="fas <?php echo $st[1]; ?>"></i> <?php echo $st[2]; ?>
+            </span>
+            <a href="my-reports.php" class="wp-btn wp-btn--ghost">
+                <i class="fas fa-arrow-left"></i> Back
+            </a>
         </div>
     </div>
 </div>
 
-<!-- Photo Modal -->
-<?php if (!empty($report['photo_path'])): ?>
-<div class="modal fade" id="photoModal" tabindex="-1" aria-labelledby="photoModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-xl">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="photoModalLabel">
-                    <i class="fas fa-image me-2"></i>Issue Photo - Report #<?php echo $report['issue_id']; ?>
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body text-center">
-                <img src="../../../<?php echo htmlspecialchars($report['photo_path']); ?>" 
-                     alt="Issue Photo" 
-                     class="img-fluid">
-            </div>
-            <div class="modal-footer">
-                <a href="../../../<?php echo htmlspecialchars($report['photo_path']); ?>" 
-                   download 
-                   class="btn btn-primary">
-                    <i class="fas fa-download me-1"></i>Download Photo
-                </a>
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-            </div>
-        </div>
-    </div>
-</div>
+<?php if ($msg = displayMessage()): ?>
+<div style="margin-bottom:16px"><?php echo $msg; ?></div>
 <?php endif; ?>
 
-<style>
-/* Timeline Styles */
-.timeline {
-    position: relative;
-    padding-left: 40px;
-}
+<div class="wp-grid">
 
-.timeline::before {
-    content: '';
-    position: absolute;
-    left: 10px;
-    top: 0;
-    bottom: 0;
-    width: 2px;
-    background: #e3e6f0;
-}
+    <!-- ── LEFT: MAIN DETAILS ── -->
+    <div>
 
-.timeline-item {
-    position: relative;
-    margin-bottom: 30px;
-}
+        <!-- Issue Info Panel -->
+        <div class="wp-panel">
+            <div class="wp-panel__header">
+                <div class="wp-panel__title">
+                    <span class="wp-panel__icon wp-panel__icon--indigo"><i class="fas fa-info-circle"></i></span>
+                    <h2>Issue Details</h2>
+                </div>
+                <div style="display:flex;gap:6px">
+                    <span class="wp-badge <?php echo $st[0]; ?>"><i class="fas <?php echo $st[1]; ?>"></i> <?php echo $st[2]; ?></span>
+                    <span class="wp-badge <?php echo $urg[0]; ?>"><i class="fas <?php echo $urg[1]; ?>"></i> <?php echo $urg[2]; ?></span>
+                </div>
+            </div>
+            <div class="wp-panel__body" style="padding:0">
+                <!-- Detail Rows -->
+                <div style="padding:0 22px">
+                    <div class="wp-detail-row">
+                        <div class="wp-detail-row__icon" style="background:var(--db-amber-light);color:var(--db-amber-dark)">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <div style="flex:1">
+                            <div class="wp-detail-row__label">Issue Type</div>
+                            <div class="wp-detail-row__val"><?php echo htmlspecialchars($report['issue_type']); ?></div>
+                        </div>
+                    </div>
+                    <div class="wp-detail-row">
+                        <div class="wp-detail-row__icon" style="background:var(--db-rose-light);color:var(--db-rose)">
+                            <i class="fas fa-map-marker-alt"></i>
+                        </div>
+                        <div style="flex:1">
+                            <div class="wp-detail-row__label">Location</div>
+                            <div class="wp-detail-row__val"><?php echo htmlspecialchars($report['location']); ?></div>
+                        </div>
+                    </div>
+                    <div class="wp-detail-row">
+                        <div class="wp-detail-row__icon" style="background:var(--db-sky-light);color:var(--db-sky)">
+                            <i class="fas fa-tachometer-alt"></i>
+                        </div>
+                        <div style="flex:1">
+                            <div class="wp-detail-row__label">Urgency</div>
+                            <div class="wp-detail-row__val">
+                                <span class="wp-badge <?php echo $urg[0]; ?>" style="margin-right:6px"><i class="fas <?php echo $urg[1]; ?>"></i> <?php echo $urg[2]; ?></span>
+                                <span style="font-size:12px;color:var(--db-muted);font-weight:400"><?php echo $urg[3]; ?></span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="wp-detail-row">
+                        <div class="wp-detail-row__icon" style="background:var(--db-info-light);color:var(--db-info)">
+                            <i class="far fa-calendar"></i>
+                        </div>
+                        <div style="flex:1">
+                            <div class="wp-detail-row__label">Date Reported</div>
+                            <div class="wp-detail-row__val">
+                                <?php echo date('F j, Y \a\t g:i A', strtotime($report['created_at'])); ?>
+                                <span style="font-size:11px;color:var(--db-muted);margin-left:6px">(<?php echo timeAgo($report['created_at']); ?>)</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-.timeline-item:last-child {
-    margin-bottom: 0;
-}
+                <!-- Description -->
+                <div style="padding:18px 22px;background:var(--db-surf2);border-top:1px solid var(--db-border)">
+                    <p style="font-size:11px;font-weight:700;color:var(--db-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">
+                        <i class="fas fa-align-left" style="margin-right:5px"></i>Description
+                    </p>
+                    <p style="font-size:13.5px;line-height:1.8;color:var(--db-text);margin:0"><?php echo nl2br(htmlspecialchars($report['description'])); ?></p>
+                </div>
+            </div>
+        </div>
 
-.timeline-marker {
-    position: absolute;
-    left: -35px;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    border: 3px solid #fff;
-    box-shadow: 0 0 0 2px #e3e6f0;
-}
+        <!-- Photo Panel -->
+        <?php if (!empty($report['photo_path'])): ?>
+        <div class="wp-panel">
+            <div class="wp-panel__header">
+                <div class="wp-panel__title">
+                    <span class="wp-panel__icon wp-panel__icon--amber"><i class="fas fa-camera"></i></span>
+                    <h2>Photo Evidence</h2>
+                </div>
+                <a href="../../../<?php echo htmlspecialchars($report['photo_path']); ?>" download class="wp-btn wp-btn--ghost wp-btn--sm">
+                    <i class="fas fa-download"></i> Download
+                </a>
+            </div>
+            <div class="wp-panel__body">
+                <div class="wp-photo-wrap" onclick="openImgModal('../../../<?php echo htmlspecialchars($report['photo_path']); ?>')">
+                    <img src="../../../<?php echo htmlspecialchars($report['photo_path']); ?>" alt="Issue Photo">
+                </div>
+                <p style="font-size:11.5px;color:var(--db-muted);margin-top:8px;text-align:center">
+                    <i class="fas fa-search-plus" style="margin-right:4px"></i>Click to enlarge
+                </p>
+            </div>
+        </div>
+        <?php endif; ?>
 
-.timeline-content {
-    background: #f8f9fc;
-    padding: 15px;
-    border-radius: 8px;
-    border-left: 3px solid #4e73df;
-}
+        <!-- Status Banner -->
+        <?php if ($status_lc === 'resolved'): ?>
+        <div class="wp-panel" style="border-color:var(--db-success);overflow:hidden">
+            <div style="background:linear-gradient(135deg,var(--db-success),#059669);padding:18px 22px;display:flex;align-items:center;gap:14px">
+                <div style="width:44px;height:44px;background:rgba(255,255,255,.2);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;color:#fff;flex-shrink:0">
+                    <i class="fas fa-check-circle"></i>
+                </div>
+                <div>
+                    <div style="font-size:15px;font-weight:700;color:#fff">Issue Resolved</div>
+                    <div style="font-size:12.5px;color:rgba(255,255,255,.75)">This issue has been resolved by our team. Thank you for helping keep our barangay clean!</div>
+                </div>
+            </div>
+        </div>
+        <?php elseif ($status_lc === 'in progress'): ?>
+        <div class="wp-panel" style="border-color:var(--db-info);overflow:hidden">
+            <div style="background:linear-gradient(135deg,var(--db-info),#2563eb);padding:18px 22px;display:flex;align-items:center;gap:14px">
+                <div style="width:44px;height:44px;background:rgba(255,255,255,.2);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;color:#fff;flex-shrink:0">
+                    <i class="fas fa-cog fa-spin"></i>
+                </div>
+                <div>
+                    <div style="font-size:15px;font-weight:700;color:#fff">In Progress</div>
+                    <div style="font-size:12.5px;color:rgba(255,255,255,.75)">Our waste management team is actively addressing your reported issue.</div>
+                </div>
+            </div>
+        </div>
+        <?php elseif ($status_lc === 'closed'): ?>
+        <div class="wp-info-box">
+            <div class="wp-info-box__title"><i class="fas fa-archive"></i> Report Closed</div>
+            This report has been closed. If you still have concerns, please submit a new report.
+        </div>
+        <?php endif; ?>
 
-.timeline-content h6 {
-    margin-bottom: 5px;
-    color: #5a5c69;
-}
+        <!-- Timeline Panel -->
+        <div class="wp-panel">
+            <div class="wp-panel__header">
+                <div class="wp-panel__title">
+                    <span class="wp-panel__icon wp-panel__icon--teal"><i class="fas fa-history"></i></span>
+                    <h2>Report Timeline</h2>
+                </div>
+            </div>
+            <div class="wp-timeline">
+                <div class="wp-timeline__item wp-timeline__item--submitted">
+                    <div class="wp-timeline__dot"></div>
+                    <div class="wp-timeline__card">
+                        <div class="wp-timeline__title"><i class="fas fa-flag" style="margin-right:6px"></i>Report Submitted</div>
+                        <div class="wp-timeline__meta"><?php echo date('F j, Y \a\t g:i A', strtotime($report['created_at'])); ?> · <?php echo timeAgo($report['created_at']); ?></div>
+                    </div>
+                </div>
 
-.timeline-content p {
-    margin-bottom: 5px;
-    color: #858796;
-}
+                <?php if (in_array($status_lc, ['in progress','resolved','closed'])): ?>
+                <div class="wp-timeline__item wp-timeline__item--progress">
+                    <div class="wp-timeline__dot"></div>
+                    <div class="wp-timeline__card">
+                        <div class="wp-timeline__title"><i class="fas fa-cog" style="margin-right:6px"></i>Report Under Review</div>
+                        <div class="wp-timeline__meta">Reviewed and assigned to waste management team</div>
+                    </div>
+                </div>
+                <?php endif; ?>
 
-/* Card hover effect */
-.card {
-    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
-}
+                <?php if ($status_lc === 'in progress'): ?>
+                <div class="wp-timeline__item wp-timeline__item--progress">
+                    <div class="wp-timeline__dot"></div>
+                    <div class="wp-timeline__card">
+                        <div class="wp-timeline__title"><i class="fas fa-tools" style="margin-right:6px"></i>In Progress</div>
+                        <div class="wp-timeline__meta">Issue is being actively addressed by our team</div>
+                    </div>
+                </div>
+                <?php endif; ?>
 
-.card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 1rem 3rem rgba(0,0,0,.175) !important;
-}
+                <?php if ($status_lc === 'resolved'): ?>
+                <div class="wp-timeline__item wp-timeline__item--resolved">
+                    <div class="wp-timeline__dot"></div>
+                    <div class="wp-timeline__card">
+                        <div class="wp-timeline__title"><i class="fas fa-check-circle" style="margin-right:6px"></i>Issue Resolved</div>
+                        <div class="wp-timeline__meta">The reported issue has been successfully resolved</div>
+                    </div>
+                </div>
+                <?php endif; ?>
 
-/* Image hover effect */
-img[data-bs-toggle="modal"] {
-    transition: transform 0.2s ease-in-out;
-}
+                <?php if ($status_lc === 'closed'): ?>
+                <div class="wp-timeline__item wp-timeline__item--closed">
+                    <div class="wp-timeline__dot"></div>
+                    <div class="wp-timeline__card">
+                        <div class="wp-timeline__title"><i class="fas fa-archive" style="margin-right:6px"></i>Report Closed</div>
+                        <div class="wp-timeline__meta">This report has been archived</div>
+                    </div>
+                </div>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
 
-img[data-bs-toggle="modal"]:hover {
-    transform: scale(1.02);
-}
-</style>
+    <!-- ── RIGHT SIDEBAR ── -->
+    <div>
 
-<?php 
-require_once '../../../includes/footer.php'; 
-?>
+        <!-- Quick Info -->
+        <div class="wp-panel">
+            <div class="wp-panel__header">
+                <div class="wp-panel__title">
+                    <span class="wp-panel__icon wp-panel__icon--indigo"><i class="fas fa-tag"></i></span>
+                    <h2>Report Summary</h2>
+                </div>
+            </div>
+            <div class="wp-panel__body" style="display:flex;flex-direction:column;gap:12px">
+                <div style="display:flex;align-items:center;justify-content:space-between">
+                    <span style="font-size:12px;font-weight:600;color:var(--db-muted);text-transform:uppercase;letter-spacing:.5px">Report ID</span>
+                    <span class="wp-id" style="font-size:14px">#<?php echo $report['issue_id']; ?></span>
+                </div>
+                <div style="height:1px;background:var(--db-border)"></div>
+                <div style="display:flex;align-items:center;justify-content:space-between">
+                    <span style="font-size:12px;font-weight:600;color:var(--db-muted);text-transform:uppercase;letter-spacing:.5px">Status</span>
+                    <span class="wp-badge <?php echo $st[0]; ?>"><i class="fas <?php echo $st[1]; ?>"></i> <?php echo $st[2]; ?></span>
+                </div>
+                <div style="height:1px;background:var(--db-border)"></div>
+                <div style="display:flex;align-items:center;justify-content:space-between">
+                    <span style="font-size:12px;font-weight:600;color:var(--db-muted);text-transform:uppercase;letter-spacing:.5px">Urgency</span>
+                    <span class="wp-badge <?php echo $urg[0]; ?>"><i class="fas <?php echo $urg[1]; ?>"></i> <?php echo $urg[2]; ?></span>
+                </div>
+                <div style="height:1px;background:var(--db-border)"></div>
+                <div>
+                    <span style="font-size:12px;font-weight:600;color:var(--db-muted);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:5px">Date Reported</span>
+                    <span style="font-size:13px;font-family:'DM Mono',monospace"><?php echo date('M d, Y', strtotime($report['created_at'])); ?></span>
+                    <span style="font-size:11px;color:var(--db-muted);display:block"><?php echo timeAgo($report['created_at']); ?></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Reporter Info -->
+        <div class="wp-panel">
+            <div class="wp-panel__header">
+                <div class="wp-panel__title">
+                    <span class="wp-panel__icon wp-panel__icon--teal"><i class="fas fa-user"></i></span>
+                    <h2>Reporter Info</h2>
+                </div>
+            </div>
+            <div class="wp-panel__body" style="display:flex;flex-direction:column;gap:10px">
+                <div class="wp-detail-row" style="border:none;padding:0">
+                    <div class="wp-detail-row__icon" style="background:var(--db-sky-light);color:var(--db-sky)">
+                        <i class="fas fa-user-circle"></i>
+                    </div>
+                    <div>
+                        <div class="wp-detail-row__label">Name</div>
+                        <div class="wp-detail-row__val"><?php echo htmlspecialchars($report['reporter_name']); ?></div>
+                    </div>
+                </div>
+                <div class="wp-detail-row" style="border:none;padding:0">
+                    <div class="wp-detail-row__icon" style="background:var(--db-success-light);color:var(--db-success)">
+                        <i class="fas fa-phone"></i>
+                    </div>
+                    <div>
+                        <div class="wp-detail-row__label">Contact</div>
+                        <div class="wp-detail-row__val"><?php echo htmlspecialchars($report['reporter_contact']); ?></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- What's Next -->
+        <div class="wp-panel">
+            <div class="wp-panel__header">
+                <div class="wp-panel__title">
+                    <span class="wp-panel__icon wp-panel__icon--amber"><i class="fas fa-question-circle"></i></span>
+                    <h2>What's Next?</h2>
+                </div>
+            </div>
+            <div class="wp-panel__body" style="display:flex;flex-direction:column;gap:8px">
+                <?php if ($status_lc === 'pending'): ?>
+                <div class="wp-info-box">
+                    <div class="wp-info-box__title"><i class="fas fa-clock"></i> Awaiting Review</div>
+                    <ul style="margin:0;padding-left:16px;font-size:12.5px">
+                        <li>Your report is being reviewed by our team</li>
+                        <li>We typically respond within 24–48 hours</li>
+                        <li>You'll see status updates on this page</li>
+                    </ul>
+                </div>
+                <?php elseif ($status_lc === 'in progress'): ?>
+                <div class="wp-info-box">
+                    <div class="wp-info-box__title"><i class="fas fa-cog"></i> Being Addressed</div>
+                    <ul style="margin:0;padding-left:16px;font-size:12.5px">
+                        <li>Your issue is actively being worked on</li>
+                        <li>Our team is on location or scheduling a visit</li>
+                        <li>You'll be notified once resolved</li>
+                    </ul>
+                </div>
+                <?php elseif ($status_lc === 'resolved'): ?>
+                <div class="wp-info-box" style="background:var(--db-success);opacity:.95">
+                    <div class="wp-info-box__title" style="color:#fff"><i class="fas fa-check-circle"></i> All Done!</div>
+                    <p style="font-size:12.5px;margin:0;color:rgba(255,255,255,.85)">Thank you for helping keep our barangay clean and safe.</p>
+                </div>
+                <?php elseif ($status_lc === 'closed'): ?>
+                <div class="wp-info-box">
+                    <div class="wp-info-box__title"><i class="fas fa-archive"></i> Closed</div>
+                    <p style="font-size:12.5px;margin:0">If you still have concerns, please submit a new report.</p>
+                </div>
+                <?php endif; ?>
+            </div>
+            <div class="wp-panel__footer">
+                <div style="font-size:12px;color:var(--db-muted)">
+                    <div><i class="fas fa-phone-alt" style="color:var(--db-success);margin-right:6px"></i><strong>(123) 456-7890</strong></div>
+                    <div style="margin-top:2px"><i class="fas fa-envelope" style="color:var(--db-info);margin-right:6px"></i>waste@barangay.gov.ph</div>
+                </div>
+            </div>
+        </div>
+
+        <a href="report-issue.php" class="wp-btn wp-btn--primary" style="width:100%;justify-content:center;margin-top:4px">
+            <i class="fas fa-plus"></i> Report Another Issue
+        </a>
+    </div>
+</div>
+
+<!-- ── IMAGE MODAL ── -->
+<div id="imgModal" class="wp-modal" onclick="if(event.target===this)closeImgModal()">
+    <div class="wp-modal__img-wrap">
+        <button class="wp-modal__close" onclick="closeImgModal()"><i class="fas fa-times"></i></button>
+        <img id="modalImg" src="" alt="Photo Evidence">
+    </div>
+</div>
+
+<script>
+function openImgModal(src) {
+    document.getElementById('modalImg').src = src;
+    document.getElementById('imgModal').classList.add('wp-modal--open');
+    document.body.style.overflow = 'hidden';
+}
+function closeImgModal() {
+    document.getElementById('imgModal').classList.remove('wp-modal--open');
+    document.body.style.overflow = '';
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeImgModal(); });
+</script>
+
+<?php require_once '../../../includes/footer.php'; ?>
