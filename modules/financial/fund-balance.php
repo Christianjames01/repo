@@ -18,7 +18,7 @@ $current_user_id = getCurrentUserId();
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['action'])) {
         if ($_POST['action'] === 'set_balance') {
-        $new_balance = floatval($_POST['new_balance']);
+            $new_balance = floatval($_POST['new_balance']);
             $notes = trim($_POST['notes']);
             
             // Start transaction

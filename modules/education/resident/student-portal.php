@@ -5,6 +5,7 @@ requireLogin();
 $user_role = getCurrentUserRole();
 $resident_id = null;
 
+// Get resident ID
 if ($user_role === 'Resident') {
     $user_id = getCurrentUserId();
     $user_sql = "SELECT resident_id FROM tbl_users WHERE user_id = ?";
@@ -14,335 +15,283 @@ if ($user_role === 'Resident') {
 
 $page_title = 'Student Portal';
 
+// Get student records for this resident
 $my_records_sql = "SELECT * FROM tbl_education_students WHERE resident_id = ? ORDER BY created_at DESC";
 $my_records = $resident_id ? fetchAll($conn, $my_records_sql, [$resident_id], 'i') : [];
 
+// Get available scholarships
 $scholarships_sql = "SELECT * FROM tbl_education_scholarships 
                      WHERE status = 'active' 
                      AND (application_end IS NULL OR application_end >= CURDATE())
                      ORDER BY created_at DESC";
 $scholarships = fetchAll($conn, $scholarships_sql);
 
-$success_message = '';
-$error_message   = '';
-if (isset($_SESSION['temp_success'])) { $success_message = $_SESSION['temp_success']; unset($_SESSION['temp_success']); }
-if (isset($_SESSION['temp_error']))   { $error_message   = $_SESSION['temp_error'];   unset($_SESSION['temp_error']); }
-
-$extra_css = '<link rel="stylesheet" href="../../../assets/css/dashboard-index.css?v=' . time() . '">';
 include '../../../includes/header.php';
 ?>
 
-<!-- HERO -->
-<div class="db-hero">
-    <div class="db-hero__ring db-hero__ring--1"></div>
-    <div class="db-hero__ring db-hero__ring--2"></div>
-    <div class="db-hero__ring db-hero__ring--3"></div>
-    <div class="db-hero__inner">
-        <div class="db-hero__left">
-            <div class="db-hero__avatar" style="background: linear-gradient(135deg, #6366f1, #4f46e5);">
-                <i class="fas fa-user-graduate" style="font-size:22px;"></i>
-            </div>
-            <div class="db-hero__text">
-                <div class="db-hero__role-badge badge-resident">
-                    <span class="db-hero__role-dot"></span>
-                    Education Module
+<style>
+.scholarship-card {
+    transition: all 0.3s;
+    border-radius: 12px;
+}
+.scholarship-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.15) !important;
+}
+.feature-icon {
+    width: 48px;
+    height: 48px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 1.5rem;
+}
+.status-timeline {
+    position: relative;
+    padding-left: 30px;
+}
+.status-timeline::before {
+    content: '';
+    position: absolute;
+    left: 9px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #e9ecef;
+}
+.timeline-item {
+    position: relative;
+    padding-bottom: 1.5rem;
+}
+.timeline-dot {
+    position: absolute;
+    left: -26px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 3px solid;
+    background: white;
+}
+</style>
+
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h2 class="mb-0">
+                        <i class="fas fa-user-graduate me-2 text-primary"></i>Student Portal
+                    </h2>
+                    <p class="text-muted mb-0">Manage your educational assistance and scholarship applications</p>
                 </div>
-                <h1 class="db-hero__title">Student Portal</h1>
-                <p class="db-hero__sub">Manage your scholarship applications and educational assistance</p>
+                <a href="apply-scholarship.php" class="btn btn-primary">
+                    <i class="fas fa-plus me-1"></i>Apply for Scholarship
+                </a>
             </div>
         </div>
-        <div class="db-hero__right">
-            <a href="apply-scholarship.php" class="db-btn db-btn--primary db-btn--sm">
-                <i class="fas fa-plus"></i> Apply for Scholarship
-            </a>
+    </div>
+
+    <?php echo displayMessage(); ?>
+
+    <!-- Welcome Section -->
+    <?php if (empty($my_records)): ?>
+        <div class="card border-0 shadow-sm mb-4" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+            <div class="card-body text-white py-5">
+                <div class="row align-items-center">
+                    <div class="col-md-8">
+                        <h3 class="text-white mb-3">Welcome to the Student Portal!</h3>
+                        <p class="mb-4">Apply for scholarships, educational assistance, and track your applications all in one place.</p>
+                        <a href="apply-scholarship.php" class="btn btn-light btn-lg">
+                            <i class="fas fa-graduation-cap me-2"></i>Apply Now
+                        </a>
+                    </div>
+                    <div class="col-md-4 text-center">
+                        <i class="fas fa-graduation-cap" style="font-size: 120px; opacity: 0.3;"></i>
+                    </div>
+                </div>
+            </div>
         </div>
-    </div>
-</div>
+    <?php endif; ?>
 
-<?php if ($success_message): ?>
-<div class="db-alert db-alert--success">
-    <div class="db-alert__icon"><i class="fas fa-check-circle"></i></div>
-    <span><?php echo htmlspecialchars($success_message); ?></span>
-    <button class="db-alert__close" onclick="this.parentElement.remove()">×</button>
-</div>
-<?php endif; ?>
-<?php if ($error_message): ?>
-<div class="db-alert db-alert--error">
-    <div class="db-alert__icon"><i class="fas fa-exclamation-circle"></i></div>
-    <span><?php echo htmlspecialchars($error_message); ?></span>
-    <button class="db-alert__close" onclick="this.parentElement.remove()">×</button>
-</div>
-<?php endif; ?>
-
-
-<!-- Welcome banner (only when no records) -->
-<?php if (empty($my_records)): ?>
-<div style="background: linear-gradient(135deg, var(--db-navy) 0%, var(--db-navy-light) 65%, #224090 100%);
-            border-radius: var(--db-radius-lg); padding: 32px 36px; margin-bottom: 24px;
-            display:flex; align-items:center; justify-content:space-between; gap:20px; flex-wrap:wrap;
-            position:relative; overflow:hidden;">
-    <div style="position:absolute;width:260px;height:260px;border-radius:50%;border:1px solid rgba(255,255,255,.06);top:-100px;right:-40px;"></div>
-    <div style="position:relative;z-index:1;">
-        <h3 style="color:#fff;font-size:20px;font-weight:800;margin-bottom:8px;">Welcome to the Student Portal!</h3>
-        <p style="color:rgba(255,255,255,.6);margin:0;font-size:13.5px;">Apply for scholarships, track applications, and manage documents — all in one place.</p>
-    </div>
-    <a href="apply-scholarship.php" class="db-btn db-btn--primary" style="position:relative;z-index:1;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);color:#fff;flex-shrink:0;">
-        <i class="fas fa-graduation-cap"></i> Apply Now
-    </a>
-</div>
-<?php endif; ?>
-
-
-<!-- STATS ROW -->
-<div class="db-stats-row">
-    <div class="db-stat-card">
-        <div class="db-stat-card__icon db-stat-card__icon--indigo"><i class="fas fa-file-alt"></i></div>
-        <div>
-            <div class="db-stat-card__num"><?php echo count($my_records); ?></div>
-            <div class="db-stat-card__label">My Applications</div>
-        </div>
-        <div class="db-stat-card__sparkline db-stat-card__sparkline--indigo"></div>
-    </div>
-    <?php
-    $active_count  = count(array_filter($my_records, fn($r) => $r['scholarship_status'] === 'active'));
-    $pending_count = count(array_filter($my_records, fn($r) => $r['scholarship_status'] === 'pending'));
-    ?>
-    <div class="db-stat-card">
-        <div class="db-stat-card__icon db-stat-card__icon--teal"><i class="fas fa-check-circle"></i></div>
-        <div>
-            <div class="db-stat-card__num"><?php echo $active_count; ?></div>
-            <div class="db-stat-card__label">Active Scholarships</div>
-        </div>
-        <div class="db-stat-card__sparkline db-stat-card__sparkline--teal"></div>
-    </div>
-    <div class="db-stat-card">
-        <div class="db-stat-card__icon db-stat-card__icon--amber"><i class="fas fa-clock"></i></div>
-        <div>
-            <div class="db-stat-card__num"><?php echo $pending_count; ?></div>
-            <div class="db-stat-card__label">Pending Review</div>
-        </div>
-        <div class="db-stat-card__sparkline db-stat-card__sparkline--amber"></div>
-    </div>
-    <div class="db-stat-card">
-        <div class="db-stat-card__icon db-stat-card__icon--blue"><i class="fas fa-award"></i></div>
-        <div>
-            <div class="db-stat-card__num"><?php echo count($scholarships); ?></div>
-            <div class="db-stat-card__label">Available Scholarships</div>
-        </div>
-        <div class="db-stat-card__sparkline db-stat-card__sparkline--blue"></div>
-    </div>
-</div>
-
-
-<!-- MAIN GRID -->
-<div class="db-grid">
-
-    <!-- LEFT / MAIN -->
-    <div class="db-grid__main">
-
+    <div class="row">
         <!-- My Applications -->
-        <div class="db-panel">
-            <div class="db-panel__header">
-                <div class="db-panel__title">
-                    <span class="db-panel__icon db-panel__icon--indigo"><i class="fas fa-file-alt"></i></span>
-                    <h2>My Applications</h2>
+        <div class="col-md-8 mb-4">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white border-0 py-3">
+                    <h5 class="mb-0">
+                        <i class="fas fa-file-alt me-2 text-primary"></i>My Applications
+                    </h5>
                 </div>
-                <a href="apply-scholarship.php" class="db-btn db-btn--primary db-btn--sm">
-                    <i class="fas fa-plus"></i> New Application
-                </a>
-            </div>
-
-            <?php if (empty($my_records)): ?>
-            <div class="db-empty">
-                <i class="fas fa-inbox"></i>
-                <p>You haven't submitted any applications yet.</p>
-                <a href="apply-scholarship.php" class="db-btn db-btn--primary db-btn--sm">
-                    <i class="fas fa-plus"></i> Submit Your First Application
-                </a>
-            </div>
-            <?php else: ?>
-            <div class="db-table-wrap">
-                <table class="db-table">
-                    <thead>
-                        <tr>
-                            <th>School</th>
-                            <th>Level / Course</th>
-                            <th>Scholarship</th>
-                            <th>Applied</th>
-                            <th>Status</th>
-                            <th>Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    <?php foreach ($my_records as $record):
-                        $status = $record['scholarship_status'];
-                        $badge_map = [
-                            'pending'  => 'db-badge--warning',
-                            'active'   => 'db-badge--success',
-                            'rejected' => 'db-badge--danger',
-                            'expired'  => 'db-badge--muted',
-                        ];
-                        $label_map = [
-                            'pending'  => 'Pending Review',
-                            'active'   => 'Active Scholar',
-                            'rejected' => 'Rejected',
-                            'expired'  => 'Expired',
-                        ];
-                        $icon_map = [
-                            'pending'  => 'fa-clock',
-                            'active'   => 'fa-check-circle',
-                            'rejected' => 'fa-times-circle',
-                            'expired'  => 'fa-hourglass-end',
-                        ];
-                        $badge_cls = $badge_map[$status]  ?? 'db-badge--muted';
-                        $label     = $label_map[$status]  ?? ucfirst($status);
-                        $icon      = $icon_map[$status]   ?? 'fa-circle';
-                    ?>
-                    <tr>
-                        <td><strong><?php echo htmlspecialchars($record['school_name']); ?></strong></td>
-                        <td>
-                            <span class="db-badge db-badge--primary"><?php echo htmlspecialchars($record['grade_level']); ?></span>
-                            <?php if ($record['course']): ?>
-                            <br><span class="db-text-sm"><?php echo htmlspecialchars($record['course']); ?></span>
-                            <?php endif; ?>
-                        </td>
-                        <td>
-                            <?php if ($record['scholarship_type']): ?>
-                                <?php echo htmlspecialchars($record['scholarship_type']); ?>
-                                <?php if ($record['scholarship_amount'] > 0): ?>
-                                <br><span class="db-text-sm" style="color:var(--db-teal);">₱<?php echo number_format($record['scholarship_amount'], 2); ?></span>
-                                <?php endif; ?>
-                            <?php else: ?>
-                                <span class="db-text-muted">General</span>
-                            <?php endif; ?>
-                        </td>
-                        <td><span class="db-text-sm"><?php echo date('M d, Y', strtotime($record['application_date'])); ?></span></td>
-                        <td><span class="db-badge <?php echo $badge_cls; ?>"><i class="fas <?php echo $icon; ?>"></i> <?php echo $label; ?></span></td>
-                        <td>
-                            <a href="view-application.php?id=<?php echo $record['student_id']; ?>" class="db-icon-btn db-icon-btn--info" title="View Details">
-                                <i class="fas fa-eye"></i>
+                <div class="card-body">
+                    <?php if (empty($my_records)): ?>
+                        <div class="text-center py-5">
+                            <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+                            <p class="text-muted">You haven't submitted any applications yet</p>
+                            <a href="apply-scholarship.php" class="btn btn-primary">
+                                <i class="fas fa-plus me-1"></i>Submit Your First Application
                             </a>
-                        </td>
-                    </tr>
+                        </div>
+                    <?php else: ?>
+                        <?php foreach ($my_records as $record): ?>
+                            <div class="card mb-3 border">
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-8">
+                                            <h6 class="mb-2">
+                                                <?php echo htmlspecialchars($record['school_name']); ?>
+                                            </h6>
+                                            <div class="mb-2">
+                                                <span class="badge bg-primary me-2">
+                                                    <?php echo htmlspecialchars($record['grade_level']); ?>
+                                                </span>
+                                                <?php if ($record['course']): ?>
+                                                    <span class="badge bg-secondary">
+                                                        <?php echo htmlspecialchars($record['course']); ?>
+                                                    </span>
+                                                <?php endif; ?>
+                                            </div>
+                                            <div class="small text-muted mb-2">
+                                                <i class="fas fa-calendar me-2"></i>
+                                                Applied: <?php echo formatDate($record['application_date']); ?>
+                                            </div>
+                                            <?php if ($record['scholarship_type']): ?>
+                                                <div class="small">
+                                                    <strong>Scholarship:</strong> <?php echo htmlspecialchars($record['scholarship_type']); ?>
+                                                    <?php if ($record['scholarship_amount'] > 0): ?>
+                                                        - ₱<?php echo number_format($record['scholarship_amount'], 2); ?>
+                                                    <?php endif; ?>
+                                                </div>
+                                            <?php endif; ?>
+                                        </div>
+                                        <div class="col-md-4 text-end">
+                                            <div class="mb-3">
+                                                <?php
+                                                $status = $record['scholarship_status'];
+                                                if ($status == 'pending') {
+                                                    echo '<span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i>Pending Review</span>';
+                                                } elseif ($status == 'active') {
+                                                    echo '<span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Active Scholar</span>';
+                                                } elseif ($status == 'rejected') {
+                                                    echo '<span class="badge bg-danger"><i class="fas fa-times-circle me-1"></i>Rejected</span>';
+                                                } elseif ($status == 'expired') {
+                                                    echo '<span class="badge bg-secondary"><i class="fas fa-hourglass-end me-1"></i>Expired</span>';
+                                                }
+                                                ?>
+                                            </div>
+                                            <a href="view-application.php?id=<?php echo $record['student_id']; ?>" 
+                                               class="btn btn-sm btn-outline-primary">
+                                                <i class="fas fa-eye me-1"></i>View Details
+                                            </a>
+                                        </div>
+                                    </div>
 
-                    <?php if ($status === 'active'): ?>
-                    <tr style="background:var(--db-surf2);">
-                        <td colspan="6" style="padding:0 16px 14px;">
-                            <div style="display:flex;gap:24px;flex-wrap:wrap;padding-top:10px;">
-                                <div style="display:flex;align-items:center;gap:8px;">
-                                    <span style="width:10px;height:10px;background:var(--db-success);border-radius:50%;display:inline-block;"></span>
-                                    <span style="font-size:12px;color:var(--db-muted);">Approved:
-                                        <strong style="color:var(--db-text);"><?php echo date('M d, Y', strtotime($record['approval_date'])); ?></strong>
-                                    </span>
+                                    <!-- Progress Timeline for Active Scholarships -->
+                                    <?php if ($record['scholarship_status'] == 'active'): ?>
+                                        <hr>
+                                        <div class="status-timeline">
+                                            <div class="timeline-item">
+                                                <div class="timeline-dot border-success" style="background: #28a745;"></div>
+                                                <strong class="text-success">Application Approved</strong>
+                                                <div class="small text-muted">
+                                                    <?php echo formatDate($record['approval_date']); ?>
+                                                </div>
+                                            </div>
+                                            <?php if ($record['scholarship_start_date']): ?>
+                                                <div class="timeline-item">
+                                                    <div class="timeline-dot border-primary" style="background: #007bff;"></div>
+                                                    <strong>Scholarship Active</strong>
+                                                    <div class="small text-muted">
+                                                        Start: <?php echo formatDate($record['scholarship_start_date']); ?>
+                                                        <?php if ($record['scholarship_end_date']): ?>
+                                                            <br>End: <?php echo formatDate($record['scholarship_end_date']); ?>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                </div>
+                                            <?php endif; ?>
+                                        </div>
+                                    <?php endif; ?>
                                 </div>
-                                <?php if ($record['scholarship_start_date']): ?>
-                                <div style="display:flex;align-items:center;gap:8px;">
-                                    <span style="width:10px;height:10px;background:var(--db-sky);border-radius:50%;display:inline-block;"></span>
-                                    <span style="font-size:12px;color:var(--db-muted);">Active:
-                                        <strong style="color:var(--db-text);"><?php echo date('M d, Y', strtotime($record['scholarship_start_date'])); ?></strong>
-                                        <?php if ($record['scholarship_end_date']): ?>
-                                        – <?php echo date('M d, Y', strtotime($record['scholarship_end_date'])); ?>
-                                        <?php endif; ?>
-                                    </span>
-                                </div>
-                                <?php endif; ?>
                             </div>
-                        </td>
-                    </tr>
+                        <?php endforeach; ?>
                     <?php endif; ?>
-
-                    <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
-            <?php endif; ?>
-        </div>
-
-    </div><!-- /main -->
-
-
-    <!-- RIGHT SIDEBAR -->
-    <div class="db-grid__side">
-
-        <!-- Quick Links -->
-        <div class="db-panel">
-            <div class="db-panel__header">
-                <div class="db-panel__title">
-                    <span class="db-panel__icon db-panel__icon--blue"><i class="fas fa-link"></i></span>
-                    <h2>Quick Links</h2>
                 </div>
-            </div>
-            <div style="padding:14px 18px;display:flex;flex-direction:column;gap:8px;">
-                <a href="request-assistance.php" class="db-quicklink-card" style="flex:unset;">
-                    <i class="fas fa-hand-holding-usd"></i>
-                    <span>Request Assistance</span>
-                    <i class="fas fa-arrow-right db-quicklink-card__arrow"></i>
-                </a>
-                <a href="my-documents.php" class="db-quicklink-card db-quicklink-card--amber" style="flex:unset;">
-                    <i class="fas fa-folder-open"></i>
-                    <span>My Documents</span>
-                    <i class="fas fa-arrow-right db-quicklink-card__arrow"></i>
-                </a>
-                <a href="scholarship-guide.php" class="db-quicklink-card" style="flex:unset;background:linear-gradient(135deg,#0d9488,#0f766e);">
-                    <i class="fas fa-book"></i>
-                    <span>Scholarship Guide</span>
-                    <i class="fas fa-arrow-right db-quicklink-card__arrow"></i>
-                </a>
             </div>
         </div>
 
-        <!-- Available Scholarships -->
-        <div class="db-panel">
-            <div class="db-panel__header">
-                <div class="db-panel__title">
-                    <span class="db-panel__icon db-panel__icon--amber"><i class="fas fa-award"></i></span>
-                    <h2>Available Scholarships</h2>
+        <!-- Sidebar -->
+        <div class="col-md-4">
+            <!-- Available Scholarships -->
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white border-0 py-3">
+                    <h5 class="mb-0">
+                        <i class="fas fa-award me-2 text-warning"></i>Available Scholarships
+                    </h5>
                 </div>
-                <?php if (!empty($scholarships)): ?>
-                <span class="db-badge db-badge--success"><?php echo count($scholarships); ?> open</span>
-                <?php endif; ?>
+                <div class="card-body">
+                    <?php if (empty($scholarships)): ?>
+                        <p class="text-muted text-center small">No active scholarships at the moment</p>
+                    <?php else: ?>
+                        <?php foreach ($scholarships as $scholarship): ?>
+                            <div class="card scholarship-card mb-3 border-0 bg-light">
+                                <div class="card-body">
+                                    <h6 class="mb-2"><?php echo htmlspecialchars($scholarship['scholarship_name']); ?></h6>
+                                    <div class="mb-2">
+                                        <span class="badge bg-success">
+                                            ₱<?php echo number_format($scholarship['amount'], 2); ?>
+                                        </span>
+                                        <?php if ($scholarship['slots']): ?>
+                                            <span class="badge bg-info">
+                                                <?php echo $scholarship['slots']; ?> slots
+                                            </span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <?php if ($scholarship['application_end']): ?>
+                                        <div class="small text-muted mb-2">
+                                            <i class="fas fa-clock me-1"></i>
+                                            Until: <?php echo formatDate($scholarship['application_end']); ?>
+                                        </div>
+                                    <?php endif; ?>
+                                    <a href="apply-scholarship.php?type=<?php echo $scholarship['scholarship_id']; ?>" 
+                                       class="btn btn-sm btn-primary w-100">
+                                        <i class="fas fa-paper-plane me-1"></i>Apply Now
+                                    </a>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </div>
             </div>
 
-            <?php if (empty($scholarships)): ?>
-            <div class="db-empty db-empty--sm">
-                <i class="fas fa-award"></i>
-                <p>No active scholarships at the moment</p>
-            </div>
-            <?php else: ?>
-            <div style="display:flex;flex-direction:column;gap:0;">
-                <?php foreach ($scholarships as $i => $scholarship): ?>
-                <div style="padding:14px 20px;<?php echo $i < count($scholarships)-1 ? 'border-bottom:1px solid var(--db-border);' : ''; ?>">
-                    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px;">
-                        <strong style="font-size:13px;"><?php echo htmlspecialchars($scholarship['scholarship_name']); ?></strong>
-                        <span class="db-badge db-badge--success" style="flex-shrink:0;">₱<?php echo number_format($scholarship['amount'], 2); ?></span>
+            <!-- Quick Links -->
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white border-0 py-3">
+                    <h5 class="mb-0">
+                        <i class="fas fa-link me-2 text-info"></i>Quick Links
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-grid gap-2">
+                        <a href="request-assistance.php" class="btn btn-outline-primary">
+                            <i class="fas fa-hand-holding-usd me-2"></i>Request Assistance
+                        </a>
+                        <a href="my-documents.php" class="btn btn-outline-info">
+                            <i class="fas fa-folder me-2"></i>My Documents
+                        </a>
+                        <a href="scholarship-guide.php" class="btn btn-outline-secondary">
+                            <i class="fas fa-book me-2"></i>Scholarship Guide
+                        </a>
                     </div>
-                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
-                        <?php if ($scholarship['slots']): ?>
-                        <span class="db-badge db-badge--info"><i class="fas fa-users"></i> <?php echo $scholarship['slots']; ?> slots</span>
-                        <?php endif; ?>
-                        <?php if ($scholarship['application_end']): ?>
-                        <span class="db-badge db-badge--muted"><i class="far fa-clock"></i> Until <?php echo date('M d', strtotime($scholarship['application_end'])); ?></span>
-                        <?php endif; ?>
-                    </div>
-                    <a href="apply-scholarship.php?type=<?php echo $scholarship['scholarship_id']; ?>" class="db-btn db-btn--primary db-btn--sm db-btn--full">
-                        <i class="fas fa-paper-plane"></i> Apply Now
-                    </a>
                 </div>
-                <?php endforeach; ?>
             </div>
-            <?php endif; ?>
         </div>
+    </div>
+</div>
 
-    </div><!-- /sidebar -->
-</div><!-- /grid -->
-
-<script>
-setTimeout(() => {
-    document.querySelectorAll('.db-alert').forEach(a => {
-        a.style.opacity = '0'; a.style.transform = 'translateY(-8px)';
-        setTimeout(() => a.remove(), 400);
-    });
-}, 5000);
-</script>
-
-<?php $conn->close(); include '../../../includes/footer.php'; ?>
+<?php
+$conn->close();
+include '../../../includes/footer.php';
+?>

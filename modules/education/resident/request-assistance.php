@@ -22,18 +22,18 @@ $students = $resident_id ? fetchAll($conn, $students_sql, [$resident_id], 'i') :
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $errors = [];
-
-    if (empty($_POST['student_id']))      $errors[] = "Please select a student";
+    
+    if (empty($_POST['student_id'])) $errors[] = "Please select a student";
     if (empty($_POST['assistance_type'])) $errors[] = "Assistance type is required";
     if (empty($_POST['requested_amount'])) $errors[] = "Amount is required";
-    if (empty($_POST['purpose']))         $errors[] = "Purpose is required";
-
+    if (empty($_POST['purpose'])) $errors[] = "Purpose is required";
+    
     if (empty($errors)) {
         $sql = "INSERT INTO tbl_education_assistance_requests (
-            student_id, assistance_type, requested_amount, purpose,
+            student_id, assistance_type, requested_amount, purpose, 
             supporting_documents, request_date, status
         ) VALUES (?, ?, ?, ?, ?, NOW(), 'pending')";
-
+        
         $params = [
             $_POST['student_id'],
             $_POST['assistance_type'],
@@ -41,23 +41,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_POST['purpose'],
             $_POST['supporting_documents'] ?? null
         ];
-
+        
         if (executeQuery($conn, $sql, $params, 'isdss')) {
-            $_SESSION['temp_success'] = 'Assistance request submitted successfully! Please wait for approval.';
+            setMessage('Assistance request submitted successfully! Please wait for approval.', 'success');
             header('Location: student-portal.php');
             exit();
         } else {
-            $_SESSION['temp_error'] = 'Failed to submit request. Please try again.';
+            setMessage('Failed to submit request. Please try again.', 'error');
         }
     } else {
-        $_SESSION['temp_error'] = implode('<br>', $errors);
+        foreach ($errors as $error) {
+            setMessage($error, 'error');
+        }
     }
 }
-
-$success_message = '';
-$error_message   = '';
-if (isset($_SESSION['temp_success'])) { $success_message = $_SESSION['temp_success']; unset($_SESSION['temp_success']); }
-if (isset($_SESSION['temp_error']))   { $error_message   = $_SESSION['temp_error'];   unset($_SESSION['temp_error']); }
 
 // Get previous requests
 $requests_sql = "SELECT ear.*, es.first_name, es.last_name, es.school_name
@@ -67,394 +64,333 @@ $requests_sql = "SELECT ear.*, es.first_name, es.last_name, es.school_name
                  ORDER BY ear.request_date DESC";
 $previous_requests = $resident_id ? fetchAll($conn, $requests_sql, [$resident_id], 'i') : [];
 
-$extra_css = '<link rel="stylesheet" href="../../../assets/css/dashboard-index.css?v=' . time() . '">';
 include '../../../includes/header.php';
 ?>
 
-<!-- ═══════════════════════════════════════════
-     HERO
-═══════════════════════════════════════════ -->
-<div class="db-hero">
-    <div class="db-hero__ring db-hero__ring--1"></div>
-    <div class="db-hero__ring db-hero__ring--2"></div>
-    <div class="db-hero__ring db-hero__ring--3"></div>
-
-    <div class="db-hero__inner">
-        <div class="db-hero__left">
-            <div class="db-hero__avatar" style="background: linear-gradient(135deg, #10b981, #0d9488);">
-                <i class="fas fa-hand-holding-usd" style="font-size:22px;"></i>
-            </div>
-            <div class="db-hero__text">
-                <div class="db-hero__role-badge badge-resident">
-                    <span class="db-hero__role-dot"></span>
-                    Education Module
-                </div>
-                <h1 class="db-hero__title">Request Educational Assistance</h1>
-                <p class="db-hero__sub">Apply for financial assistance to support your education</p>
-            </div>
-        </div>
-        <div class="db-hero__right">
-            <a href="student-portal.php" class="db-btn db-btn--ghost db-btn--sm" style="color:#fff;border-color:rgba(255,255,255,.25);background:rgba(255,255,255,.08);">
-                <i class="fas fa-arrow-left"></i> Back to Portal
-            </a>
-        </div>
-    </div>
-</div>
-
-<!-- Alerts -->
-<?php if ($success_message): ?>
-<div class="db-alert db-alert--success">
-    <div class="db-alert__icon"><i class="fas fa-check-circle"></i></div>
-    <span><?php echo $success_message; ?></span>
-    <button class="db-alert__close" onclick="this.parentElement.remove()">×</button>
-</div>
-<?php endif; ?>
-<?php if ($error_message): ?>
-<div class="db-alert db-alert--error">
-    <div class="db-alert__icon"><i class="fas fa-exclamation-circle"></i></div>
-    <span><?php echo $error_message; ?></span>
-    <button class="db-alert__close" onclick="this.parentElement.remove()">×</button>
-</div>
-<?php endif; ?>
-
-
-<?php if (empty($students)): ?>
-<!-- ── No Student Records ── -->
-<div class="db-panel">
-    <div class="db-empty" style="padding: 64px 24px;">
-        <i class="fas fa-user-graduate" style="font-size:48px; color:var(--db-border);"></i>
-        <p style="font-size:15px; font-weight:700; color:var(--db-text); margin-bottom:4px;">No Student Records Found</p>
-        <p>You need to submit a scholarship application first before requesting assistance.</p>
-        <a href="apply-scholarship.php" class="db-btn db-btn--primary" style="margin-top:8px;">
-            <i class="fas fa-plus"></i> Apply for Scholarship
-        </a>
-    </div>
-</div>
-
-<?php else: ?>
-
-<!-- ── Main Grid ── -->
-<div class="db-grid">
-
-    <!-- ── LEFT / FORM COLUMN ── -->
-    <div class="db-grid__main">
-
-        <!-- Assistance Type Cards (visual selector) -->
-        <div class="db-panel">
-            <div class="db-panel__header">
-                <div class="db-panel__title">
-                    <span class="db-panel__icon db-panel__icon--teal"><i class="fas fa-hand-holding-usd"></i></span>
-                    <h2>Type of Assistance</h2>
-                </div>
-                <span class="db-badge db-badge--info"><i class="fas fa-mouse-pointer"></i> Click to select</span>
-            </div>
-            <div style="padding: 18px 22px;">
-                <div class="db-assist-grid">
-                    <?php
-                    $assist_types = [
-                        ['type' => 'Tuition Fee',    'icon' => 'fa-graduation-cap', 'color' => 'blue'],
-                        ['type' => 'School Supplies', 'icon' => 'fa-book',           'color' => 'amber'],
-                        ['type' => 'Uniform',         'icon' => 'fa-tshirt',         'color' => 'teal'],
-                        ['type' => 'Books',           'icon' => 'fa-book-open',      'color' => 'indigo'],
-                        ['type' => 'Transportation',  'icon' => 'fa-bus',            'color' => 'rose'],
-                        ['type' => 'Other',           'icon' => 'fa-ellipsis-h',     'color' => 'blue'],
-                    ];
-                    foreach ($assist_types as $at): ?>
-                    <div class="db-assist-card" data-type="<?php echo $at['type']; ?>" onclick="selectAssistanceType('<?php echo $at['type']; ?>', this)">
-                        <div class="db-stat-card__icon db-stat-card__icon--<?php echo $at['color']; ?>" style="width:46px;height:46px;font-size:20px;margin:0 auto 10px;">
-                            <i class="fas <?php echo $at['icon']; ?>"></i>
-                        </div>
-                        <div style="font-size:12.5px;font-weight:700;text-align:center;"><?php echo $at['type']; ?></div>
-                    </div>
-                    <?php endforeach; ?>
-                </div>
-                <input type="hidden" name="assistance_type" id="assistanceType">
-                <div id="assistanceTypeDisplay" style="display:none;margin-top:14px;" class="db-alert db-alert--success" style="margin-bottom:0;">
-                    <div class="db-alert__icon"><i class="fas fa-check-circle"></i></div>
-                    <span id="assistanceTypeText"></span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Request Form -->
-        <div class="db-panel">
-            <div class="db-panel__header">
-                <div class="db-panel__title">
-                    <span class="db-panel__icon db-panel__icon--indigo"><i class="fas fa-file-alt"></i></span>
-                    <h2>Request Details</h2>
-                </div>
-            </div>
-            <form method="POST" class="db-modal__body" style="padding:22px;">
-
-                <!-- Select Student -->
-                <div class="db-field">
-                    <label>Select Student <span class="req">*</span></label>
-                    <select name="student_id" class="db-input" required>
-                        <option value="">Choose student...</option>
-                        <?php foreach ($students as $student): ?>
-                            <option value="<?php echo $student['student_id']; ?>">
-                                <?php echo htmlspecialchars($student['first_name'] . ' ' . $student['last_name']); ?> —
-                                <?php echo htmlspecialchars($student['school_name']); ?>
-                                (<?php echo htmlspecialchars($student['grade_level']); ?>)
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-
-                <!-- Amount -->
-                <div class="db-field">
-                    <label>Amount Requested <span class="req">*</span></label>
-                    <div style="display:flex;align-items:center;gap:0;">
-                        <span style="padding:9px 13px;background:var(--db-surf2);border:1.5px solid var(--db-border);border-right:none;border-radius:var(--db-radius-sm) 0 0 var(--db-radius-sm);font-weight:700;color:var(--db-teal);font-size:14px;">₱</span>
-                        <input type="number" step="0.01" name="requested_amount" class="db-input"
-                               placeholder="0.00" required
-                               style="border-radius: 0 var(--db-radius-sm) var(--db-radius-sm) 0;">
-                    </div>
-                    <small style="color:var(--db-muted);font-size:11.5px;">Enter the amount you need for this assistance</small>
-                </div>
-
-                <!-- Purpose -->
-                <div class="db-field">
-                    <label>Purpose / Reason <span class="req">*</span></label>
-                    <textarea name="purpose" class="db-input" rows="4"
-                              placeholder="Please explain in detail why you need this assistance and how it will be used…" required></textarea>
-                </div>
-
-                <!-- Supporting Documents -->
-                <div class="db-field">
-                    <label>Supporting Documents <span style="color:var(--db-muted);font-weight:400;">(Optional)</span></label>
-                    <textarea name="supporting_documents" class="db-input" rows="3"
-                              placeholder="List any documents you have (e.g., bills, receipts, quotations)"></textarea>
-                    <small style="color:var(--db-muted);font-size:11.5px;">You can upload actual documents later in the "My Documents" section</small>
-                </div>
-
-                <!-- Submit -->
-                <div style="display:flex;gap:10px;margin-top:8px;">
-                    <button type="submit" class="db-btn db-btn--primary db-btn--full" style="flex:1;">
-                        <i class="fas fa-paper-plane"></i> Submit Request
-                    </button>
-                    <a href="student-portal.php" class="db-btn db-btn--ghost" style="flex-shrink:0;">
-                        Cancel
-                    </a>
-                </div>
-            </form>
-        </div>
-
-
-        <!-- ── Previous Requests ── -->
-        <?php if (!empty($previous_requests)): ?>
-        <div class="db-panel">
-            <div class="db-panel__header">
-                <div class="db-panel__title">
-                    <span class="db-panel__icon db-panel__icon--blue"><i class="fas fa-history"></i></span>
-                    <h2>My Previous Requests</h2>
-                </div>
-                <span class="db-badge db-badge--muted"><?php echo count($previous_requests); ?> total</span>
-            </div>
-            <div class="db-table-wrap">
-                <table class="db-table">
-                    <thead>
-                        <tr>
-                            <th>Type</th>
-                            <th>Student</th>
-                            <th>Amount Requested</th>
-                            <th>Date</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    <?php foreach ($previous_requests as $req):
-                        $status = $req['status'];
-                        $badge_map = [
-                            'pending'   => 'db-badge--warning',
-                            'approved'  => 'db-badge--success',
-                            'rejected'  => 'db-badge--danger',
-                            'completed' => 'db-badge--info',
-                        ];
-                        $badge_cls = $badge_map[$status] ?? 'db-badge--muted';
-                        $status_labels = [
-                            'pending'   => 'Pending Review',
-                            'approved'  => 'Approved',
-                            'rejected'  => 'Rejected',
-                            'completed' => 'Completed',
-                        ];
-                        $status_label = $status_labels[$status] ?? ucfirst($status);
-                    ?>
-                    <tr>
-                        <td><strong><?php echo htmlspecialchars($req['assistance_type']); ?></strong></td>
-                        <td>
-                            <strong><?php echo htmlspecialchars($req['first_name'] . ' ' . $req['last_name']); ?></strong><br>
-                            <span class="db-text-sm"><?php echo htmlspecialchars($req['school_name']); ?></span>
-                        </td>
-                        <td><strong style="color:var(--db-teal);">₱<?php echo number_format($req['requested_amount'], 2); ?></strong>
-                            <?php if ($status === 'approved' && !empty($req['approved_amount'])): ?>
-                            <br><span class="db-text-sm">Approved: ₱<?php echo number_format($req['approved_amount'], 2); ?></span>
-                            <?php endif; ?>
-                        </td>
-                        <td><span class="db-text-sm"><?php echo date('M d, Y', strtotime($req['request_date'])); ?></span></td>
-                        <td>
-                            <span class="db-badge <?php echo $badge_cls; ?>"><?php echo $status_label; ?></span>
-                            <?php if (!empty($req['rejection_reason'])): ?>
-                            <br><span style="font-size:10.5px;color:var(--db-danger);margin-top:4px;display:block;">
-                                <i class="fas fa-info-circle"></i> <?php echo htmlspecialchars($req['rejection_reason']); ?>
-                            </span>
-                            <?php endif; ?>
-                        </td>
-                    </tr>
-                    <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        <?php endif; ?>
-
-    </div><!-- /db-grid__main -->
-
-
-    <!-- ── RIGHT SIDEBAR ── -->
-    <div class="db-grid__side">
-
-        <!-- Guidelines -->
-        <div class="db-panel">
-            <div class="db-panel__header">
-                <div class="db-panel__title">
-                    <span class="db-panel__icon db-panel__icon--blue"><i class="fas fa-info-circle"></i></span>
-                    <h2>Assistance Guidelines</h2>
-                </div>
-            </div>
-            <div style="padding: 18px 22px; display:flex; flex-direction:column; gap:18px;">
-
-                <div>
-                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
-                        <span class="db-panel__icon db-panel__icon--teal" style="width:28px;height:28px;font-size:12px;flex-shrink:0;"><i class="fas fa-user-check"></i></span>
-                        <strong style="font-size:13px;">Eligibility</strong>
-                    </div>
-                    <ul style="margin:0;padding-left:18px;color:var(--db-muted);font-size:12.5px;line-height:2;">
-                        <li>Must be a registered student</li>
-                        <li>Resident of the barangay</li>
-                        <li>Financial need must be demonstrated</li>
-                    </ul>
-                </div>
-
-                <div style="border-top:1px solid var(--db-border);padding-top:14px;">
-                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
-                        <span class="db-panel__icon db-panel__icon--amber" style="width:28px;height:28px;font-size:12px;flex-shrink:0;"><i class="fas fa-file-alt"></i></span>
-                        <strong style="font-size:13px;">Required Documents</strong>
-                    </div>
-                    <ul style="margin:0;padding-left:18px;color:var(--db-muted);font-size:12.5px;line-height:2;">
-                        <li>Certificate of Enrollment</li>
-                        <li>Statement of Account (for tuition)</li>
-                        <li>Quotation / Bills (for supplies)</li>
-                        <li>Barangay Clearance</li>
-                    </ul>
-                </div>
-
-                <div style="border-top:1px solid var(--db-border);padding-top:14px;">
-                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
-                        <span class="db-panel__icon db-panel__icon--indigo" style="width:28px;height:28px;font-size:12px;flex-shrink:0;"><i class="fas fa-clock"></i></span>
-                        <strong style="font-size:13px;">Processing Time</strong>
-                    </div>
-                    <p style="margin:0;color:var(--db-muted);font-size:12.5px;line-height:1.75;">
-                        Requests are typically processed within <strong style="color:var(--db-text);">5–10 working days</strong> after submission.
-                    </p>
-                </div>
-            </div>
-        </div>
-
-        <!-- Contact Info -->
-        <div class="db-panel">
-            <div class="db-panel__header">
-                <div class="db-panel__title">
-                    <span class="db-panel__icon db-panel__icon--teal"><i class="fas fa-phone-alt"></i></span>
-                    <h2>Need Help?</h2>
-                </div>
-            </div>
-            <div style="padding:18px 22px;display:flex;flex-direction:column;gap:12px;">
-                <p style="margin:0;font-size:12.5px;color:var(--db-muted);">Contact the Education Office:</p>
-                <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--db-surf2);border-radius:var(--db-radius-sm);border:1px solid var(--db-border);">
-                    <span class="db-panel__icon db-panel__icon--blue" style="width:30px;height:30px;font-size:12px;flex-shrink:0;"><i class="fas fa-phone"></i></span>
-                    <div>
-                        <div style="font-size:10px;color:var(--db-muted);text-transform:uppercase;letter-spacing:.5px;font-family:'DM Mono',monospace;">Phone</div>
-                        <strong style="font-size:13px;"><?php echo BARANGAY_CONTACT; ?></strong>
-                    </div>
-                </div>
-                <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--db-surf2);border-radius:var(--db-radius-sm);border:1px solid var(--db-border);">
-                    <span class="db-panel__icon db-panel__icon--rose" style="width:30px;height:30px;font-size:12px;flex-shrink:0;"><i class="fas fa-envelope"></i></span>
-                    <div>
-                        <div style="font-size:10px;color:var(--db-muted);text-transform:uppercase;letter-spacing:.5px;font-family:'DM Mono',monospace;">Email</div>
-                        <strong style="font-size:13px;"><?php echo BARANGAY_EMAIL; ?></strong>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-    </div><!-- /db-grid__side -->
-</div><!-- /db-grid -->
-
-<?php endif; ?>
-
-
 <style>
-/* ── Assistance Type Selector Grid ── */
-.db-assist-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 12px;
-}
-
-.db-assist-card {
-    padding: 18px 12px 14px;
-    border-radius: var(--db-radius);
-    border: 2px solid var(--db-border);
-    background: var(--db-surf2);
+.assistance-type-card {
+    transition: all 0.3s;
     cursor: pointer;
-    transition: all .2s ease;
+    border: 2px solid #e9ecef;
+    border-radius: 12px;
 }
-
-.db-assist-card:hover {
-    border-color: var(--db-navy-light);
-    background: #f0f4ff;
-    transform: translateY(-2px);
-    box-shadow: var(--db-shadow);
+.assistance-type-card:hover {
+    border-color: #007bff;
+    transform: translateY(-3px);
+    box-shadow: 0 4px 12px rgba(0,123,255,0.15);
 }
-
-.db-assist-card.selected {
-    border-color: var(--db-navy-light);
-    background: #eef3ff;
-    box-shadow: 0 0 0 3px rgba(28,52,97,.12), var(--db-shadow);
+.assistance-type-card.selected {
+    border-color: #007bff;
+    background: #f0f7ff;
 }
-
-.db-assist-card.selected .db-stat-card__icon {
-    box-shadow: 0 4px 14px rgba(13,27,54,.15);
+.assistance-icon {
+    width: 60px;
+    height: 60px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 1.8rem;
+    margin: 0 auto 1rem;
 }
-
-@media (max-width: 600px) {
-    .db-assist-grid {
-        grid-template-columns: repeat(2, 1fr);
-    }
+.request-card {
+    border-left: 4px solid;
+    border-radius: 8px;
 }
+.request-card.pending { border-left-color: #ffc107; }
+.request-card.approved { border-left-color: #28a745; }
+.request-card.rejected { border-left-color: #dc3545; }
+.request-card.completed { border-left-color: #17a2b8; }
 </style>
 
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h2 class="mb-0">
+                        <i class="fas fa-hand-holding-usd me-2 text-success"></i>Request Educational Assistance
+                    </h2>
+                    <p class="text-muted mb-0">Apply for financial assistance for your education</p>
+                </div>
+                <a href="student-portal.php" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left me-1"></i>Back to Portal
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <?php echo displayMessage(); ?>
+
+    <?php if (empty($students)): ?>
+        <!-- No Student Records -->
+        <div class="card border-0 shadow-sm">
+            <div class="card-body text-center py-5">
+                <i class="fas fa-user-graduate fa-4x text-muted mb-3"></i>
+                <h4 class="text-muted">No Student Records Found</h4>
+                <p class="text-muted">You need to submit a scholarship application first before requesting assistance.</p>
+                <a href="apply-scholarship.php" class="btn btn-primary mt-3">
+                    <i class="fas fa-plus me-1"></i>Apply for Scholarship
+                </a>
+            </div>
+        </div>
+    <?php else: ?>
+        
+        <div class="row">
+            <!-- Request Form -->
+            <div class="col-md-8 mb-4">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-white border-0 py-3">
+                        <h5 class="mb-0">
+                            <i class="fas fa-file-alt me-2"></i>Assistance Request Form
+                        </h5>
+                    </div>
+                    <div class="card-body p-4">
+                        <form method="POST">
+                            <!-- Select Student -->
+                            <div class="mb-4">
+                                <label class="form-label fw-bold">Select Student <span class="text-danger">*</span></label>
+                                <select name="student_id" class="form-select" required>
+                                    <option value="">Choose student...</option>
+                                    <?php foreach ($students as $student): ?>
+                                        <option value="<?php echo $student['student_id']; ?>">
+                                            <?php echo htmlspecialchars($student['first_name'] . ' ' . $student['last_name']); ?> - 
+                                            <?php echo htmlspecialchars($student['school_name']); ?> 
+                                            (<?php echo htmlspecialchars($student['grade_level']); ?>)
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+
+                            <!-- Assistance Type -->
+                            <div class="mb-4">
+                                <label class="form-label fw-bold">Type of Assistance <span class="text-danger">*</span></label>
+                                <div class="row g-3">
+                                    <div class="col-md-4">
+                                        <div class="assistance-type-card p-3 text-center" onclick="selectAssistanceType('Tuition Fee', this)">
+                                            <div class="assistance-icon">
+                                                <i class="fas fa-graduation-cap"></i>
+                                            </div>
+                                            <h6 class="mb-0">Tuition Fee</h6>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="assistance-type-card p-3 text-center" onclick="selectAssistanceType('School Supplies', this)">
+                                            <div class="assistance-icon">
+                                                <i class="fas fa-book"></i>
+                                            </div>
+                                            <h6 class="mb-0">School Supplies</h6>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="assistance-type-card p-3 text-center" onclick="selectAssistanceType('Uniform', this)">
+                                            <div class="assistance-icon">
+                                                <i class="fas fa-tshirt"></i>
+                                            </div>
+                                            <h6 class="mb-0">Uniform</h6>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="assistance-type-card p-3 text-center" onclick="selectAssistanceType('Books', this)">
+                                            <div class="assistance-icon">
+                                                <i class="fas fa-book-open"></i>
+                                            </div>
+                                            <h6 class="mb-0">Books</h6>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="assistance-type-card p-3 text-center" onclick="selectAssistanceType('Transportation', this)">
+                                            <div class="assistance-icon">
+                                                <i class="fas fa-bus"></i>
+                                            </div>
+                                            <h6 class="mb-0">Transportation</h6>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="assistance-type-card p-3 text-center" onclick="selectAssistanceType('Other', this)">
+                                            <div class="assistance-icon">
+                                                <i class="fas fa-ellipsis-h"></i>
+                                            </div>
+                                            <h6 class="mb-0">Other</h6>
+                                        </div>
+                                    </div>
+                                </div>
+                                <input type="hidden" name="assistance_type" id="assistanceType" required>
+                            </div>
+
+                            <!-- Amount Requested -->
+                            <div class="mb-4">
+                                <label class="form-label fw-bold">Amount Requested <span class="text-danger">*</span></label>
+                                <div class="input-group">
+                                    <span class="input-group-text">₱</span>
+                                    <input type="number" step="0.01" name="requested_amount" class="form-control" 
+                                           placeholder="0.00" required>
+                                </div>
+                                <small class="text-muted">Enter the amount you need for this assistance</small>
+                            </div>
+
+                            <!-- Purpose -->
+                            <div class="mb-4">
+                                <label class="form-label fw-bold">Purpose / Reason <span class="text-danger">*</span></label>
+                                <textarea name="purpose" class="form-control" rows="4" 
+                                          placeholder="Please explain in detail why you need this assistance and how it will be used..." required></textarea>
+                            </div>
+
+                            <!-- Supporting Documents -->
+                            <div class="mb-4">
+                                <label class="form-label fw-bold">Supporting Documents (Optional)</label>
+                                <textarea name="supporting_documents" class="form-control" rows="3" 
+                                          placeholder="List any documents you have to support this request (e.g., bills, receipts, quotations)"></textarea>
+                                <small class="text-muted">You can upload actual documents later in the "My Documents" section</small>
+                            </div>
+
+                            <!-- Submit Button -->
+                            <div class="d-grid gap-2">
+                                <button type="submit" class="btn btn-primary btn-lg">
+                                    <i class="fas fa-paper-plane me-2"></i>Submit Request
+                                </button>
+                                <a href="student-portal.php" class="btn btn-outline-secondary">
+                                    Cancel
+                                </a>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sidebar -->
+            <div class="col-md-4">
+                <!-- Guidelines -->
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-white border-0 py-3">
+                        <h6 class="mb-0">
+                            <i class="fas fa-info-circle me-2 text-info"></i>Assistance Guidelines
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="small">
+                            <h6 class="text-primary">Eligibility:</h6>
+                            <ul class="mb-3">
+                                <li>Must be a registered student</li>
+                                <li>Resident of the barangay</li>
+                                <li>Financial need must be demonstrated</li>
+                            </ul>
+
+                            <h6 class="text-primary">Required Documents:</h6>
+                            <ul class="mb-3">
+                                <li>Certificate of Enrollment</li>
+                                <li>Statement of Account (for tuition)</li>
+                                <li>Quotation/Bills (for supplies)</li>
+                                <li>Barangay Clearance</li>
+                            </ul>
+
+                            <h6 class="text-primary">Processing Time:</h6>
+                            <p class="mb-0">Requests are typically processed within 5-10 working days.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Contact Info -->
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-white border-0 py-3">
+                        <h6 class="mb-0">
+                            <i class="fas fa-phone me-2 text-success"></i>Need Help?
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        <p class="small mb-2">Contact the Education Office:</p>
+                        <p class="mb-1">
+                            <i class="fas fa-phone text-primary me-2"></i>
+                            <strong><?php echo BARANGAY_CONTACT; ?></strong>
+                        </p>
+                        <p class="mb-0">
+                            <i class="fas fa-envelope text-primary me-2"></i>
+                            <strong><?php echo BARANGAY_EMAIL; ?></strong>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Previous Requests -->
+        <?php if (!empty($previous_requests)): ?>
+            <div class="card border-0 shadow-sm mt-4">
+                <div class="card-header bg-white border-0 py-3">
+                    <h5 class="mb-0">
+                        <i class="fas fa-history me-2"></i>My Previous Requests
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <?php foreach ($previous_requests as $request): ?>
+                        <div class="card request-card <?php echo $request['status']; ?> mb-3">
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-8">
+                                        <h6 class="mb-2">
+                                            <strong><?php echo htmlspecialchars($request['assistance_type']); ?></strong>
+                                        </h6>
+                                        <p class="small text-muted mb-2">
+                                            For: <?php echo htmlspecialchars($request['first_name'] . ' ' . $request['last_name']); ?> - 
+                                            <?php echo htmlspecialchars($request['school_name']); ?>
+                                        </p>
+                                        <p class="small mb-2">
+                                            <strong>Purpose:</strong> <?php echo htmlspecialchars(substr($request['purpose'], 0, 100)); ?>...
+                                        </p>
+                                        <p class="small text-muted mb-0">
+                                            <i class="fas fa-calendar me-1"></i>
+                                            Requested: <?php echo date('F d, Y', strtotime($request['request_date'])); ?>
+                                        </p>
+                                    </div>
+                                    <div class="col-md-4 text-end">
+                                        <h5 class="text-primary mb-2">₱<?php echo number_format($request['requested_amount'], 2); ?></h5>
+                                        <?php
+                                        $status = $request['status'];
+                                        if ($status == 'pending') {
+                                            echo '<span class="badge bg-warning text-dark">Pending Review</span>';
+                                        } elseif ($status == 'approved') {
+                                            echo '<span class="badge bg-success">Approved - ₱' . number_format($request['approved_amount'], 2) . '</span>';
+                                        } elseif ($status == 'rejected') {
+                                            echo '<span class="badge bg-danger">Rejected</span>';
+                                        } elseif ($status == 'completed') {
+                                            echo '<span class="badge bg-info">Completed</span>';
+                                        }
+                                        ?>
+                                        <?php if ($request['rejection_reason']): ?>
+                                            <div class="mt-2">
+                                                <small class="text-danger">
+                                                    <i class="fas fa-info-circle me-1"></i>
+                                                    <?php echo htmlspecialchars($request['rejection_reason']); ?>
+                                                </small>
+                                            </div>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        <?php endif; ?>
+
+    <?php endif; ?>
+</div>
 
 <script>
-// ── Assistance Type Selector ──
-function selectAssistanceType(type, el) {
-    document.querySelectorAll('.db-assist-card').forEach(c => c.classList.remove('selected'));
-    el.classList.add('selected');
-    document.getElementById('assistanceType').value = type;
-    const display = document.getElementById('assistanceTypeDisplay');
-    document.getElementById('assistanceTypeText').textContent = 'Selected: ' + type;
-    display.style.display = 'flex';
-}
-
-// ── Auto-dismiss alerts ──
-setTimeout(() => {
-    document.querySelectorAll('.db-alert').forEach(a => {
-        a.style.opacity = '0';
-        a.style.transform = 'translateY(-8px)';
-        setTimeout(() => a.remove(), 400);
+function selectAssistanceType(type, element) {
+    // Remove selected class from all cards
+    document.querySelectorAll('.assistance-type-card').forEach(card => {
+        card.classList.remove('selected');
     });
-}, 5000);
+    
+    // Add selected class to clicked card
+    element.classList.add('selected');
+    
+    // Set the hidden input value
+    document.getElementById('assistanceType').value = type;
+}
 </script>
 
 <?php
