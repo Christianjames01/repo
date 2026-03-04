@@ -164,7 +164,7 @@ include __DIR__ . '/../../includes/header.php';
                 <p class="bps-hero__sub">Pantawid Pamilyang Pilipino Program &mdash; Register a new beneficiary</p>
             </div>
         </div>
-        <a href="beneficiaries.php" class="btn btn-secondary">
+        <a href="beneficiaries-debug.php" class="btn btn-secondary">
             <i class="fas fa-arrow-left"></i> Back to List
         </a>
     </div>
@@ -529,7 +529,7 @@ include __DIR__ . '/../../includes/header.php';
                     </label>
                 </div>
                 <div class="d-flex justify-content-between align-items-center">
-                    <a href="beneficiaries.php" class="btn btn-secondary btn-lg">
+                    <a href="beneficiaries-debug.php" class="btn btn-secondary btn-lg">
                         <i class="fas fa-times"></i> Cancel
                     </a>
                     <button type="submit" class="btn btn-warning btn-lg" id="submitBtn">

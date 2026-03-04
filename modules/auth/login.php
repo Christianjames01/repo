@@ -1,12 +1,14 @@
 <?php
-
-
-// Enable error reporting for debugging
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
+// Must be FIRST — before any require_once
+ini_set('session.cookie_path', '/');
+ini_set('session.cookie_domain', '');
+
 require_once '../../config/config.php';
 require_once '../../config/database.php';
+require_once '../../config/session.php';
 require_once '../../includes/email_helper.php';
 
 $error = '';
@@ -50,25 +52,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($result->num_rows === 1) {
                 $user = $result->fetch_assoc();
 
-                // ═══ TEMPORARY DEBUG — REMOVE AFTER FIXING ═══
+                // ── DEBUG LOG ─────────────────────────────────────────────
                 error_log("=== LOGIN DEBUG ===");
-                error_log("Username entered: " . $username);
-                error_log("Password entered (plain): " . $password);
-                error_log("Password in DB: " . $user['password']);
-                error_log("Password match: " . ($password === $user['password'] ? 'YES ✓' : 'NO ✗'));
+                error_log("Username: " . $username);
+                error_log("Password match: " . ($password === $user['password'] ? 'YES' : 'NO'));
                 error_log("email_verified: " . var_export($user['email_verified'], true));
+                error_log("email: " . $user['email']);
+                error_log("role_name: " . $user['role_name']);
                 error_log("status: " . $user['status']);
                 error_log("account_status: " . $user['account_status']);
                 error_log("is_active: " . var_export($user['is_active'], true));
-                error_log("email: " . $user['email']);
-                error_log("role_name: " . $user['role_name']);
-                // ═══ END DEBUG ═══
 
-                // ── Check if account is deactivated ───────────────────────
+                // ── Check deactivated ─────────────────────────────────────
                 $is_deactivated = false;
-                if (isset($user['status']) && strtolower($user['status']) === 'inactive')               $is_deactivated = true;
+                if (isset($user['status']) && strtolower($user['status']) === 'inactive')                    $is_deactivated = true;
                 if (isset($user['account_status']) && strtolower($user['account_status']) === 'deactivated') $is_deactivated = true;
-                if (isset($user['is_active']) && $user['is_active'] == 0)                              $is_deactivated = true;
+                if (isset($user['is_active']) && $user['is_active'] == 0)                                    $is_deactivated = true;
 
                 if ($is_deactivated) {
                     $error = "Your account has been deactivated. Please contact the administrator.";
@@ -81,19 +80,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         in_array(strtolower($user['role_name'] ?? ''), ['admin', 'super admin', 'administrator'])
                     );
 
-                    // ── STEP 1: Account not yet email-verified ─────────────────
-                    // The user registered but never completed email verification.
-                    // Regenerate a fresh code (old one may have expired) and send it,
-                    // then redirect to the verify-email page.
-                    if (!$is_admin && isset($user['email_verified']) && $user['email_verified'] == 0 && !empty($user['email'])) {
+                    // ── STEP 1: Not yet email-verified — send to verify-email ──
+                    if (!$is_admin && empty($user['email_verified']) && !empty($user['email'])) {
+                        error_log("=== NOT VERIFIED — sending to verify-email ===");
 
-                        // Check if existing code is still valid — only regenerate if expired
                         $code_still_valid = !empty($user['verification_code'])
                             && !empty($user['verification_code_expires'])
                             && strtotime($user['verification_code_expires']) > time();
 
                         if (!$code_still_valid) {
-                            // Existing code expired — generate and send a fresh one
                             $verify_code  = generateVerificationCode();
                             $code_expires = date('Y-m-d H:i:s', strtotime('+30 minutes'));
 
@@ -104,16 +99,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                             $full_name = trim($user['full_name'] ?: $user['username']);
                             sendVerificationCodeEmail($user['email'], $full_name, $verify_code);
+                            error_log("=== NEW VERIFY CODE SENT: $verify_code ===");
+                        } else {
+                            error_log("=== EXISTING CODE STILL VALID — not resending ===");
                         }
-                        // If code is still valid, don't resend — user already has it in their inbox
 
                         $stmt->close();
                         header("Location: /barangaylink1/modules/auth/verify-email.php?email=" . urlencode($user['email']));
                         exit();
                     }
 
-                    // ── STEP 2: Daily login OTP for normal users with email ──
-                    elseif (!$is_admin && !empty($user['email'])) {
+                    // ── STEP 2: Admin — log in directly, no OTP ──────────────
+                    elseif ($is_admin) {
+                        error_log("=== ADMIN LOGIN — no OTP ===");
+
+                        $_SESSION = [];
+                        $_SESSION['user_id']       = (int) $user['user_id'];
+                        $_SESSION['username']      = $user['username'];
+                        $_SESSION['role_id']       = (int) $user['role_id'];
+                        $_SESSION['role']          = $user['role_name'];
+                        $_SESSION['role_name']     = $user['role_name'];
+                        $_SESSION['resident_id']   = $user['resident_id'];
+                        $_SESSION['is_verified']   = $user['is_verified'] ?? 1;
+                        $_SESSION['LAST_ACTIVITY'] = time();
+                        $_SESSION['logged_in']     = true;
+
+                        $stmt->close();
+
+                        $role = trim($user['role_name']);
+                        if ($role === 'Driver') {
+                            header("Location: /barangaylink1/vehicles/driver/index.php");
+                        } else {
+                            header("Location: /barangaylink1/modules/dashboard/index.php");
+                        }
+                        exit();
+                    }
+
+                    // ── STEP 3: Verified normal user — daily OTP ─────────────
+                    elseif (!empty($user['email'])) {
+                        error_log("=== SENDING DAILY OTP to " . $user['email'] . " ===");
 
                         $otp_code     = generateVerificationCode();
                         $code_expires = date('Y-m-d H:i:s', strtotime('+30 minutes'));
@@ -126,31 +150,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $update_stmt->bind_param("ssi", $otp_code, $code_expires, $user['user_id']);
 
                         if ($update_stmt->execute()) {
-                            $full_name = $user['full_name'] ?: $user['username'];
-                            sendDailyLoginOTP($user['email'], $full_name, $otp_code);
+                            error_log("=== OTP SAVED: $otp_code ===");
 
-                            // Store temporary login data in session
-                            $_SESSION['temp_user_id']      = $user['user_id'];
-                            $_SESSION['temp_username']     = $user['username'];
-                            $_SESSION['temp_role_id']      = $user['role_id'];
-                            $_SESSION['temp_role_name']    = $user['role_name'];
-                            $_SESSION['temp_resident_id']  = $user['resident_id'];
-                            $_SESSION['temp_is_verified']  = $user['is_verified'] ?? 1;
+                            $full_name   = $user['full_name'] ?: $user['username'];
+                            $email_sent  = sendDailyLoginOTP($user['email'], $full_name, $otp_code);
+
+                            error_log("=== EMAIL SEND RESULT: " . ($email_sent ? 'OK' : 'FAILED') . " ===");
+
+                            // Store temp session regardless of email result
+                            // (user can use resend on OTP page if email failed)
+                            $_SESSION['temp_user_id']     = $user['user_id'];
+                            $_SESSION['temp_username']    = $user['username'];
+                            $_SESSION['temp_role_id']     = $user['role_id'];
+                            $_SESSION['temp_role_name']   = $user['role_name'];
+                            $_SESSION['temp_resident_id'] = $user['resident_id'];
+                            $_SESSION['temp_is_verified'] = $user['is_verified'] ?? 1;
 
                             $update_stmt->close();
                             $stmt->close();
 
                             header("Location: /barangaylink1/modules/auth/verify-daily-otp.php?email=" . urlencode($user['email']));
                             exit();
+
                         } else {
-                            $error = "Error sending verification code. Please try again.";
+                            error_log("=== OTP DB UPDATE FAILED === " . $update_stmt->error);
+                            $error = "Database error. Please try again.";
                             $update_stmt->close();
                         }
 
-                    // ── STEP 3: Admin / users without email — direct login ──
                     } else {
-                        $_SESSION = [];
+                        // No email — log in directly
+                        error_log("=== NO EMAIL — direct login ===");
 
+                        $_SESSION = [];
                         $_SESSION['user_id']       = (int) $user['user_id'];
                         $_SESSION['username']      = $user['username'];
                         $_SESSION['role_id']       = (int) $user['role_id'];
@@ -160,11 +192,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $_SESSION['is_verified']   = $user['is_verified'] ?? 1;
                         $_SESSION['LAST_ACTIVITY'] = time();
                         $_SESSION['logged_in']     = true;
-
-                        error_log("=== ADMIN LOGIN SUCCESS (No OTP) ===");
-                        error_log("User ID: "  . $_SESSION['user_id']);
-                        error_log("Username: " . $_SESSION['username']);
-                        error_log("Role: "     . $_SESSION['role_name']);
 
                         $stmt->close();
 
@@ -182,12 +209,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $error = "Invalid username or password.";
                 }
             } else {
-                error_log("User not found: $username");
+                error_log("=== USER NOT FOUND === Username: $username");
                 $error = "Invalid username or password.";
             }
             if (isset($stmt) && $stmt) $stmt->close();
         } else {
-            error_log("Database prepare error: " . $conn->error);
+            error_log("=== DB PREPARE ERROR === " . $conn->error);
             $error = "Database error. Please try again later.";
         }
     }
@@ -202,15 +229,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            height: 100vh;
-            display: flex;
-            overflow: hidden;
+            height: 100vh; display: flex; overflow: hidden;
         }
-
-        /* Left Side */
         .left-side {
             flex: 1;
             background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
@@ -238,27 +260,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         .system-title { font-size: 2.5rem; font-weight: 700; margin-bottom: 1rem; text-shadow: 2px 2px 4px rgba(0,0,0,0.2); }
         .system-subtitle { font-size: 1.2rem; opacity: 0.9; max-width: 400px; line-height: 1.6; }
-
         .features-list { margin-top: 3rem; position: relative; z-index: 1; }
         .feature-item { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; font-size: 1rem; opacity: 0.95; }
         .feature-icon {
-            width: 40px; height: 40px;
-            background: rgba(255,255,255,0.2);
+            width: 40px; height: 40px; background: rgba(255,255,255,0.2);
             border-radius: 8px; display: flex; align-items: center; justify-content: center;
         }
-
-        /* Right Side */
         .right-side {
             flex: 1; background: white;
-            display: flex; align-items: center; justify-content: center;
-            padding: 2rem;
+            display: flex; align-items: center; justify-content: center; padding: 2rem;
         }
         .login-form-container { width: 100%; max-width: 450px; }
-
         .form-header { text-align: center; margin-bottom: 2.5rem; }
         .form-header h2 { color: #1e3a8a; font-size: 2rem; margin-bottom: 0.5rem; }
         .form-header p  { color: #64748b; font-size: 1rem; }
-
         .security-notice {
             background: #f0f9ff; border-left: 4px solid #3b82f6;
             padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem;
@@ -267,7 +282,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .security-notice i { color: #3b82f6; margin-top: 0.2rem; }
         .security-notice-text { flex: 1; font-size: 0.9rem; color: #1e40af; }
         .security-notice-text strong { display: block; margin-bottom: 0.25rem; }
-
         .alert {
             padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem;
             display: flex; align-items: center; gap: 0.5rem;
@@ -275,13 +289,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .alert-danger  { background: #fee2e2; color: #c62828; border-left: 4px solid #f44336; }
         .alert-warning { background: #fff3e0; color: #e65100; border-left: 4px solid #ff9800; }
         .alert-success { background: #f0fdf4; color: #15803d;  border-left: 4px solid #10b981; }
-
         .form-group { margin-bottom: 1.5rem; }
         .form-group label { display: block; color: #1e3a8a; font-weight: 600; margin-bottom: 0.5rem; }
-
         .input-wrapper { position: relative; }
         .input-icon { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: #64748b; }
-
         .form-control {
             width: 100%; padding: 0.875rem 1rem 0.875rem 2.75rem;
             border: 2px solid #e2e8f0; border-radius: 8px;
@@ -291,14 +302,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             outline: none; border-color: #3b82f6;
             box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
         }
-
         .forgot-password-link { text-align: right; margin-top: 0.5rem; }
         .forgot-password-link a {
             color: #3b82f6; text-decoration: none;
             font-size: 0.9rem; font-weight: 500; transition: color 0.3s;
         }
         .forgot-password-link a:hover { color: #1e3a8a; text-decoration: underline; }
-
         .btn-login {
             width: 100%; padding: 1rem;
             background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
@@ -308,14 +317,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         .btn-login:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(30,58,138,0.3); }
         .btn-login:active { transform: translateY(0); }
-
         .form-links {
             margin-top: 2rem; text-align: center;
             padding-top: 1.5rem; border-top: 1px solid #e2e8f0;
         }
         .form-links a { color: #3b82f6; text-decoration: none; font-weight: 500; margin: 0 0.5rem; }
         .form-links a:hover { text-decoration: underline; }
-
         @media (max-width: 968px) {
             body { flex-direction: column; }
             .left-side { min-height: 40vh; padding: 2rem; }
@@ -326,8 +333,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </style>
 </head>
 <body>
-
-    <!-- Left Side -->
     <div class="left-side">
         <div class="logo-container">
             <img src="/barangaylink1/uploads/officials/brgy.png" alt="Barangay Logo" class="logo-img" onerror="this.style.display='none'">
@@ -350,7 +355,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
 
-    <!-- Right Side -->
     <div class="right-side">
         <div class="login-form-container">
             <div class="form-header">
@@ -401,7 +405,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                value="<?php echo htmlspecialchars($_POST['username'] ?? ''); ?>">
                     </div>
                 </div>
-
                 <div class="form-group">
                     <label>Password</label>
                     <div class="input-wrapper">
@@ -415,7 +418,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </a>
                     </div>
                 </div>
-
                 <button type="submit" class="btn-login">
                     <i class="fas fa-sign-in-alt"></i> Sign In
                 </button>

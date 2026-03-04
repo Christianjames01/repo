@@ -5,358 +5,392 @@ require_once '../../config/session.php';
 require_once '../../includes/security.php';
 require_once '../../includes/functions.php';
 
-requireAnyRole(['Admin', 'Super Admin', 'Super Administrator', 'Barangay Captain', 'Barangay Tanod', 'Staff', 'Secretary', 'Treasurer', 'Tanod', 'Resident']);
+requireAnyRole(['Admin','Super Admin','Super Administrator','Barangay Captain','Barangay Tanod','Staff','Secretary','Treasurer','Tanod','Resident']);
 
 $current_user_id = getCurrentUserId();
 $current_role    = getCurrentUserRole();
-
-$staff_roles = ['Admin', 'Super Admin', 'Super Administrator', 'Barangay Captain', 'Barangay Tanod', 'Staff', 'Secretary', 'Treasurer', 'Tanod'];
+$staff_roles = ['Admin','Super Admin','Super Administrator','Barangay Captain','Barangay Tanod','Staff','Secretary','Treasurer','Tanod'];
 $is_resident = !in_array($current_role, $staff_roles);
-
 $page_title = 'View Incidents';
 
 $resident_id = null;
 if ($is_resident) {
     $stmt = $conn->prepare("SELECT resident_id FROM tbl_users WHERE user_id = ?");
-    $stmt->bind_param("i", $current_user_id);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    if ($row = $result->fetch_assoc()) $resident_id = $row['resident_id'];
+    $stmt->bind_param("i", $current_user_id); $stmt->execute();
+    if ($row = $stmt->get_result()->fetch_assoc()) $resident_id = $row['resident_id'];
     $stmt->close();
-
     if ($resident_id) {
         $stmt = $conn->prepare("SELECT is_verified, id_photo FROM tbl_residents WHERE resident_id = ?");
-        $stmt->bind_param("i", $resident_id);
-        $stmt->execute();
-        $resident_info = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-
+        $stmt->bind_param("i", $resident_id); $stmt->execute();
+        $resident_info = $stmt->get_result()->fetch_assoc(); $stmt->close();
         if (!$resident_info || $resident_info['is_verified'] != 1 || empty($resident_info['id_photo'])) {
-            header('Location: not-verified-incidents.php');
-            exit();
+            header('Location: not-verified-incidents.php'); exit();
         }
     }
 }
 
-// Only status filter from stat card clicks
-$filter_status = $_GET['status'] ?? '';
+$filter_status = isset($_GET['status']) ? sanitizeInput($_GET['status']) : '';
 
-$sql = "SELECT i.*, 
-        CONCAT(r.first_name, ' ', r.last_name) as resident_name,
-        CONCAT(resp_r.first_name, ' ', resp_r.last_name) as responder_name
+$sql = "SELECT i.*,
+        CONCAT(r.first_name,' ',r.last_name) as resident_name,
+        u.username as responder_username
         FROM tbl_incidents i
         JOIN tbl_residents r ON i.resident_id = r.resident_id
-        LEFT JOIN tbl_users resp_u ON i.responder_id = resp_u.user_id
-        LEFT JOIN tbl_residents resp_r ON resp_u.resident_id = resp_r.resident_id
+        LEFT JOIN tbl_users u ON i.responder_id = u.user_id
         WHERE 1=1";
-
-$params = [];
-$types  = '';
-
-if ($is_resident && $resident_id) {
-    $sql .= " AND i.resident_id = ?";
-    $params[] = $resident_id;
-    $types   .= 'i';
-}
-if (!empty($filter_status)) {
-    $sql .= " AND i.status = ?";
-    $params[] = $filter_status;
-    $types   .= 's';
-}
-
+$params=[]; $types='';
+if ($is_resident && $resident_id) { $sql.=" AND i.resident_id=?"; $params[]=$resident_id; $types.='i'; }
+if (!empty($filter_status))       { $sql.=" AND i.status=?";       $params[]=$filter_status; $types.='s'; }
 $sql .= " ORDER BY i.date_reported DESC";
 
-if (!empty($params)) {
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param($types, ...$params);
-    $stmt->execute();
-    $result = $stmt->get_result();
-} else {
-    $result = $conn->query($sql);
-}
+$stmt = $conn->prepare($sql);
+if (!empty($params)) $stmt->bind_param($types, ...$params);
+$stmt->execute();
+$incidents = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$stmt->close();
 
-$incidents = [];
-while ($row = $result->fetch_assoc()) $incidents[] = $row;
-
-// Statistics
-$stats = ['total' => 0, 'pending' => 0, 'in_progress' => 0, 'resolved' => 0, 'closed' => 0];
+$stats = ['total'=>0,'pending'=>0,'in_progress'=>0,'resolved'=>0,'closed'=>0];
 $stats_sql = "SELECT status, COUNT(*) as count FROM tbl_incidents";
-if ($is_resident && $resident_id) $stats_sql .= " WHERE resident_id = " . (int)$resident_id;
+if ($is_resident && $resident_id) $stats_sql .= " WHERE resident_id=".(int)$resident_id;
 $stats_sql .= " GROUP BY status";
 $stats_result = $conn->query($stats_sql);
 if ($stats_result) {
     while ($row = $stats_result->fetch_assoc()) {
+        $s = trim($row['status']);
         $stats['total'] += $row['count'];
-        if ($row['status'] === 'Pending')     $stats['pending']     = $row['count'];
-        if ($row['status'] === 'In Progress') $stats['in_progress'] = $row['count'];
-        if ($row['status'] === 'Resolved')    $stats['resolved']    = $row['count'];
-        if ($row['status'] === 'Closed')      $stats['closed']      = $row['count'];
+        if ($s==='Pending')     $stats['pending']     = $row['count'];
+        if ($s==='In Progress') $stats['in_progress'] = $row['count'];
+        if ($s==='Resolved')    $stats['resolved']    = $row['count'];
+        if ($s==='Closed')      $stats['closed']      = $row['count'];
     }
+}
+
+function getIncidentStatusBadge($status) {
+    $s = trim($status);
+    $map = [
+        'Pending'              => ['amber',   'clock'],
+        'Under Investigation'  => ['sky',     'search'],
+        'In Progress'          => ['sky',     'spinner'],
+        'Resolved'             => ['success', 'check-circle'],
+        'Closed'               => ['muted',   'times-circle'],
+    ];
+    [$color,$icon] = $map[$s] ?? ['muted','circle'];
+    return "<span class='db-badge db-badge--$color'><i class='fas fa-$icon'></i> ".htmlspecialchars($s)."</span>";
+}
+function getIncidentSeverityBadge($severity) {
+    $s = trim($severity);
+    $map = [
+        'Low'      => ['success', 'circle'],
+        'Medium'   => ['amber',   'exclamation-circle'],
+        'High'     => ['rose',    'exclamation-triangle'],
+        'Critical' => ['rose',    'fire'],
+    ];
+    [$color,$icon] = $map[$s] ?? ['muted','circle'];
+    return "<span class='db-badge db-badge--$color'><i class='fas fa-$icon'></i> ".htmlspecialchars($s)."</span>";
 }
 
 include '../../includes/header.php';
 ?>
-
 <style>
-:root { --transition-speed: 0.3s; --shadow-sm: 0 2px 8px rgba(0,0,0,0.08); --shadow-md: 0 4px 16px rgba(0,0,0,0.12); --border-radius: 12px; }
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=DM+Mono:wght@300;400;500&display=swap');
+:root{--db-navy:#0d1b36;--db-navy-mid:#152849;--db-navy-light:#1c3461;--db-amber:#f59e0b;--db-amber-light:#fef3c7;--db-amber-dark:#b45309;--db-teal:#0d9488;--db-teal-light:#ccfbf1;--db-rose:#e11d48;--db-rose-light:#ffe4e6;--db-sky:#0ea5e9;--db-sky-light:#e0f2fe;--db-indigo:#6366f1;--db-indigo-light:#e0e7ff;--db-success:#10b981;--db-success-light:#d1fae5;--db-warning:#f59e0b;--db-warning-light:#fef3c7;--db-danger:#ef4444;--db-danger-light:#fee2e2;--db-info:#3b82f6;--db-info-light:#dbeafe;--db-bg:#eef2f7;--db-surf:#ffffff;--db-surf2:#f8fafc;--db-border:#e2e8f0;--db-text:#0f172a;--db-muted:#64748b;--db-radius:14px;--db-radius-sm:8px;--db-radius-lg:20px;--db-shadow:0 1px 3px rgba(13,27,54,.06),0 4px 16px rgba(13,27,54,.07);--db-shadow-lg:0 8px 40px rgba(13,27,54,.14),0 2px 8px rgba(13,27,54,.06);}
+*,*::before,*::after{box-sizing:border-box;}
+body{font-family:'Sora',sans-serif;background:var(--db-bg);color:var(--db-text);font-size:13.5px;}
 
-.card { border: none; border-radius: var(--border-radius); box-shadow: var(--shadow-sm); transition: all var(--transition-speed) ease; overflow: hidden; }
-.card:hover { box-shadow: var(--shadow-md); transform: translateY(-4px); }
-.card-header { background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%); border-bottom: 2px solid #e9ecef; padding: 1.25rem 1.5rem; font-weight: 700; }
-.card-body { padding: 1.75rem; }
+/* ── Hero ── */
+.rm-hero{background:linear-gradient(135deg,var(--db-navy) 0%,var(--db-navy-light) 65%,#1a4a2e 100%);padding:28px 36px;margin-bottom:24px;border-radius:0 0 var(--db-radius-lg) var(--db-radius-lg);position:relative;overflow:hidden;}
+.rm-hero__ring{position:absolute;border-radius:50%;border:1px solid rgba(255,255,255,.06);pointer-events:none;}
+.rm-hero__ring--1{width:300px;height:300px;top:-130px;right:-60px;}
+.rm-hero__ring--2{width:180px;height:180px;top:-50px;right:70px;border-color:rgba(245,158,11,.12);}
+.rm-hero__ring--3{width:100px;height:100px;bottom:-40px;left:40%;border-color:rgba(13,148,136,.14);}
+.rm-hero__inner{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+.rm-hero__left{display:flex;align-items:center;gap:16px;}
+.rm-hero__icon{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#f59e0b,#d97706);display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff;box-shadow:0 4px 16px rgba(245,158,11,.4);flex-shrink:0;}
+.rm-hero__title{font-size:22px;font-weight:800;color:#fff;letter-spacing:-.4px;margin-bottom:3px;}
+.rm-hero__sub{font-size:13px;color:rgba(255,255,255,.55);}
 
-/* Stat Cards */
-.stat-card-link { text-decoration: none; display: block; }
-.stat-card {
-    background: white; border-radius: var(--border-radius);
-    padding: 1.5rem; box-shadow: var(--shadow-sm);
-    transition: all var(--transition-speed) ease;
-    height: 100%; text-align: center;
-    border: 2px solid transparent;
-}
-.stat-card-link:hover .stat-card { box-shadow: var(--shadow-md); transform: translateY(-4px); }
-.stat-card.active-filter { border-color: #0d6efd; box-shadow: 0 0 0 3px rgba(13,110,253,0.15); }
-.stat-icon { width: 64px; height: 64px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 2rem; margin: 0 auto 1rem; }
-.stat-value { font-size: 2.5rem; font-weight: 800; color: #1a1a1a; line-height: 1; margin-bottom: 0.5rem; }
-.stat-label { font-size: 0.875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #6c757d; }
+/* ── Alerts ── */
+.db-alert{display:flex;align-items:center;gap:12px;padding:14px 18px;border-radius:var(--db-radius);margin-bottom:16px;font-weight:500;font-size:13.5px;border-left:4px solid;}
+.db-alert--success{background:var(--db-success-light);color:#065f46;border-color:var(--db-success);}
+.db-alert--error{background:var(--db-danger-light);color:#7f1d1d;border-color:var(--db-danger);}
+.db-alert__close{margin-left:auto;background:none;border:none;cursor:pointer;font-size:18px;opacity:.6;}
 
-/* Table */
-.table { margin-bottom: 0; }
-.table thead th { background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%); border-bottom: 2px solid #dee2e6; font-weight: 700; font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.5px; color: #495057; padding: 1rem; }
-.table tbody tr { transition: all var(--transition-speed) ease; border-bottom: 1px solid #f1f3f5; }
-.table tbody tr:hover { background: linear-gradient(135deg, rgba(13,110,253,0.03) 0%, rgba(13,110,253,0.05) 100%); }
-.table tbody td { padding: 1rem; vertical-align: middle; }
+/* ── Stat Cards ── */
+.db-stats-row{display:flex;flex-wrap:wrap;gap:14px;margin-bottom:24px;}
+.db-stat-card{flex:1 1 160px;background:var(--db-surf);border-radius:var(--db-radius);padding:18px 16px 14px;display:flex;flex-direction:column;gap:10px;box-shadow:var(--db-shadow);border:1px solid var(--db-border);transition:transform .2s,box-shadow .2s,border-color .2s;text-decoration:none;color:inherit;}
+.db-stat-card:hover{transform:translateY(-3px);box-shadow:var(--db-shadow-lg);color:inherit;}
+.db-stat-card.active{border-color:var(--db-navy-light);box-shadow:0 0 0 3px rgba(28,52,97,.15),var(--db-shadow-lg);transform:translateY(-3px);}
+.db-stat-card__icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px;}
+.db-stat-card__icon--amber{background:var(--db-amber-light);color:var(--db-amber-dark);}
+.db-stat-card__icon--sky{background:var(--db-sky-light);color:var(--db-sky);}
+.db-stat-card__icon--success{background:var(--db-success-light);color:var(--db-success);}
+.db-stat-card__icon--muted{background:var(--db-surf2);color:var(--db-muted);border:1px solid var(--db-border);}
+.db-stat-card__icon--rose{background:var(--db-rose-light);color:var(--db-rose);}
+.db-stat-card__num{font-size:28px;font-weight:800;line-height:1;letter-spacing:-1px;}
+.db-stat-card__label{font-size:11px;color:var(--db-muted);font-weight:500;text-transform:uppercase;letter-spacing:.5px;}
+.db-stat-card__bar{height:3px;border-radius:2px;opacity:.4;}
+.db-stat-card__bar--amber{background:linear-gradient(90deg,var(--db-amber),transparent);}
+.db-stat-card__bar--sky{background:linear-gradient(90deg,var(--db-sky),transparent);}
+.db-stat-card__bar--success{background:linear-gradient(90deg,var(--db-success),transparent);}
+.db-stat-card__bar--muted{background:linear-gradient(90deg,#94a3b8,transparent);}
+.db-stat-card__bar--rose{background:linear-gradient(90deg,var(--db-rose),transparent);}
+.db-stat-card__bar--navy{background:linear-gradient(90deg,var(--db-navy),transparent);}
+.db-stat-card__icon--navy{background:var(--db-indigo-light);color:var(--db-navy);}
 
-.badge { font-weight: 600; padding: 0.5rem 1rem; border-radius: 50px; font-size: 0.85rem; letter-spacing: 0.3px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
-.btn { border-radius: 8px; padding: 0.625rem 1.5rem; font-weight: 600; transition: all var(--transition-speed) ease; border: none; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
-.btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
-.btn-sm { padding: 0.5rem 1rem; font-size: 0.875rem; }
+/* ── Panel ── */
+.db-panel{background:var(--db-surf);border-radius:var(--db-radius-lg);border:1px solid var(--db-border);box-shadow:var(--db-shadow);margin-bottom:18px;overflow:hidden;animation:dbFadeUp .35s ease both;}
+@keyframes dbFadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.db-panel__header{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid var(--db-border);gap:10px;flex-wrap:wrap;}
+.db-panel__title{display:flex;align-items:center;gap:10px;}
+.db-panel__title h2{font-size:15px;font-weight:700;}
+.db-panel__icon{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:14px;}
+.db-panel__icon--amber{background:var(--db-amber-light);color:var(--db-amber-dark);}
 
-.empty-state { text-align: center; padding: 4rem 2rem; color: #6c757d; }
-.empty-state i { font-size: 4rem; margin-bottom: 1.5rem; opacity: 0.3; }
-.empty-state p { font-size: 1.1rem; font-weight: 500; margin-bottom: 1rem; }
+/* ── Buttons ── */
+.db-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:var(--db-radius-sm);font-family:'Sora',sans-serif;font-size:13px;font-weight:600;cursor:pointer;border:1px solid transparent;text-decoration:none;transition:all .18s;white-space:nowrap;}
+.db-btn--sm{padding:6px 12px;font-size:12px;}
+.db-btn--primary{background:linear-gradient(135deg,var(--db-navy),var(--db-navy-light));color:#fff;}
+.db-btn--primary:hover{background:linear-gradient(135deg,var(--db-navy-light),#2748a0);transform:translateY(-1px);box-shadow:0 4px 14px rgba(13,27,54,.25);color:#fff;}
+.db-btn--ghost{background:var(--db-surf2);color:var(--db-text);border-color:var(--db-border);}
+.db-btn--ghost:hover{background:var(--db-border);}
 
-/* Active filter banner */
-.filter-active-bar {
-    background: linear-gradient(135deg, rgba(13,110,253,0.08), rgba(13,110,253,0.04));
-    border: 1px solid rgba(13,110,253,0.2);
-    border-radius: 8px; padding: 0.6rem 1rem;
-    display: flex; align-items: center; gap: 0.5rem;
-    font-size: 0.875rem; color: #0d6efd; font-weight: 600;
-}
+/* ── Badges ── */
+.db-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:20px;font-family:'DM Mono',monospace;font-size:10px;font-weight:500;letter-spacing:.3px;white-space:nowrap;}
+.db-badge--rose{background:var(--db-rose-light);color:#9f1239;}
+.db-badge--amber{background:var(--db-amber-light);color:#92400e;}
+.db-badge--sky{background:var(--db-sky-light);color:#0369a1;}
+.db-badge--indigo{background:var(--db-indigo-light);color:#4338ca;}
+.db-badge--success{background:var(--db-success-light);color:#065f46;}
+.db-badge--muted{background:var(--db-surf2);color:var(--db-muted);border:1px solid var(--db-border);}
+.db-badge--navy{background:#e8edf7;color:var(--db-navy);}
 
-@media (max-width: 768px) {
-    .stat-card { padding: 1.25rem; margin-bottom: 1rem; }
-    .stat-value { font-size: 2rem; }
-    .stat-icon { width: 56px; height: 56px; font-size: 1.5rem; }
-    .table thead th, .table tbody td { font-size: 0.875rem; padding: 0.75rem; }
-}
-html { scroll-behavior: smooth; }
+/* ── Table ── */
+.db-table-wrap{overflow-x:auto;}
+.db-table{width:100%;border-collapse:collapse;font-size:12.5px;}
+.db-table thead tr{background:linear-gradient(135deg,var(--db-navy),var(--db-navy-light));}
+.db-table thead th{color:rgba(255,255,255,.8);font-family:'DM Mono',monospace;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.8px;padding:11px 16px;white-space:nowrap;border:none;}
+.db-table tbody tr{border-bottom:1px solid var(--db-border);transition:background .12s;}
+.db-table tbody tr:last-child{border-bottom:none;}
+.db-table tbody tr.clickable:hover{background:#f5f8ff;box-shadow:inset 3px 0 0 var(--db-amber);cursor:pointer;}
+.db-table tbody tr.resident-row:hover{background:#f8fafc;}
+.db-table tbody td{padding:12px 16px;vertical-align:middle;}
+.db-id{font-family:'DM Mono',monospace;font-size:11px;color:var(--db-amber-dark);font-weight:500;}
+.db-text-sm{font-size:11.5px;color:var(--db-muted);}
+
+/* ── Empty ── */
+.db-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:56px 24px;text-align:center;gap:12px;}
+.db-empty i{font-size:44px;color:var(--db-border);}
+.db-empty p{font-size:14px;color:var(--db-muted);}
+
+/* ── Hover Preview ── */
+.db-preview{position:fixed;z-index:9999;width:320px;background:var(--db-surf);border-radius:var(--db-radius);box-shadow:var(--db-shadow-lg);border:1px solid var(--db-border);overflow:hidden;pointer-events:none;animation:dbPrevIn .18s ease;}
+@keyframes dbPrevIn{from{opacity:0;transform:translateY(6px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
+.db-preview__header{display:flex;align-items:center;gap:12px;padding:14px 16px 10px;border-bottom:1px solid #f0f0f0;}
+.db-preview__icon{width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0;}
+.db-preview__header-text{flex:1;min-width:0;}
+.db-preview__type{font-family:'DM Mono',monospace;font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--db-muted);margin-bottom:2px;}
+.db-preview__title{font-size:.88rem;font-weight:700;color:var(--db-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.db-preview__body{padding:12px 16px 14px;}
+.db-preview__msg{font-size:.8rem;color:var(--db-muted);line-height:1.6;margin-bottom:10px;}
+.db-preview__footer{font-size:.72rem;color:#adb5bd;display:flex;align-items:center;gap:8px;}
+
+@media(max-width:768px){.rm-hero{padding:20px;border-radius:0;}.db-preview{display:none !important;}}
 </style>
 
-<div class="container-fluid py-4">
-
-    <!-- Header -->
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <h2 class="mb-1 fw-bold">
-                        <i class="fas fa-exclamation-triangle me-2 text-warning"></i>
-                        <?= $is_resident ? 'My Incident Reports' : 'Incident Reports' ?>
-                    </h2>
-                    <p class="text-muted mb-0">
-                        <?= $is_resident ? 'View all your reported incidents' : 'All incident reports in the system' ?>
-                    </p>
-                </div>
-                <?php if ($is_resident): ?>
-                    <a href="report-incident.php" class="btn btn-danger">
-                        <i class="fas fa-plus me-2"></i>Report Incident
-                    </a>
-                <?php endif; ?>
+<div class="rm-hero">
+    <div class="rm-hero__ring rm-hero__ring--1"></div>
+    <div class="rm-hero__ring rm-hero__ring--2"></div>
+    <div class="rm-hero__ring rm-hero__ring--3"></div>
+    <div class="rm-hero__inner">
+        <div class="rm-hero__left">
+            <div class="rm-hero__icon"><i class="fas fa-exclamation-triangle"></i></div>
+            <div>
+                <div class="rm-hero__title"><?php echo $is_resident ? 'My Incident Reports' : 'Incidents Management'; ?></div>
+                <div class="rm-hero__sub"><?php echo $is_resident ? 'View all your reported incidents' : 'Manage all barangay incident reports'; ?></div>
             </div>
         </div>
-    </div>
-
-    <?php echo displayMessage(); ?>
-
-    <!-- Statistics Cards (clickable filters) -->
-    <div class="row mb-4">
-        <div class="col-md-3 mb-3 mb-md-0">
-            <a href="view-incidents.php" class="stat-card-link">
-                <div class="stat-card <?= $filter_status === '' ? 'active-filter' : '' ?>">
-                    <div class="stat-icon bg-primary bg-opacity-10 text-primary">
-                        <i class="fas fa-exclamation-triangle"></i>
-                    </div>
-                    <div class="stat-value"><?= $stats['total'] ?></div>
-                    <div class="stat-label">Total Incidents</div>
-                </div>
-            </a>
-        </div>
-        <div class="col-md-3 mb-3 mb-md-0">
-            <a href="?status=Pending" class="stat-card-link">
-                <div class="stat-card <?= $filter_status === 'Pending' ? 'active-filter' : '' ?>">
-                    <div class="stat-icon bg-warning bg-opacity-10 text-warning">
-                        <i class="fas fa-clock"></i>
-                    </div>
-                    <div class="stat-value text-warning"><?= $stats['pending'] ?></div>
-                    <div class="stat-label">Pending</div>
-                </div>
-            </a>
-        </div>
-        <div class="col-md-3 mb-3 mb-md-0">
-            <a href="?status=In+Progress" class="stat-card-link">
-                <div class="stat-card <?= $filter_status === 'In Progress' ? 'active-filter' : '' ?>">
-                    <div class="stat-icon bg-info bg-opacity-10 text-info">
-                        <i class="fas fa-spinner"></i>
-                    </div>
-                    <div class="stat-value text-info"><?= $stats['in_progress'] ?></div>
-                    <div class="stat-label">In Progress</div>
-                </div>
-            </a>
-        </div>
-        <div class="col-md-3">
-            <a href="?status=Resolved" class="stat-card-link">
-                <div class="stat-card <?= $filter_status === 'Resolved' ? 'active-filter' : '' ?>">
-                    <div class="stat-icon bg-success bg-opacity-10 text-success">
-                        <i class="fas fa-check-circle"></i>
-                    </div>
-                    <div class="stat-value text-success"><?= $stats['resolved'] ?></div>
-                    <div class="stat-label">Resolved</div>
-                </div>
-            </a>
-        </div>
-    </div>
-
-    <!-- Active filter banner -->
-    <?php if ($filter_status): ?>
-    <div class="row mb-3">
-        <div class="col-12">
-            <div class="filter-active-bar">
-                <i class="fas fa-filter"></i>
-                Showing: <strong><?= htmlspecialchars($filter_status) ?></strong> incidents
-                <a href="view-incidents.php" class="ms-auto btn btn-sm btn-outline-primary py-0">
-                    <i class="fas fa-times me-1"></i>Clear Filter
-                </a>
-            </div>
-        </div>
-    </div>
-    <?php endif; ?>
-
-    <!-- Incidents Table -->
-    <div class="card border-0 shadow-sm">
-        <div class="card-header">
-            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <h5 class="mb-0">
-                    <i class="fas fa-list me-2"></i>
-                    <?= $filter_status ? htmlspecialchars($filter_status) . ' Incidents' : 'All Incident Reports' ?>
-                    <span class="badge bg-primary ms-2"><?= count($incidents) ?></span>
-                </h5>
-            </div>
-        </div>
-        <div class="card-body">
-            <?php if (empty($incidents)): ?>
-                <div class="empty-state">
-                    <i class="fas fa-exclamation-triangle"></i>
-                    <p>No Incident Reports Found</p>
-                    <p class="text-muted mb-3">
-                        <?= $filter_status
-                            ? "No $filter_status incidents found."
-                            : ($is_resident ? "You haven't reported any incidents yet." : "No incidents have been reported yet.") ?>
-                    </p>
-                    <?php if ($filter_status): ?>
-                        <a href="view-incidents.php" class="btn btn-outline-primary me-2">
-                            <i class="fas fa-times me-2"></i>Clear Filter
-                        </a>
-                    <?php endif; ?>
-                    <?php if ($is_resident): ?>
-                        <a href="report-incident.php" class="btn btn-danger">
-                            <i class="fas fa-plus me-2"></i>Report Incident
-                        </a>
-                    <?php endif; ?>
-                </div>
-            <?php else: ?>
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Reference</th>
-                                <th>Type</th>
-                                <th>Location</th>
-                                <th>Date Reported</th>
-                                <?php if (!$is_resident): ?>
-                                    <th>Reporter</th>
-                                    <th>Responder</th>
-                                <?php endif; ?>
-                                <th>Severity</th>
-                                <th>Status</th>
-                                <th class="text-center">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($incidents as $incident):
-                                $icon_class = 'fa-exclamation-triangle';
-                                switch ($incident['incident_type']) {
-                                    case 'Crime':            $icon_class = 'fa-user-secret';         break;
-                                    case 'Fire':             $icon_class = 'fa-fire';                break;
-                                    case 'Accident':         $icon_class = 'fa-car-crash';           break;
-                                    case 'Health Emergency': $icon_class = 'fa-ambulance';           break;
-                                    case 'Violation':        $icon_class = 'fa-gavel';               break;
-                                    case 'Natural Disaster': $icon_class = 'fa-cloud-showers-heavy'; break;
-                                }
-                            ?>
-                            <tr>
-                                <td><strong class="text-primary"><?= htmlspecialchars($incident['reference_no']) ?></strong></td>
-                                <td>
-                                    <span class="badge bg-secondary">
-                                        <i class="fas <?= $icon_class ?> me-1"></i>
-                                        <?= htmlspecialchars($incident['incident_type']) ?>
-                                    </span>
-                                </td>
-                                <td>
-                                    <i class="fas fa-map-marker-alt text-danger me-1"></i>
-                                    <small><?= htmlspecialchars($incident['location']) ?></small>
-                                </td>
-                                <td>
-                                    <i class="far fa-calendar me-1 text-muted"></i>
-                                    <small><?= date('M d, Y', strtotime($incident['date_reported'])) ?></small><br>
-                                    <small class="text-muted"><?= date('h:i A', strtotime($incident['date_reported'])) ?></small>
-                                </td>
-                                <?php if (!$is_resident): ?>
-                                    <td><small><?= htmlspecialchars($incident['resident_name'] ?? 'Unknown') ?></small></td>
-                                    <td>
-                                        <?php if ($incident['responder_name']): ?>
-                                            <i class="fas fa-user-shield me-1 text-info"></i>
-                                            <small><?= htmlspecialchars($incident['responder_name']) ?></small>
-                                        <?php else: ?>
-                                            <span class="text-muted"><small><i>Not assigned</i></small></span>
-                                        <?php endif; ?>
-                                    </td>
-                                <?php endif; ?>
-                                <td><?= getSeverityBadge($incident['severity']) ?></td>
-                                <td><?= getStatusBadge($incident['status']) ?></td>
-                                <td class="text-center">
-                                    <a href="incident-details.php?id=<?= intval($incident['incident_id']) ?>"
-                                       class="btn btn-sm btn-primary" title="View Details">
-                                        <i class="fas fa-eye me-1"></i>View
-                                    </a>
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-            <?php endif; ?>
-        </div>
+        <?php if ($is_resident): ?>
+        <a href="report-incident.php" class="db-btn db-btn--primary"><i class="fas fa-plus"></i> Report Incident</a>
+        <?php endif; ?>
     </div>
 </div>
 
+<div style="padding:0 24px 24px;">
+
+<?php if (isset($_GET['success']) && $_GET['success']==='filed'): ?>
+<div class="db-alert db-alert--success"><i class="fas fa-check-circle"></i> Incident reported successfully! <button class="db-alert__close" onclick="this.parentElement.remove()">×</button></div>
+<?php endif; ?>
+
+<!-- Stats -->
+<div class="db-stats-row">
+    <a href="view-incidents.php" class="db-stat-card <?php echo $filter_status===''?'active':''; ?>">
+        <div class="db-stat-card__icon db-stat-card__icon--navy"><i class="fas fa-exclamation-triangle"></i></div>
+        <div><div class="db-stat-card__num"><?php echo $stats['total']; ?></div><div class="db-stat-card__label">Total</div></div>
+        <div class="db-stat-card__bar db-stat-card__bar--navy"></div>
+    </a>
+    <a href="?status=Pending" class="db-stat-card <?php echo $filter_status==='Pending'?'active':''; ?>">
+        <div class="db-stat-card__icon db-stat-card__icon--amber"><i class="fas fa-clock"></i></div>
+        <div><div class="db-stat-card__num" style="color:var(--db-amber-dark)"><?php echo $stats['pending']; ?></div><div class="db-stat-card__label">Pending</div></div>
+        <div class="db-stat-card__bar db-stat-card__bar--amber"></div>
+    </a>
+    <a href="?status=In+Progress" class="db-stat-card <?php echo $filter_status==='In Progress'?'active':''; ?>">
+        <div class="db-stat-card__icon db-stat-card__icon--sky"><i class="fas fa-spinner"></i></div>
+        <div><div class="db-stat-card__num" style="color:var(--db-sky)"><?php echo $stats['in_progress']; ?></div><div class="db-stat-card__label">In Progress</div></div>
+        <div class="db-stat-card__bar db-stat-card__bar--sky"></div>
+    </a>
+    <a href="?status=Resolved" class="db-stat-card <?php echo $filter_status==='Resolved'?'active':''; ?>">
+        <div class="db-stat-card__icon db-stat-card__icon--success"><i class="fas fa-check-circle"></i></div>
+        <div><div class="db-stat-card__num" style="color:var(--db-success)"><?php echo $stats['resolved']; ?></div><div class="db-stat-card__label">Resolved</div></div>
+        <div class="db-stat-card__bar db-stat-card__bar--success"></div>
+    </a>
+    <a href="?status=Closed" class="db-stat-card <?php echo $filter_status==='Closed'?'active':''; ?>">
+        <div class="db-stat-card__icon db-stat-card__icon--muted"><i class="fas fa-times-circle"></i></div>
+        <div><div class="db-stat-card__num"><?php echo $stats['closed']; ?></div><div class="db-stat-card__label">Closed</div></div>
+        <div class="db-stat-card__bar db-stat-card__bar--muted"></div>
+    </a>
+</div>
+
+<!-- Table Panel -->
+<div class="db-panel">
+    <div class="db-panel__header">
+        <div class="db-panel__title">
+            <div class="db-panel__icon db-panel__icon--amber"><i class="fas fa-list"></i></div>
+            <h2><?php if($filter_status) echo htmlspecialchars($filter_status).' Incidents'; else echo $is_resident?'My Incidents':'All Incidents'; ?></h2>
+            <span class="db-badge db-badge--amber"><?php echo count($incidents); ?></span>
+        </div>
+        <?php if ($filter_status): ?>
+        <a href="view-incidents.php" class="db-btn db-btn--ghost db-btn--sm"><i class="fas fa-times"></i> Clear Filter</a>
+        <?php endif; ?>
+    </div>
+
+    <?php if (empty($incidents)): ?>
+    <div class="db-empty">
+        <i class="fas fa-exclamation-triangle"></i>
+        <p>No incidents found</p>
+        <?php if ($filter_status): ?>
+            <a href="view-incidents.php" class="db-btn db-btn--ghost db-btn--sm"><i class="fas fa-times"></i> Clear Filter</a>
+        <?php elseif ($is_resident): ?>
+            <a href="report-incident.php" class="db-btn db-btn--primary db-btn--sm"><i class="fas fa-plus"></i> Report Your First Incident</a>
+        <?php else: ?>
+            <p style="font-size:12px;color:var(--db-muted)">No incidents have been reported yet.</p>
+        <?php endif; ?>
+    </div>
+    <?php else: ?>
+    <div class="db-table-wrap">
+        <table class="db-table">
+            <thead>
+                <tr>
+                    <th>Reference #</th>
+                    <th>Date Reported</th>
+                    <th>Type</th>
+                    <th>Location</th>
+                    <?php if (!$is_resident): ?><th>Reporter</th><th>Responder</th><?php endif; ?>
+                    <th>Severity</th>
+                    <th>Status</th>
+                    <?php if ($is_resident): ?><th style="text-align:center">Action</th><?php endif; ?>
+                </tr>
+            </thead>
+            <tbody>
+            <?php foreach ($incidents as $incident):
+                $icon_class = 'fa-exclamation-triangle';
+                switch ($incident['incident_type']) {
+                    case 'Crime':            $icon_class = 'fa-user-secret';         break;
+                    case 'Fire':             $icon_class = 'fa-fire';                break;
+                    case 'Accident':         $icon_class = 'fa-car-crash';           break;
+                    case 'Health Emergency': $icon_class = 'fa-ambulance';           break;
+                    case 'Violation':        $icon_class = 'fa-gavel';               break;
+                    case 'Natural Disaster': $icon_class = 'fa-cloud-showers-heavy'; break;
+                }
+                $severity = trim($incident['severity'] ?? 'Medium');
+                $prev_color = 'amber';
+                if ($severity==='Critical') $prev_color='rose';
+                elseif ($severity==='High') $prev_color='rose';
+                elseif ($severity==='Low')  $prev_color='success';
+
+                $view_url   = 'incident-details.php?id='.$incident['incident_id'];
+                $prev_title = htmlspecialchars(($incident['reference_no']??'').' – '.($incident['incident_type']??''));
+                $prev_msg   = htmlspecialchars(mb_strimwidth($incident['description']??'',0,150,'…'));
+                $prev_type  = htmlspecialchars($incident['incident_type']??'');
+                $prev_time  = date('M j, Y', strtotime($incident['date_reported']));
+                $row_class  = $is_resident ? 'resident-row' : 'clickable';
+            ?>
+            <tr class="<?php echo $row_class; ?>"
+                <?php if (!$is_resident): ?>
+                data-url="<?php echo htmlspecialchars($view_url); ?>"
+                data-pt="<?php echo $prev_title; ?>" data-pm="<?php echo $prev_msg; ?>"
+                data-ptype="<?php echo $prev_type; ?>" data-pc="<?php echo $prev_color; ?>"
+                data-picon="<?php echo $icon_class; ?>" data-ptime="<?php echo $prev_time; ?>"
+                <?php endif; ?>>
+                <td><span class="db-id"><?php echo htmlspecialchars($incident['reference_no'] ?? 'N/A'); ?></span></td>
+                <td>
+                    <span class="db-text-sm"><?php echo date('M d, Y', strtotime($incident['date_reported'])); ?></span><br>
+                    <span class="db-text-sm" style="color:#94a3b8"><?php echo date('h:i A', strtotime($incident['date_reported'])); ?></span>
+                </td>
+                <td>
+                    <span class="db-badge db-badge--amber">
+                        <i class="fas <?php echo $icon_class; ?>"></i> <?php echo htmlspecialchars($incident['incident_type']); ?>
+                    </span>
+                </td>
+                <td>
+                    <span style="display:flex;align-items:center;gap:4px;">
+                        <i class="fas fa-map-marker-alt" style="color:var(--db-rose);font-size:10px;flex-shrink:0;"></i>
+                        <span class="db-text-sm"><?php echo htmlspecialchars($incident['location'] ?? 'N/A'); ?></span>
+                    </span>
+                </td>
+                <?php if (!$is_resident): ?>
+                <td><?php echo htmlspecialchars($incident['resident_name'] ?? 'Unknown'); ?></td>
+                <td>
+                    <?php if (!empty($incident['responder_username'])): ?>
+                        <span class="db-text-sm"><i class="fas fa-user-shield" style="color:var(--db-sky)"></i> <?php echo htmlspecialchars($incident['responder_username']); ?></span>
+                    <?php else: ?>
+                        <span class="db-text-sm" style="font-style:italic">Not assigned</span>
+                    <?php endif; ?>
+                </td>
+                <?php endif; ?>
+                <td><?php echo getIncidentSeverityBadge($incident['severity'] ?? 'Medium'); ?></td>
+                <td><?php echo getIncidentStatusBadge($incident['status'] ?? 'Pending'); ?></td>
+                <?php if ($is_resident): ?>
+                <td style="text-align:center">
+                    <a href="<?php echo htmlspecialchars($view_url); ?>" class="db-btn db-btn--sm db-btn--primary"><i class="fas fa-eye"></i> View</a>
+                </td>
+                <?php endif; ?>
+            </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?php endif; ?>
+</div>
+</div>
+
+<?php if (!$is_resident): ?>
+<div id="dbPreview" class="db-preview" style="display:none;">
+    <div class="db-preview__header">
+        <div class="db-preview__icon" id="dbPrevIcon"><i class="fas fa-exclamation-triangle" id="dbPrevIconI"></i></div>
+        <div class="db-preview__header-text">
+            <div class="db-preview__type" id="dbPrevType"></div>
+            <div class="db-preview__title" id="dbPrevTitle"></div>
+        </div>
+    </div>
+    <div class="db-preview__body">
+        <p class="db-preview__msg" id="dbPrevMsg"></p>
+        <div class="db-preview__footer"><i class="far fa-calendar-alt"></i><span id="dbPrevTime"></span></div>
+    </div>
+</div>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    document.querySelectorAll('.alert-dismissible').forEach(function (alert) {
-        setTimeout(function () { new bootstrap.Alert(alert).close(); }, 5000);
+    setTimeout(() => document.querySelectorAll('.db-alert').forEach(a => { a.style.opacity='0'; setTimeout(()=>a.remove(),400); }), 5000);
+    const card=document.getElementById('dbPreview'), iconBox=card.querySelector('#dbPrevIcon'), iconEl=card.querySelector('#dbPrevIconI');
+    const cmap={rose:{bg:'rgba(225,29,72,.1)',text:'#e11d48'},amber:{bg:'rgba(245,158,11,.1)',text:'#b45309'},sky:{bg:'rgba(14,165,233,.1)',text:'#0ea5e9'},indigo:{bg:'rgba(99,102,241,.1)',text:'#6366f1'},success:{bg:'rgba(16,185,129,.1)',text:'#10b981'}};
+    let timer;
+    function pos(e){const cw=card.offsetWidth||320,ch=card.offsetHeight||160,m=14;let x=e.clientX+m,y=e.clientY+m;if(x+cw>window.innerWidth-m)x=e.clientX-cw-m;if(y+ch>window.innerHeight-m)y=e.clientY-ch-m;card.style.left=x+'px';card.style.top=y+'px';}
+    document.querySelectorAll('.clickable').forEach(row => {
+        row.addEventListener('mouseenter',function(e){clearTimeout(timer);const c=cmap[this.dataset.pc]||cmap.amber;document.getElementById('dbPrevTitle').textContent=this.dataset.pt;document.getElementById('dbPrevMsg').textContent=this.dataset.pm;document.getElementById('dbPrevType').textContent=this.dataset.ptype;document.getElementById('dbPrevTime').textContent=this.dataset.ptime;iconEl.className='fas '+this.dataset.picon;iconBox.style.background=c.bg;iconEl.style.color=c.text;pos(e);card.style.display='block';});
+        row.addEventListener('mousemove',pos);
+        row.addEventListener('mouseleave',()=>{timer=setTimeout(()=>{if(!card.matches(':hover'))card.style.display='none';},150);});
+        row.addEventListener('click',function(){if(this.dataset.url)location.href=this.dataset.url;});
     });
 });
 </script>
-
+<?php endif; ?>
 <?php include '../../includes/footer.php'; ?>

@@ -2,13 +2,9 @@
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
-// SESSION MUST START BEFORE ANY OUTPUT OR HEADER CALLS
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
 require_once '../../config/config.php';
 require_once '../../config/database.php';
+require_once '../../config/session.php';
 require_once '../../includes/email_helper.php';
 
 error_log("=== VERIFY EMAIL PAGE ===");
@@ -26,14 +22,11 @@ $error   = '';
 $success = '';
 
 // ── Resolve email ─────────────────────────────────────────────────────────────
-// Email can come from GET (first load) or POST (form submit).
-// We ALWAYS keep it in the URL so it survives POST redirects.
 if (!empty($_GET['email'])) {
     $email = trim($_GET['email']);
 } elseif (!empty($_POST['email'])) {
     $email = trim($_POST['email']);
 } else {
-    // No email anywhere — send back to login
     header("Location: /barangaylink1/modules/auth/login.php");
     exit();
 }
@@ -45,7 +38,7 @@ if (isset($_POST['resend_code']) && $_POST['resend_code'] == '1') {
                CONCAT(res.first_name, ' ', res.last_name) AS full_name
         FROM tbl_users u
         LEFT JOIN tbl_residents res ON u.resident_id = res.resident_id
-        WHERE u.email = ? AND u.email_verified = 0
+        WHERE u.email = ? AND (u.email_verified = 0 OR u.email_verified IS NULL)
         LIMIT 1
     ");
     $stmt->bind_param("s", $email);
@@ -64,12 +57,15 @@ if (isset($_POST['resend_code']) && $_POST['resend_code'] == '1') {
             $full_name = trim($user['full_name']) ?: $user['username'];
             sendResendVerificationCodeEmail($email, $full_name, $new_code);
             $success = "A new verification code has been sent to your email.";
+            error_log("=== RESEND OK === new code: $new_code | user_id: " . $user['user_id']);
         } else {
             $error = "Error sending new code. Please try again.";
+            error_log("=== RESEND UPDATE FAILED === " . $upd->error);
         }
         $upd->close();
     } else {
         $error = "Email not found or already verified.";
+        error_log("=== RESEND: no unverified user found for email: $email ===");
     }
     $stmt->close();
 
@@ -84,27 +80,37 @@ if (isset($_POST['resend_code']) && $_POST['resend_code'] == '1') {
     } elseif (!preg_match('/^[0-9]{6}$/', $verification_code)) {
         $error = "Code must be exactly 6 digits.";
     } else {
+        // Handle both NULL and 0 for email_verified
         $stmt = $conn->prepare("
             SELECT u.user_id, u.username, u.role_id, u.resident_id,
                    r.role_name, u.verification_code, u.verification_code_expires,
-                   res.is_verified
+                   u.email_verified, res.is_verified
             FROM tbl_users u
             LEFT JOIN tbl_roles r ON u.role_id = r.role_id
             LEFT JOIN tbl_residents res ON u.resident_id = res.resident_id
-            WHERE u.email = ? AND u.email_verified = 0
+            WHERE u.email = ? AND (u.email_verified = 0 OR u.email_verified IS NULL)
             LIMIT 1
         ");
         $stmt->bind_param("s", $email);
         $stmt->execute();
         $result = $stmt->get_result();
 
+        error_log("=== LOOKUP ROWS FOUND: " . $result->num_rows . " ===");
+
         if ($result->num_rows === 1) {
             $user = $result->fetch_assoc();
 
-            if ($user['verification_code'] !== $verification_code) {
+            error_log("=== USER FOUND === user_id: " . $user['user_id']);
+            error_log("=== DB code: [" . $user['verification_code'] . "] | submitted: [" . $verification_code . "]");
+            error_log("=== code expires: " . $user['verification_code_expires'] . " | now: " . date('Y-m-d H:i:s'));
+            error_log("=== email_verified in DB: " . var_export($user['email_verified'], true));
+
+            if ((string)$user['verification_code'] !== (string)$verification_code) {
                 $error = "Invalid verification code. Please try again.";
+                error_log("=== CODE MISMATCH ===");
             } elseif (strtotime($user['verification_code_expires']) < time()) {
                 $error = "This code has expired. Please request a new one.";
+                error_log("=== CODE EXPIRED ===");
             } else {
                 // ── Mark email as verified ──────────────────────────────────
                 $upd = $conn->prepare("
@@ -117,45 +123,55 @@ if (isset($_POST['resend_code']) && $_POST['resend_code'] == '1') {
                 $upd->bind_param("i", $user['user_id']);
 
                 if ($upd->execute()) {
+                    $affected = $upd->affected_rows;
                     $upd->close();
                     $stmt->close();
 
-                    // ── Set full session ────────────────────────────────────
+                    error_log("=== EMAIL VERIFIED === affected rows: $affected | user_id: " . $user['user_id']);
+
+                    // ── Log them in immediately and go straight to dashboard ──
                     $_SESSION['user_id']       = (int) $user['user_id'];
                     $_SESSION['username']      = $user['username'];
                     $_SESSION['role_id']       = (int) $user['role_id'];
                     $_SESSION['role']          = $user['role_name'];
                     $_SESSION['role_name']     = $user['role_name'];
                     $_SESSION['resident_id']   = $user['resident_id'];
-                    $_SESSION['is_verified']   = $user['is_verified'] ?? 0;
+                    $_SESSION['is_verified']   = 1;
                     $_SESSION['LAST_ACTIVITY'] = time();
                     $_SESSION['logged_in']     = true;
 
                     session_regenerate_id(true);
 
-                    error_log("=== EMAIL VERIFIED & LOGGED IN ===");
-                    error_log("User ID: "   . $_SESSION['user_id']);
-                    error_log("Username: "  . $_SESSION['username']);
-                    error_log("Role: "      . $_SESSION['role_name']);
+                    error_log("=== SESSION SET — redirecting to dashboard ===");
+                    error_log("user_id: " . $_SESSION['user_id'] . " | role: " . $_SESSION['role_name']);
 
-                    header("Location: /barangaylink1/modules/dashboard/index.php");
+                    // Role-based redirect
+                    $role = trim($user['role_name']);
+                    if ($role === 'Driver') {
+                        header("Location: /barangaylink1/vehicles/driver/index.php");
+                    } else {
+                        header("Location: /barangaylink1/modules/dashboard/index.php");
+                    }
                     exit();
 
                 } else {
                     $error = "Error verifying email. Please try again.";
+                    error_log("=== UPDATE FAILED === " . $upd->error);
                     $upd->close();
                 }
             }
         } else {
-            // Could mean email_verified is already 1 (already verified)
-            $chk = $conn->prepare("SELECT email_verified FROM tbl_users WHERE email = ? LIMIT 1");
+            // User not found — check if already verified
+            $chk = $conn->prepare("SELECT user_id, email_verified FROM tbl_users WHERE email = ? LIMIT 1");
             $chk->bind_param("s", $email);
             $chk->execute();
             $chk_res = $chk->get_result()->fetch_assoc();
             $chk->close();
 
-            if ($chk_res && $chk_res['email_verified'] == 1) {
-                $error = "This email is already verified. Please log in normally.";
+            error_log("=== FALLBACK CHECK === result: " . print_r($chk_res, true));
+
+            if ($chk_res && !empty($chk_res['email_verified'])) {
+                $error = "This email is already verified. Please log in.";
             } else {
                 $error = "Invalid request. Email not found.";
             }
@@ -196,23 +212,19 @@ if (isset($_POST['resend_code']) && $_POST['resend_code'] == '1') {
         .verify-icon i { font-size: 2.5rem; color: white; }
         .verify-header h2 { color: #1e3a8a; font-size: 2rem; margin-bottom: 0.5rem; }
         .verify-header p  { color: #64748b; font-size: 1rem; }
-
         .email-display {
             background: #f1f5f9; padding: 1rem; border-radius: 8px;
             text-align: center; margin-bottom: 2rem;
             font-weight: 600; color: #1e3a8a; word-break: break-all;
         }
-
         .alert {
             padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem;
             display: flex; align-items: center; gap: 0.5rem;
         }
         .alert-danger  { background: #fee2e2; color: #c62828; border-left: 4px solid #f44336; }
         .alert-success { background: #f0fdf4; color: #15803d;  border-left: 4px solid #10b981; }
-
         .form-group { margin-bottom: 1.5rem; }
         .form-group label { display: block; color: #1e3a8a; font-weight: 600; margin-bottom: 0.5rem; }
-
         .code-input {
             width: 100%; padding: 1rem;
             border: 2px solid #e2e8f0; border-radius: 8px;
@@ -225,7 +237,6 @@ if (isset($_POST['resend_code']) && $_POST['resend_code'] == '1') {
             box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
         }
         .helper-text { font-size: 0.85rem; color: #64748b; margin-top: 0.5rem; text-align: center; }
-
         .btn-verify {
             width: 100%; padding: 1rem;
             background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
@@ -234,7 +245,6 @@ if (isset($_POST['resend_code']) && $_POST['resend_code'] == '1') {
         }
         .btn-verify:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(30,58,138,0.3); }
         .btn-verify:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
-
         .btn-resend {
             width: 100%; padding: 0.875rem;
             background: white; color: #3b82f6;
@@ -243,9 +253,7 @@ if (isset($_POST['resend_code']) && $_POST['resend_code'] == '1') {
             margin-top: 1rem;
         }
         .btn-resend:hover { background: #f1f5f9; }
-
         .divider { text-align: center; margin: 1.5rem 0; color: #94a3b8; font-size: 0.9rem; }
-
         .back-link {
             text-align: center; margin-top: 1.5rem;
             padding-top: 1.5rem; border-top: 1px solid #e2e8f0;
@@ -257,9 +265,7 @@ if (isset($_POST['resend_code']) && $_POST['resend_code'] == '1') {
 <body>
     <div class="verify-container">
         <div class="verify-header">
-            <div class="verify-icon">
-                <i class="fas fa-envelope-open-text"></i>
-            </div>
+            <div class="verify-icon"><i class="fas fa-envelope-open-text"></i></div>
             <h2>Verify Your Email</h2>
             <p>Enter the 6-digit code we sent to:</p>
         </div>
@@ -283,7 +289,6 @@ if (isset($_POST['resend_code']) && $_POST['resend_code'] == '1') {
         </div>
         <?php endif; ?>
 
-        <!-- ── Verification form — email stays in the URL so GET survives POST ── -->
         <form method="POST" action="?email=<?php echo urlencode($email); ?>" id="verifyForm">
             <div class="form-group">
                 <label>Verification Code</label>
@@ -299,7 +304,6 @@ if (isset($_POST['resend_code']) && $_POST['resend_code'] == '1') {
 
         <div class="divider">Didn't receive the code?</div>
 
-        <!-- ── Resend form — also keeps email in URL ── -->
         <form method="POST" action="?email=<?php echo urlencode($email); ?>">
             <input type="hidden" name="resend_code" value="1">
             <button type="submit" class="btn-resend">
@@ -315,12 +319,9 @@ if (isset($_POST['resend_code']) && $_POST['resend_code'] == '1') {
     </div>
 
     <script>
-        // Numbers only
         document.getElementById('verification_code').addEventListener('input', function() {
             this.value = this.value.replace(/[^0-9]/g, '');
         });
-
-        // Disable button on submit to prevent double-submit
         document.getElementById('verifyForm').addEventListener('submit', function() {
             const btn = document.getElementById('verifyBtn');
             btn.disabled = true;

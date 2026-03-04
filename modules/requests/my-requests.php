@@ -1,5 +1,6 @@
 <?php
 require_once '../../config/config.php';
+require_once '../../config/database.php';
 require_once '../../config/session.php';
 require_once '../../includes/security.php';
 require_once '../../includes/functions.php';
@@ -9,8 +10,7 @@ $user_id   = getCurrentUserId();
 $user_role = getCurrentUserRole();
 
 if ($user_role !== 'Resident') {
-    header('Location: ../dashboard/index.php');
-    exit();
+    header('Location: ../dashboard/index.php'); exit();
 }
 
 $resident_sql  = "SELECT r.resident_id, r.is_verified 
@@ -23,7 +23,6 @@ $resident_stmt->execute();
 $resident_data = $resident_stmt->get_result()->fetch_assoc();
 $resident_stmt->close();
 
-// Fallback: try matching by email if resident_id join fails
 if (!$resident_data) {
     $resident_sql2 = "SELECT r.resident_id, r.is_verified 
                       FROM tbl_residents r 
@@ -38,19 +37,16 @@ if (!$resident_data) {
 
 if (!$resident_data) {
     $_SESSION['error_message'] = 'Resident profile not found.';
-    header('Location: ../dashboard/index.php');
-    exit();
+    header('Location: ../dashboard/index.php'); exit();
 }
-
 if ($resident_data['is_verified'] != 1) {
-    header('Location: not-verified.php');
-    exit();
+    header('Location: not-verified.php'); exit();
 }
 
 $resident_id = (int) $resident_data['resident_id'];
 $page_title  = 'My Document Requests';
 
-// ── Auto-create replies table if missing ──────────────────────
+// Auto-create replies table
 $conn->query("CREATE TABLE IF NOT EXISTS tbl_request_replies (
     reply_id     INT AUTO_INCREMENT PRIMARY KEY,
     request_id   INT NOT NULL,
@@ -61,26 +57,24 @@ $conn->query("CREATE TABLE IF NOT EXISTS tbl_request_replies (
     INDEX idx_request_id (request_id)
 )");
 
-// ── Handle resident reply ──────────────────────────────────────
+// Handle resident reply
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'resident_reply') {
     $reply_request_id = intval($_POST['request_id'] ?? 0);
     $reply_message    = trim($_POST['reply_message'] ?? '');
     $redirect_status  = isset($_POST['current_status']) ? '?status=' . urlencode($_POST['current_status']) : '';
 
     if ($reply_request_id > 0 && $reply_message !== '') {
-        // Check if request is rejected
         $check_stmt = $conn->prepare("SELECT status FROM tbl_requests WHERE request_id = ? AND resident_id = ?");
         $check_stmt->bind_param("ii", $reply_request_id, $resident_id);
         $check_stmt->execute();
         $check_result = $check_stmt->get_result()->fetch_assoc();
         $check_stmt->close();
-        
+
         if ($check_result && $check_result['status'] === 'Rejected') {
             $_SESSION['error_message'] = 'Cannot send reply to a rejected request';
-            header('Location: my-requests.php' . $redirect_status);
-            exit();
+            header('Location: my-requests.php' . $redirect_status); exit();
         }
-        
+
         $verify_stmt = $conn->prepare("SELECT request_id FROM tbl_requests WHERE request_id = ? AND resident_id = ?");
         $verify_stmt->bind_param("ii", $reply_request_id, $resident_id);
         $verify_stmt->execute();
@@ -92,11 +86,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $ins_stmt->bind_param("iis", $reply_request_id, $user_id, $reply_message);
             if ($ins_stmt->execute()) {
                 $_SESSION['success_message'] = 'Your reply has been sent.';
-
-                // ── Notify admins about the resident reply ──────────────
                 $info_stmt = $conn->prepare(
-                    "SELECT req.processed_by, req.request_id,
-                            rt.request_type_name,
+                    "SELECT req.processed_by, req.request_id, rt.request_type_name,
                             res.first_name, res.last_name
                      FROM tbl_requests req
                      LEFT JOIN tbl_request_types rt ON req.request_type_id = rt.request_type_id
@@ -113,33 +104,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     $doc_type    = $req_info['request_type_name'] ?? 'Document Request';
                     $notif_title = "Resident Replied to Remarks";
                     $notif_msg   = "{$res_name} replied to your note on their {$doc_type} request.";
-                    $notif_type  = "request_status_update";
                     $ref_type    = "request";
-
-                    $admin_ids = [];
-                    if (!empty($req_info['processed_by'])) {
-                        $admin_ids[] = (int)$req_info['processed_by'];
-                    }
+                    $admin_ids   = [];
+                    if (!empty($req_info['processed_by'])) $admin_ids[] = (int)$req_info['processed_by'];
                     $sa_result = $conn->query("SELECT user_id FROM tbl_users WHERE role IN ('Super Admin','Super Administrator','Admin')");
-                    if ($sa_result) {
-                        while ($sa_row = $sa_result->fetch_assoc()) {
-                            $admin_ids[] = (int)$sa_row['user_id'];
-                        }
-                    }
-                    $admin_ids = array_unique($admin_ids);
-
-                    $notif_stmt = $conn->prepare(
-                        "INSERT INTO tbl_notifications (user_id, type, reference_type, reference_id, title, message, is_read, created_at)
-                         VALUES (?, ?, ?, ?, ?, ?, 0, NOW())"
-                    );
-                    foreach ($admin_ids as $aid) {
-                        $notif_stmt->bind_param("ississ", $aid, $notif_type, $ref_type, $reply_request_id, $notif_title, $notif_msg);
-                        $notif_stmt->execute();
-                    }
+                    if ($sa_result) while ($sa_row = $sa_result->fetch_assoc()) $admin_ids[] = (int)$sa_row['user_id'];
+                    $admin_ids  = array_unique($admin_ids);
+                    $notif_stmt = $conn->prepare("INSERT INTO tbl_notifications (user_id, title, message, type, reference_type, reference_id, is_read, created_at) VALUES (?, ?, ?, 'request_reply', ?, ?, 0, NOW())");
+                    foreach ($admin_ids as $aid) { $notif_stmt->bind_param("isssi", $aid, $notif_title, $notif_msg, $ref_type, $reply_request_id); $notif_stmt->execute(); }
                     $notif_stmt->close();
                 }
-                // ── End notification ────────────────────────────────────
-
             } else {
                 $_SESSION['error_message'] = 'Failed to send reply. Please try again.';
             }
@@ -150,15 +124,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     } else {
         $_SESSION['error_message'] = 'Reply cannot be empty.';
     }
-
-    header('Location: my-requests.php' . $redirect_status);
-    exit();
+    header('Location: my-requests.php' . $redirect_status); exit();
 }
 
-// ── Filters ───────────────────────────────────────────────────
 $status_filter = isset($_GET['status']) ? $_GET['status'] : '';
 
-// ── Statistics ────────────────────────────────────────────────
+// Statistics
 $stats_stmt = $conn->prepare("SELECT 
     COUNT(*) as total,
     SUM(CASE WHEN status = 'Pending'  THEN 1 ELSE 0 END) as pending,
@@ -172,7 +143,7 @@ $stats_stmt->execute();
 $stats = $stats_stmt->get_result()->fetch_assoc();
 $stats_stmt->close();
 
-// ── Requests query ────────────────────────────────────────────
+// Requests query
 $requests_sql = "SELECT r.request_id, r.resident_id, r.request_type_id,
                  r.purpose, r.status, r.payment_status,
                  r.request_date, r.processed_date, r.remarks, r.processed_by,
@@ -182,23 +153,16 @@ $requests_sql = "SELECT r.request_id, r.resident_id, r.request_type_id,
                  LEFT JOIN tbl_request_types rt ON r.request_type_id = rt.request_type_id
                  LEFT JOIN tbl_users u ON r.processed_by = u.user_id
                  WHERE r.resident_id = ?";
-$params = [$resident_id];
-$types  = "i";
-
-if ($status_filter && $status_filter !== 'Paid') {
-    $requests_sql .= " AND r.status = ?"; $params[] = $status_filter; $types .= "s";
-}
-if ($status_filter === 'Paid') {
-    $requests_sql .= " AND r.payment_status = 1";
-}
+$params = [$resident_id]; $types = "i";
+if ($status_filter && $status_filter !== 'Paid') { $requests_sql .= " AND r.status = ?"; $params[] = $status_filter; $types .= "s"; }
+if ($status_filter === 'Paid') $requests_sql .= " AND r.payment_status = 1";
 $requests_sql .= " ORDER BY r.request_date DESC";
-
 $requests_stmt = $conn->prepare($requests_sql);
 $requests_stmt->bind_param($types, ...$params);
 $requests_stmt->execute();
 $requests = $requests_stmt->get_result();
 
-// ── Fetch all replies for this resident's requests ────────────
+// Fetch all replies
 $replies_by_request = [];
 $all_replies_stmt = $conn->prepare(
     "SELECT rr.reply_id, rr.request_id, rr.sender_type, rr.sender_id, rr.message, rr.created_at,
@@ -214,363 +178,368 @@ $all_replies_stmt = $conn->prepare(
 $all_replies_stmt->bind_param("i", $resident_id);
 $all_replies_stmt->execute();
 $all_replies_result = $all_replies_stmt->get_result();
-while ($reply = $all_replies_result->fetch_assoc()) {
-    $replies_by_request[$reply['request_id']][] = $reply;
-}
+while ($reply = $all_replies_result->fetch_assoc()) $replies_by_request[$reply['request_id']][] = $reply;
 $all_replies_stmt->close();
+
+function getRequestStatusBadge($status) {
+    $s   = trim($status);
+    $map = [
+        'Pending'  => ['amber',   'clock'],
+        'Approved' => ['sky',     'check-circle'],
+        'Released' => ['success', 'check-double'],
+        'Rejected' => ['rose',    'times-circle'],
+    ];
+    [$color, $icon] = $map[$s] ?? ['muted', 'circle'];
+    return "<span class='db-badge db-badge--$color'><i class='fas fa-$icon'></i> " . htmlspecialchars($s) . "</span>";
+}
 
 include '../../includes/header.php';
 ?>
-
 <style>
-:root {
-    --bg: #f5f5f4; --surface: #ffffff; --border: #e5e5e5;
-    --text: #1a1a1a; --muted: #6b6b6b; --accent: #2563eb;
-    --accent-light: #eff6ff; --radius: 10px; --shadow: 0 1px 4px rgba(0,0,0,0.06);
-}
-body { background: var(--bg); color: var(--text); }
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=DM+Mono:wght@300;400;500&display=swap');
+:root{--db-navy:#0d1b36;--db-navy-mid:#152849;--db-navy-light:#1c3461;--db-amber:#f59e0b;--db-amber-light:#fef3c7;--db-amber-dark:#b45309;--db-teal:#0d9488;--db-teal-light:#ccfbf1;--db-rose:#e11d48;--db-rose-light:#ffe4e6;--db-sky:#0ea5e9;--db-sky-light:#e0f2fe;--db-indigo:#6366f1;--db-indigo-light:#e0e7ff;--db-success:#10b981;--db-success-light:#d1fae5;--db-warning:#f59e0b;--db-warning-light:#fef3c7;--db-danger:#ef4444;--db-danger-light:#fee2e2;--db-info:#3b82f6;--db-info-light:#dbeafe;--db-bg:#eef2f7;--db-surf:#ffffff;--db-surf2:#f8fafc;--db-border:#e2e8f0;--db-text:#0f172a;--db-muted:#64748b;--db-radius:14px;--db-radius-sm:8px;--db-radius-lg:20px;--db-shadow:0 1px 3px rgba(13,27,54,.06),0 4px 16px rgba(13,27,54,.07);--db-shadow-lg:0 8px 40px rgba(13,27,54,.14),0 2px 8px rgba(13,27,54,.06);}
+*,*::before,*::after{box-sizing:border-box;}
+body{font-family:'Sora',sans-serif;background:var(--db-bg);color:var(--db-text);font-size:13.5px;}
 
-.page-header { padding-bottom: 1.25rem; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border); }
-.page-header h2 { font-size: 1.4rem; font-weight: 700; color: var(--text); margin: 0 0 0.2rem 0; }
-.page-header p  { font-size: 0.85rem; color: var(--muted); margin: 0; }
+/* ── Hero ── */
+.rm-hero{background:linear-gradient(135deg,var(--db-navy) 0%,var(--db-navy-light) 65%,#1a2e4a 100%);padding:28px 36px;margin-bottom:24px;border-radius:0 0 var(--db-radius-lg) var(--db-radius-lg);position:relative;overflow:hidden;}
+.rm-hero__ring{position:absolute;border-radius:50%;border:1px solid rgba(255,255,255,.06);pointer-events:none;}
+.rm-hero__ring--1{width:300px;height:300px;top:-130px;right:-60px;}
+.rm-hero__ring--2{width:180px;height:180px;top:-50px;right:70px;border-color:rgba(99,102,241,.12);}
+.rm-hero__ring--3{width:100px;height:100px;bottom:-40px;left:40%;border-color:rgba(16,185,129,.14);}
+.rm-hero__inner{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+.rm-hero__left{display:flex;align-items:center;gap:16px;}
+.rm-hero__icon{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#6366f1,#4f46e5);display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff;box-shadow:0 4px 16px rgba(99,102,241,.4);flex-shrink:0;}
+.rm-hero__title{font-size:22px;font-weight:800;color:#fff;letter-spacing:-.4px;margin-bottom:3px;}
+.rm-hero__sub{font-size:13px;color:rgba(255,255,255,.55);}
 
-/* Stat Cards */
-.stat-card-link { text-decoration: none; display: block; height: 100%; }
-.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); transition: transform 0.18s, box-shadow 0.18s; cursor: pointer; height: 100%; }
-.stat-card:hover { transform: translateY(-3px); box-shadow: 0 4px 14px rgba(0,0,0,0.08); }
-.stat-card.active-total    { border: 2px solid #9ca3af; background: #f9fafb; }
-.stat-card.active-pending  { border: 2px solid #f0d98a; background: #fef9ec; }
-.stat-card.active-approved { border: 2px solid #bbd8f7; background: #edf6ff; }
-.stat-card.active-released { border: 2px solid #9fe0be; background: #edfaf1; }
-.stat-card.active-rejected { border: 2px solid #f2b4b4; background: #fff1f1; }
-.stat-card.active-paid     { border: 2px solid #9fe0be; background: #edfaf1; }
-.stat-card .card-body { padding: 1.1rem 0.75rem; text-align: center; }
-.stat-icon { font-size: 1.5rem; margin-bottom: 0.5rem; }
-.stat-icon.total    { color: #9ca3af; } .stat-icon.pending  { color: #d4a017; }
-.stat-icon.approved { color: var(--accent); } .stat-icon.released { color: #16a34a; }
-.stat-icon.rejected { color: #dc2626; } .stat-icon.paid     { color: #16a34a; }
-.stat-value { font-size: 1.6rem; font-weight: 700; color: var(--text); line-height: 1; margin-bottom: 0.2rem; }
-.stat-label { font-size: 0.75rem; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
+/* ── Alerts ── */
+.db-alert{display:flex;align-items:center;gap:12px;padding:14px 18px;border-radius:var(--db-radius);margin-bottom:16px;font-weight:500;font-size:13.5px;border-left:4px solid;}
+.db-alert--success{background:var(--db-success-light);color:#065f46;border-color:var(--db-success);}
+.db-alert--error{background:var(--db-danger-light);color:#7f1d1d;border-color:var(--db-danger);}
+.db-alert__close{margin-left:auto;background:none;border:none;cursor:pointer;font-size:18px;opacity:.6;}
 
-/* Request Cards */
-.request-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); transition: border-color 0.18s, box-shadow 0.18s, transform 0.18s; display: flex; flex-direction: column; height: 100%; overflow: hidden; }
-.request-card:hover { border-color: #c5c5c5; box-shadow: 0 4px 16px rgba(0,0,0,0.09); transform: translateY(-2px); }
-.request-card .card-body-click { padding: 1.1rem 1.25rem; flex: 1; cursor: pointer; }
-.request-card .card-footer { background: var(--bg); border-top: 1px solid var(--border); padding: 0.7rem 1.25rem; }
-.request-title { font-size: 0.975rem; font-weight: 600; color: var(--text); margin: 0 0 0.2rem 0; line-height: 1.3; }
-.request-date  { font-size: 0.78rem; color: var(--muted); }
+/* ── Stat Cards ── */
+.db-stats-row{display:flex;flex-wrap:wrap;gap:14px;margin-bottom:24px;}
+.db-stat-card{flex:1 1 140px;background:var(--db-surf);border-radius:var(--db-radius);padding:18px 16px 14px;display:flex;flex-direction:column;gap:10px;box-shadow:var(--db-shadow);border:1px solid var(--db-border);transition:transform .2s,box-shadow .2s,border-color .2s;text-decoration:none;color:inherit;}
+.db-stat-card:hover{transform:translateY(-3px);box-shadow:var(--db-shadow-lg);color:inherit;}
+.db-stat-card.active{border-color:var(--db-navy-light);box-shadow:0 0 0 3px rgba(28,52,97,.15),var(--db-shadow-lg);transform:translateY(-3px);}
+.db-stat-card__icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px;}
+.db-stat-card__icon--navy{background:var(--db-indigo-light);color:var(--db-navy);}
+.db-stat-card__icon--amber{background:var(--db-amber-light);color:var(--db-amber-dark);}
+.db-stat-card__icon--sky{background:var(--db-sky-light);color:var(--db-sky);}
+.db-stat-card__icon--success{background:var(--db-success-light);color:var(--db-success);}
+.db-stat-card__icon--rose{background:var(--db-rose-light);color:var(--db-rose);}
+.db-stat-card__icon--muted{background:var(--db-surf2);color:var(--db-muted);border:1px solid var(--db-border);}
+.db-stat-card__num{font-size:28px;font-weight:800;line-height:1;letter-spacing:-1px;}
+.db-stat-card__label{font-size:11px;color:var(--db-muted);font-weight:500;text-transform:uppercase;letter-spacing:.5px;}
+.db-stat-card__bar{height:3px;border-radius:2px;opacity:.4;}
+.db-stat-card__bar--navy{background:linear-gradient(90deg,var(--db-navy),transparent);}
+.db-stat-card__bar--amber{background:linear-gradient(90deg,var(--db-amber),transparent);}
+.db-stat-card__bar--sky{background:linear-gradient(90deg,var(--db-sky),transparent);}
+.db-stat-card__bar--success{background:linear-gradient(90deg,var(--db-success),transparent);}
+.db-stat-card__bar--rose{background:linear-gradient(90deg,var(--db-rose),transparent);}
+.db-stat-card__bar--muted{background:linear-gradient(90deg,#94a3b8,transparent);}
 
-.status-badge { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.3rem 0.7rem; border-radius: 6px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }
-.status-badge.pending  { background: #fef9ec; color: #92610a; border: 1px solid #f0d98a; }
-.status-badge.approved { background: #edf6ff; color: #1a5faa; border: 1px solid #bbd8f7; }
-.status-badge.released { background: #edfaf1; color: #16653a; border: 1px solid #9fe0be; }
-.status-badge.rejected { background: #fff1f1; color: #a01b1b; border: 1px solid #f2b4b4; }
+/* ── Panel ── */
+.db-panel{background:var(--db-surf);border-radius:var(--db-radius-lg);border:1px solid var(--db-border);box-shadow:var(--db-shadow);margin-bottom:18px;overflow:hidden;animation:dbFadeUp .35s ease both;}
+@keyframes dbFadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.db-panel__header{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid var(--db-border);gap:10px;flex-wrap:wrap;}
+.db-panel__title{display:flex;align-items:center;gap:10px;}
+.db-panel__title h2{font-size:15px;font-weight:700;margin:0;}
+.db-panel__icon{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:14px;}
+.db-panel__icon--indigo{background:var(--db-indigo-light);color:var(--db-indigo);}
 
-.badge-paid   { background:#edfaf1;color:#16653a;border:1px solid #9fe0be;padding:0.2rem 0.55rem;border-radius:5px;font-size:0.75rem;font-weight:600; }
-.badge-unpaid { background:#fef9ec;color:#92610a;border:1px solid #f0d98a;padding:0.2rem 0.55rem;border-radius:5px;font-size:0.75rem;font-weight:600; }
-.badge-free   { background:var(--bg);color:var(--muted);border:1px solid var(--border);padding:0.2rem 0.55rem;border-radius:5px;font-size:0.75rem;font-weight:600; }
-.badge-na     { background:var(--bg);color:var(--muted);border:1px solid var(--border);padding:0.2rem 0.55rem;border-radius:5px;font-size:0.75rem; }
-.fee-value   { font-weight: 700; color: var(--text); font-size: 0.9rem; }
-.field-label { font-size: 0.72rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.2rem; }
-.purpose-text { font-size: 0.875rem; color: var(--text); line-height: 1.5; }
+/* ── Badges ── */
+.db-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:20px;font-family:'DM Mono',monospace;font-size:10px;font-weight:500;letter-spacing:.3px;white-space:nowrap;}
+.db-badge--rose{background:var(--db-rose-light);color:#9f1239;}
+.db-badge--amber{background:var(--db-amber-light);color:#92400e;}
+.db-badge--sky{background:var(--db-sky-light);color:#0369a1;}
+.db-badge--indigo{background:var(--db-indigo-light);color:#4338ca;}
+.db-badge--success{background:var(--db-success-light);color:#065f46;}
+.db-badge--muted{background:var(--db-surf2);color:var(--db-muted);border:1px solid var(--db-border);}
+.db-badge--navy{background:#e8edf7;color:var(--db-navy);}
+.db-badge--green{background:var(--db-success-light);color:#065f46;}
 
-/* Remarks & Reply Thread */
-.remarks-section { padding: 0 1.25rem 1rem; border-top: 1px solid var(--border); margin-top: 0; }
+/* ── Buttons ── */
+.db-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:var(--db-radius-sm);font-family:'Sora',sans-serif;font-size:13px;font-weight:600;cursor:pointer;border:1px solid transparent;text-decoration:none;transition:all .18s;white-space:nowrap;}
+.db-btn--sm{padding:6px 12px;font-size:12px;}
+.db-btn--primary{background:linear-gradient(135deg,var(--db-navy),var(--db-navy-light));color:#fff;}
+.db-btn--primary:hover{background:linear-gradient(135deg,var(--db-navy-light),#2748a0);transform:translateY(-1px);box-shadow:0 4px 14px rgba(13,27,54,.25);color:#fff;}
+.db-btn--ghost{background:var(--db-surf2);color:var(--db-text);border-color:var(--db-border);}
+.db-btn--ghost:hover{background:var(--db-border);}
 
-.admin-remark {
-    background: var(--accent-light); border: 1px solid #bbd8f7;
-    border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0;
-    padding: 0.75rem 1rem; font-size: 0.82rem; color: #1e40af; margin-top: 0.875rem;
-}
-.admin-remark-label { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.65; margin-bottom: 0.3rem; display: block; }
+/* ── Request Card (grid) ── */
+.db-req-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:16px;padding:20px;}
+.db-req-card{background:var(--db-surf2);border:1px solid var(--db-border);border-radius:var(--db-radius);transition:border-color .18s,box-shadow .18s,transform .18s;overflow:hidden;display:flex;flex-direction:column;}
+.db-req-card:hover{border-color:#c5d0e0;box-shadow:0 4px 18px rgba(13,27,54,.09);transform:translateY(-2px);}
+.db-req-card__top{padding:16px 18px;flex:1;cursor:pointer;}
+.db-req-card__type{font-size:14px;font-weight:700;margin-bottom:3px;}
+.db-req-card__date{font-size:11.5px;color:var(--db-muted);margin-bottom:14px;}
+.db-req-card__meta{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;}
+.db-req-card__meta-label{font-family:'DM Mono',monospace;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.5px;color:var(--db-muted);margin-bottom:3px;}
+.db-req-card__purpose-label{font-family:'DM Mono',monospace;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.5px;color:var(--db-muted);margin-bottom:4px;}
+.db-req-card__purpose{font-size:12.5px;color:var(--db-text);line-height:1.5;}
+.db-req-card__footer{padding:10px 18px;border-top:1px solid var(--db-border);background:var(--db-surf);display:flex;align-items:center;justify-content:flex-end;}
+.db-req-id{font-family:'DM Mono',monospace;font-size:11px;color:var(--db-muted);}
+.db-req-id-chip{display:inline-flex;align-items:center;gap:4px;font-family:'DM Mono',monospace;font-size:11px;font-weight:700;color:var(--db-indigo);background:var(--db-indigo-light);padding:2px 9px;border-radius:20px;letter-spacing:.3px;}
 
-.reply-thread { margin-top: 0.6rem; display: flex; flex-direction: column; gap: 0.45rem; }
+/* ── Remarks / Thread ── */
+.db-req-thread{border-top:1px solid var(--db-border);padding:12px 18px 14px;background:var(--db-surf);}
+.db-admin-note{background:var(--db-sky-light);border:1px solid #bae6fd;border-left:3px solid var(--db-sky);border-radius:0 var(--db-radius-sm) var(--db-radius-sm) 0;padding:10px 12px;font-size:12px;color:#0369a1;margin-bottom:10px;}
+.db-admin-note__label{font-family:'DM Mono',monospace;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;opacity:.65;margin-bottom:4px;}
+.db-thread{display:flex;flex-direction:column;gap:7px;margin-bottom:8px;}
+.db-bubble{padding:8px 12px;border-radius:10px;font-size:12px;line-height:1.55;max-width:88%;}
+.db-bubble--admin{background:var(--db-sky-light);border:1px solid #bae6fd;color:#0369a1;align-self:flex-start;border-bottom-left-radius:3px;}
+.db-bubble--resident{background:var(--db-success-light);border:1px solid #a7f3d0;color:#065f46;align-self:flex-end;border-bottom-right-radius:3px;text-align:right;}
+.db-bubble__meta{font-size:10px;opacity:.6;margin-top:3px;display:block;}
+.db-reply-toggle{background:none;border:none;padding:0;color:var(--db-sky);font-size:12px;font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:2px;font-family:'Sora',sans-serif;}
+.db-reply-area{display:none;margin-top:8px;}
+.db-reply-area.open{display:block;}
+.db-reply-textarea{width:100%;border:2px solid var(--db-border);border-radius:var(--db-radius-sm);padding:8px 12px;font-family:'Sora',sans-serif;font-size:12.5px;resize:none;color:var(--db-text);background:var(--db-surf);outline:none;transition:border-color .18s;}
+.db-reply-textarea:focus{border-color:var(--db-sky);}
+.db-reply-actions{display:flex;gap:8px;margin-top:6px;}
+.db-btn-send{background:linear-gradient(135deg,var(--db-navy),var(--db-navy-light));color:#fff;border:none;border-radius:var(--db-radius-sm);font-size:12px;font-weight:600;padding:6px 14px;cursor:pointer;font-family:'Sora',sans-serif;transition:all .18s;}
+.db-btn-send:hover{transform:translateY(-1px);box-shadow:0 3px 10px rgba(13,27,54,.2);}
+.db-btn-cancel-reply{background:var(--db-surf2);color:var(--db-muted);border:1px solid var(--db-border);border-radius:var(--db-radius-sm);font-size:12px;font-weight:500;padding:6px 12px;cursor:pointer;font-family:'Sora',sans-serif;}
+.db-chat-disabled{display:flex;align-items:center;gap:8px;background:var(--db-danger-light);border:1px solid #fca5a5;border-radius:var(--db-radius-sm);padding:8px 12px;font-size:12px;color:#7f1d1d;margin-top:8px;}
 
-.reply-bubble { padding: 0.55rem 0.875rem; border-radius: 10px; font-size: 0.8rem; line-height: 1.5; max-width: 88%; }
-.reply-bubble.admin    { background: var(--accent-light); border: 1px solid #bbd8f7; color: #1e40af; align-self: flex-start; border-bottom-left-radius: 3px; }
-.reply-bubble.resident { background: #f0fdf4; border: 1px solid #9fe0be; color: #166534; align-self: flex-end; border-bottom-right-radius: 3px; text-align: right; }
-.reply-meta { font-size: 0.67rem; opacity: 0.6; margin-top: 0.2rem; display: block; }
+/* ── Empty ── */
+.db-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:56px 24px;text-align:center;gap:12px;}
+.db-empty i{font-size:44px;color:var(--db-border);}
+.db-empty p{font-size:14px;color:var(--db-muted);}
 
-.reply-toggle-btn {
-    background: none; border: none; padding: 0;
-    color: var(--accent); font-size: 0.75rem; font-weight: 600;
-    cursor: pointer; text-decoration: underline; text-underline-offset: 2px;
-    margin-top: 0.6rem; display: inline-block;
-}
-.reply-toggle-btn:hover { color: #1d4ed8; }
+/* ── Fee badges ── */
+.db-fee-paid{display:inline-flex;align-items:center;gap:4px;background:var(--db-success-light);color:#065f46;border:1px solid #a7f3d0;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600;}
+.db-fee-unpaid{display:inline-flex;align-items:center;gap:4px;background:var(--db-amber-light);color:#92400e;border:1px solid #fde68a;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600;}
+.db-fee-free{display:inline-flex;align-items:center;gap:4px;background:var(--db-surf2);color:var(--db-muted);border:1px solid var(--db-border);padding:2px 8px;border-radius:6px;font-size:11px;}
+.db-fee-na{display:inline-flex;align-items:center;gap:4px;background:var(--db-surf2);color:var(--db-muted);border:1px solid var(--db-border);padding:2px 8px;border-radius:6px;font-size:11px;}
 
-.reply-input-area { display: none; margin-top: 0.6rem; }
-.reply-input-area.open { display: block; }
+/* ── Details Modal ── */
+.db-modal{display:none;position:fixed;inset:0;z-index:9999;background:rgba(13,27,54,.45);backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:20px;}
+.db-modal.open{display:flex;}
+.db-modal__box{background:var(--db-surf);border-radius:var(--db-radius-lg);box-shadow:var(--db-shadow-lg);width:100%;max-width:780px;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;animation:dbFadeUp .2s ease;}
+.db-modal__header{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid var(--db-border);background:linear-gradient(135deg,var(--db-navy),var(--db-navy-light));flex-shrink:0;}
+.db-modal__header h3{font-size:15px;font-weight:700;color:#fff;margin:0;}
+.db-modal__close{background:none;border:none;color:rgba(255,255,255,.7);font-size:20px;cursor:pointer;line-height:1;padding:0;}
+.db-modal__body{padding:0;overflow-y:auto;flex:1;background:var(--db-bg);}
+.db-modal__footer{padding:14px 22px;border-top:1px solid var(--db-border);display:flex;justify-content:flex-end;flex-shrink:0;}
+.db-spinner{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 24px;gap:14px;color:var(--db-muted);font-size:13px;}
 
-.reply-textarea {
-    width: 100%; border: 1px solid var(--border); border-radius: 7px;
-    padding: 0.5rem 0.75rem; font-size: 0.82rem; resize: none;
-    background: var(--surface); color: var(--text); outline: none;
-    transition: border-color 0.18s;
-}
-.reply-textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,0.08); }
-
-.btn-send-reply {
-    background: var(--accent); color: #fff; border: none;
-    border-radius: 6px; font-size: 0.78rem; font-weight: 600;
-    padding: 0.4rem 0.875rem; cursor: pointer; transition: background 0.18s; margin-top: 0.4rem;
-}
-.btn-send-reply:hover { background: #1d4ed8; }
-
-.btn-cancel-reply {
-    background: none; color: var(--muted); border: 1px solid var(--border);
-    border-radius: 6px; font-size: 0.78rem; font-weight: 500;
-    padding: 0.4rem 0.875rem; cursor: pointer; margin-top: 0.4rem; margin-left: 0.3rem;
-    transition: border-color 0.18s;
-}
-.btn-cancel-reply:hover { border-color: var(--text); color: var(--text); }
-
-.chat-disabled-notice {
-    background: #fff1f1; border: 1px solid #f2b4b4; color: #a01b1b;
-    padding: 0.6rem 0.875rem; border-radius: 7px; font-size: 0.75rem;
-    display: flex; align-items: center; gap: 0.4rem; margin-top: 0.6rem;
-}
-.chat-disabled-notice i { font-size: 0.875rem; }
-
-/* Buttons */
-.btn-primary-minimal { background: var(--text); color: #fff; border: none; border-radius: 7px; font-weight: 600; font-size: 0.875rem; padding: 0.5rem 1.1rem; transition: background 0.18s, transform 0.15s; text-decoration: none; display: inline-flex; align-items: center; gap: 0.4rem; }
-.btn-primary-minimal:hover { background: #333; color: #fff; transform: translateY(-1px); }
-.btn-outline-minimal { background: transparent; color: var(--text); border: 1px solid var(--border); border-radius: 7px; font-weight: 500; font-size: 0.8rem; padding: 0.35rem 0.85rem; transition: border-color 0.18s, background 0.18s; cursor: pointer; }
-.btn-outline-minimal:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
-
-.request-id-chip { font-size: 0.78rem; color: var(--muted); font-family: monospace; }
-
-.empty-state { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 4rem 2rem; text-align: center; }
-.empty-state i  { font-size: 3rem; color: #d1d5db; margin-bottom: 1rem; display: block; }
-.empty-state h4 { font-size: 1.1rem; font-weight: 600; color: var(--muted); margin-bottom: 0.5rem; }
-.empty-state p  { font-size: 0.875rem; color: #9ca3af; margin-bottom: 1.5rem; }
-
-.alert-success { background:#edfaf1;border:1px solid #9fe0be;color:#16653a;border-radius:8px;font-size:0.9rem; }
-.alert-danger  { background:#fff1f1;border:1px solid #f2b4b4;color:#a01b1b;border-radius:8px;font-size:0.9rem; }
-.modal-content { border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 8px 32px rgba(0,0,0,0.12); }
-.modal-header  { border-bottom:1px solid var(--border);padding:1rem 1.25rem; }
-.modal-header .modal-title { font-size:0.95rem;font-weight:600;color:var(--text); }
-.modal-footer  { border-top:1px solid var(--border); }
-
-@media (max-width: 767px) {
-    .stat-card .card-body { padding: 0.875rem 0.5rem; }
-    .stat-value { font-size: 1.3rem; }
+@media(max-width:768px){
+    .rm-hero{padding:20px;border-radius:0;}
+    .db-req-grid{grid-template-columns:1fr;padding:14px;}
 }
 </style>
 
-<div class="container-fluid py-4">
-
-    <!-- Page Header -->
-    <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <div>
-            <h2><i class="fas fa-file-alt me-2" style="color:var(--muted); font-size:1.2rem;"></i>My Document Requests</h2>
-            <p>View and track your document request history</p>
-        </div>
-        <a href="new-request.php" class="btn-primary-minimal"><i class="fas fa-plus"></i>New Request</a>
-    </div>
-
-    <!-- Flash Messages -->
-    <?php if (isset($_SESSION['success_message'])): ?>
-        <div class="alert alert-success alert-dismissible fade show mb-3">
-            <i class="fas fa-check-circle me-2"></i>
-            <?php echo htmlspecialchars($_SESSION['success_message']); unset($_SESSION['success_message']); ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    <?php endif; ?>
-    <?php if (isset($_SESSION['error_message'])): ?>
-        <div class="alert alert-danger alert-dismissible fade show mb-3">
-            <i class="fas fa-exclamation-circle me-2"></i>
-            <?php echo htmlspecialchars($_SESSION['error_message']); unset($_SESSION['error_message']); ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    <?php endif; ?>
-
-    <!-- Stat Cards -->
-    <div class="row mb-4 g-3">
-        <?php
-        $stat_cards = [
-            ['label'=>'Total',    'key'=>'total',    'icon_class'=>'total',    'icon'=>'file-alt',        'filter'=>''],
-            ['label'=>'Pending',  'key'=>'pending',  'icon_class'=>'pending',  'icon'=>'clock',           'filter'=>'Pending'],
-            ['label'=>'Approved', 'key'=>'approved', 'icon_class'=>'approved', 'icon'=>'check-circle',    'filter'=>'Approved'],
-            ['label'=>'Released', 'key'=>'released', 'icon_class'=>'released', 'icon'=>'check-double',    'filter'=>'Released'],
-            ['label'=>'Rejected', 'key'=>'rejected', 'icon_class'=>'rejected', 'icon'=>'times-circle',    'filter'=>'Rejected'],
-            ['label'=>'Paid',     'key'=>'paid',     'icon_class'=>'paid',     'icon'=>'money-bill-wave', 'filter'=>'Paid'],
-        ];
-        foreach ($stat_cards as $card):
-            $is_active    = ($status_filter === $card['filter']) || ($card['filter'] === '' && $status_filter === '');
-            $active_class = $is_active ? 'active-' . $card['icon_class'] : '';
-            $href         = $card['filter'] === '' ? '?' : '?status=' . urlencode($card['filter']);
-        ?>
-        <div class="col-6 col-md-2">
-            <a href="<?= $href ?>" class="stat-card-link">
-                <div class="stat-card <?= $active_class ?>">
-                    <div class="card-body">
-                        <div class="stat-icon <?= $card['icon_class'] ?>"><i class="fas fa-<?= $card['icon'] ?>"></i></div>
-                        <div class="stat-value"><?= (int)($stats[$card['key']] ?? 0) ?></div>
-                        <div class="stat-label"><?= $card['label'] ?></div>
-                    </div>
-                </div>
-            </a>
-        </div>
-        <?php endforeach; ?>
-    </div>
-
-    <!-- Requests Grid -->
-    <div class="row g-3">
-        <?php if ($requests && $requests->num_rows > 0): ?>
-            <?php while ($request = $requests->fetch_assoc()):
-                $rid         = intval($request['request_id']);
-                $status_key  = strtolower($request['status']);
-                $is_rejected = ($request['status'] === 'Rejected');
-                $status_icons = ['pending'=>'clock','approved'=>'check-circle','released'=>'check-double','rejected'=>'times-circle'];
-                $s_icon      = $status_icons[$status_key] ?? 'info-circle';
-                $req_replies = $replies_by_request[$rid] ?? [];
-                $has_remarks = !empty($request['remarks']);
-                $has_thread  = $has_remarks || !empty($req_replies);
-            ?>
-            <div class="col-lg-6">
-                <div class="request-card">
-
-                    <!-- Clickable top area -->
-                    <div class="card-body-click" onclick="viewRequestDetails(<?= $rid ?>)">
-                        <div class="d-flex justify-content-between align-items-start mb-3 gap-2">
-                            <div>
-                                <div class="request-title"><?= htmlspecialchars($request['request_type_name'] ?? 'N/A') ?></div>
-                                <div class="request-date"><i class="fas fa-calendar-alt me-1"></i><?= date('F d, Y', strtotime($request['request_date'])) ?></div>
-                            </div>
-                            <span class="status-badge <?= $status_key ?>" style="flex-shrink:0;">
-                                <i class="fas fa-<?= $s_icon ?>"></i><?= htmlspecialchars($request['status']) ?>
-                            </span>
-                        </div>
-
-                        <div class="mb-3">
-                            <div class="field-label">Purpose</div>
-                            <div class="purpose-text">
-                                <?php $p = $request['purpose'] ?? ''; $fl = strtok($p, "\n");
-                                echo htmlspecialchars(strlen($fl) > 90 ? substr($fl,0,90).'…' : $fl); ?>
-                            </div>
-                        </div>
-
-                        <div class="row g-2">
-                            <div class="col-6">
-                                <div class="field-label">Fee</div>
-                                <?php if ($request['fee'] > 0): ?><span class="fee-value">₱<?= number_format($request['fee'],2) ?></span>
-                                <?php else: ?><span class="badge-free">Free</span><?php endif; ?>
-                            </div>
-                            <div class="col-6">
-                                <div class="field-label">Payment</div>
-                                <?php if ($request['payment_status']==1): ?><span class="badge-paid"><i class="fas fa-check me-1"></i>Paid</span>
-                                <?php elseif ($request['fee']>0): ?><span class="badge-unpaid">Unpaid</span>
-                                <?php else: ?><span class="badge-na">N/A</span><?php endif; ?>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Remarks & Reply Thread -->
-                    <?php if ($has_thread): ?>
-                    <div class="remarks-section">
-                        <?php if ($has_remarks): ?>
-                        <div class="admin-remark">
-                            <span class="admin-remark-label"><i class="fas fa-comment-dots me-1"></i>Admin Note</span>
-                            <?= htmlspecialchars(strlen($request['remarks']) > 120 ? substr($request['remarks'],0,120).'…' : $request['remarks']) ?>
-                        </div>
-                        <?php endif; ?>
-
-                        <?php if (!empty($req_replies)): ?>
-                        <div class="reply-thread">
-                            <?php foreach ($req_replies as $reply): ?>
-                            <div class="reply-bubble <?= $reply['sender_type'] ?>">
-                                <?= htmlspecialchars($reply['message']) ?>
-                                <span class="reply-meta">
-                                    <?= $reply['sender_type'] === 'admin' ? '<i class="fas fa-user-shield me-1"></i>Admin' : '<i class="fas fa-user me-1"></i>You' ?>
-                                    · <?= date('M j, g:i A', strtotime($reply['created_at'])) ?>
-                                </span>
-                            </div>
-                            <?php endforeach; ?>
-                        </div>
-                        <?php endif; ?>
-
-                        <?php if ($is_rejected): ?>
-                        <div class="chat-disabled-notice">
-                            <i class="fas fa-ban"></i>
-                            <span>Chat is disabled because this request has been rejected.</span>
-                        </div>
-                        <?php else: ?>
-                        <button class="reply-toggle-btn" onclick="toggleReplyForm(<?= $rid ?>)">
-                            <i class="fas fa-reply me-1"></i><?= empty($req_replies) ? 'Reply to this note' : 'Add a reply' ?>
-                        </button>
-                        <div class="reply-input-area" id="reply-area-<?= $rid ?>">
-                            <form method="POST" action="my-requests.php<?= $status_filter ? '?status='.urlencode($status_filter) : '' ?>">
-                                <input type="hidden" name="action"         value="resident_reply">
-                                <input type="hidden" name="request_id"     value="<?= $rid ?>">
-                                <input type="hidden" name="current_status" value="<?= htmlspecialchars($status_filter) ?>">
-                                <textarea name="reply_message" class="reply-textarea" rows="3"
-                                          placeholder="Type your reply here…" required></textarea>
-                                <div>
-                                    <button type="submit" class="btn-send-reply">
-                                        <i class="fas fa-paper-plane me-1"></i>Send Reply
-                                    </button>
-                                    <button type="button" class="btn-cancel-reply" onclick="toggleReplyForm(<?= $rid ?>)">
-                                        Cancel
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                        <?php endif; ?>
-                    </div>
-                    <?php endif; ?>
-
-                    <!-- Card Footer -->
-                    <div class="card-footer d-flex justify-content-between align-items-center">
-                        <span class="request-id-chip">#<?= str_pad($rid,5,'0',STR_PAD_LEFT) ?></span>
-                        <button class="btn-outline-minimal" onclick="viewRequestDetails(<?= $rid ?>)">
-                            <i class="fas fa-eye me-1"></i>View Details
-                        </button>
-                    </div>
-                </div>
+<!-- Hero -->
+<div class="rm-hero">
+    <div class="rm-hero__ring rm-hero__ring--1"></div>
+    <div class="rm-hero__ring rm-hero__ring--2"></div>
+    <div class="rm-hero__ring rm-hero__ring--3"></div>
+    <div class="rm-hero__inner">
+        <div class="rm-hero__left">
+            <div class="rm-hero__icon"><i class="fas fa-file-alt"></i></div>
+            <div>
+                <div class="rm-hero__title">My Document Requests</div>
+                <div class="rm-hero__sub">View and track your document request history</div>
             </div>
-            <?php endwhile; ?>
-
-        <?php else: ?>
-            <div class="col-12">
-                <div class="empty-state">
-                    <i class="fas fa-inbox"></i>
-                    <h4><?= $status_filter ? 'No '.htmlspecialchars($status_filter).' Requests' : 'No Requests Found' ?></h4>
-                    <p><?= $status_filter ? 'You have no requests with this status.' : "You haven't submitted any document requests yet." ?></p>
-                    <?php if ($status_filter): ?>
-                        <a href="?" class="btn-primary-minimal"><i class="fas fa-list"></i>View All Requests</a>
-                    <?php else: ?>
-                        <a href="new-request.php" class="btn-primary-minimal"><i class="fas fa-plus"></i>Submit Your First Request</a>
-                    <?php endif; ?>
-                </div>
-            </div>
-        <?php endif; ?>
+        </div>
+        <a href="new-request.php" class="db-btn db-btn--primary"><i class="fas fa-plus"></i> New Request</a>
     </div>
 </div>
 
-<!-- Details Modal -->
-<div class="modal fade" id="detailsModal" tabindex="-1">
-    <div class="modal-dialog modal-xl modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title"><i class="fas fa-file-alt me-2" style="color:var(--muted);"></i>Request Details</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body" id="modalBody" style="background: var(--bg);">
-                <div class="text-center py-5">
-                    <div class="spinner-border" style="color:var(--accent);width:1.75rem;height:1.75rem;border-width:2px;" role="status"></div>
-                    <p style="color:var(--muted);font-size:0.875rem;margin-top:0.75rem;">Loading...</p>
+<div style="padding:0 24px 24px;">
+
+<?php if (isset($_SESSION['success_message'])): ?>
+<div class="db-alert db-alert--success"><i class="fas fa-check-circle"></i> <?= htmlspecialchars($_SESSION['success_message']) ?> <button class="db-alert__close" onclick="this.parentElement.remove()">×</button></div>
+<?php unset($_SESSION['success_message']); endif; ?>
+<?php if (isset($_SESSION['error_message'])): ?>
+<div class="db-alert db-alert--error"><i class="fas fa-exclamation-circle"></i> <?= htmlspecialchars($_SESSION['error_message']) ?> <button class="db-alert__close" onclick="this.parentElement.remove()">×</button></div>
+<?php unset($_SESSION['error_message']); endif; ?>
+
+<!-- Stats -->
+<div class="db-stats-row">
+    <?php
+    $stat_defs = [
+        ['label'=>'Total',    'key'=>'total',    'icon_class'=>'navy',    'icon'=>'file-alt',        'filter'=>'',         'color'=>''],
+        ['label'=>'Pending',  'key'=>'pending',  'icon_class'=>'amber',   'icon'=>'clock',           'filter'=>'Pending',  'color'=>'color:var(--db-amber-dark)'],
+        ['label'=>'Approved', 'key'=>'approved', 'icon_class'=>'sky',     'icon'=>'check-circle',    'filter'=>'Approved', 'color'=>'color:var(--db-sky)'],
+        ['label'=>'Released', 'key'=>'released', 'icon_class'=>'success', 'icon'=>'check-double',    'filter'=>'Released', 'color'=>'color:var(--db-success)'],
+        ['label'=>'Rejected', 'key'=>'rejected', 'icon_class'=>'rose',    'icon'=>'times-circle',    'filter'=>'Rejected', 'color'=>'color:var(--db-rose)'],
+        ['label'=>'Paid',     'key'=>'paid',     'icon_class'=>'muted',   'icon'=>'money-bill-wave', 'filter'=>'Paid',     'color'=>''],
+    ];
+    foreach ($stat_defs as $sd):
+        $is_active = ($status_filter === $sd['filter']) || ($sd['filter'] === '' && $status_filter === '');
+        $href      = $sd['filter'] === '' ? 'my-requests.php' : '?status=' . urlencode($sd['filter']);
+    ?>
+    <a href="<?= $href ?>" class="db-stat-card <?= $is_active ? 'active' : '' ?>">
+        <div class="db-stat-card__icon db-stat-card__icon--<?= $sd['icon_class'] ?>"><i class="fas fa-<?= $sd['icon'] ?>"></i></div>
+        <div>
+            <div class="db-stat-card__num" style="<?= $sd['color'] ?>"><?= (int)($stats[$sd['key']] ?? 0) ?></div>
+            <div class="db-stat-card__label"><?= $sd['label'] ?></div>
+        </div>
+        <div class="db-stat-card__bar db-stat-card__bar--<?= $sd['icon_class'] ?>"></div>
+    </a>
+    <?php endforeach; ?>
+</div>
+
+<!-- Requests Panel -->
+<div class="db-panel">
+    <div class="db-panel__header">
+        <div class="db-panel__title">
+            <div class="db-panel__icon db-panel__icon--indigo"><i class="fas fa-list"></i></div>
+            <h2><?= $status_filter ? htmlspecialchars($status_filter) . ' Requests' : 'All Requests' ?></h2>
+            <span class="db-badge db-badge--indigo"><?= $requests->num_rows ?></span>
+        </div>
+        <?php if ($status_filter): ?>
+        <a href="my-requests.php" class="db-btn db-btn--ghost db-btn--sm"><i class="fas fa-times"></i> Clear Filter</a>
+        <?php endif; ?>
+    </div>
+
+    <?php if ($requests->num_rows === 0): ?>
+    <div class="db-empty">
+        <i class="fas fa-inbox"></i>
+        <p><?= $status_filter ? 'No ' . htmlspecialchars($status_filter) . ' requests found.' : "You haven't submitted any document requests yet." ?></p>
+        <?php if ($status_filter): ?>
+            <a href="my-requests.php" class="db-btn db-btn--ghost db-btn--sm"><i class="fas fa-times"></i> Clear Filter</a>
+        <?php else: ?>
+            <a href="new-request.php" class="db-btn db-btn--primary db-btn--sm"><i class="fas fa-plus"></i> Submit Your First Request</a>
+        <?php endif; ?>
+    </div>
+    <?php else: ?>
+    <div class="db-req-grid">
+        <?php while ($request = $requests->fetch_assoc()):
+            $rid         = intval($request['request_id']);
+            $is_rejected = ($request['status'] === 'Rejected');
+            $req_replies = $replies_by_request[$rid] ?? [];
+            $has_remarks = !empty($request['remarks']);
+            $has_thread  = $has_remarks || !empty($req_replies);
+        ?>
+        <div class="db-req-card">
+            <!-- Top clickable area -->
+            <div class="db-req-card__top" onclick="viewRequestDetails(<?= $rid ?>)">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px;">
+                    <div>
+                        <div style="display:flex;align-items:center;gap:7px;margin-bottom:3px;">
+                            <span class="db-req-id-chip">#<?= str_pad($rid, 5, '0', STR_PAD_LEFT) ?></span>
+                        </div>
+                        <div class="db-req-card__type"><?= htmlspecialchars($request['request_type_name'] ?? 'N/A') ?></div>
+                        <div class="db-req-card__date"><i class="fas fa-calendar-alt" style="margin-right:4px;"></i><?= date('F d, Y', strtotime($request['request_date'])) ?></div>
+                    </div>
+                    <?= getRequestStatusBadge($request['status']) ?>
+                </div>
+
+                <div class="db-req-card__meta">
+                    <div>
+                        <div class="db-req-card__meta-label">Fee</div>
+                        <?php if ($request['fee'] > 0): ?>
+                            <span style="font-weight:700;font-size:13px;">₱<?= number_format($request['fee'],2) ?></span>
+                        <?php else: ?>
+                            <span class="db-fee-free">Free</span>
+                        <?php endif; ?>
+                    </div>
+                    <div>
+                        <div class="db-req-card__meta-label">Payment</div>
+                        <?php if ($request['payment_status']==1): ?>
+                            <span class="db-fee-paid"><i class="fas fa-check"></i> Paid</span>
+                        <?php elseif ($request['fee']>0): ?>
+                            <span class="db-fee-unpaid">Unpaid</span>
+                        <?php else: ?>
+                            <span class="db-fee-na">N/A</span>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="db-req-card__purpose-label">Purpose</div>
+                    <div class="db-req-card__purpose">
+                        <?php $p = $request['purpose'] ?? ''; $fl = strtok($p, "\n");
+                        echo htmlspecialchars(strlen($fl) > 100 ? substr($fl,0,100).'…' : $fl); ?>
+                    </div>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn-outline-minimal" data-bs-dismiss="modal">Close</button>
+
+            <!-- Remarks / Thread -->
+            <?php if ($has_thread): ?>
+            <div class="db-req-thread">
+                <?php if ($has_remarks): ?>
+                <div class="db-admin-note">
+                    <div class="db-admin-note__label"><i class="fas fa-comment-dots" style="margin-right:3px;"></i>Admin Note</div>
+                    <?= htmlspecialchars(strlen($request['remarks']) > 130 ? substr($request['remarks'],0,130).'…' : $request['remarks']) ?>
+                </div>
+                <?php endif; ?>
+
+                <?php if (!empty($req_replies)): ?>
+                <div class="db-thread">
+                    <?php foreach ($req_replies as $reply): ?>
+                    <div class="db-bubble db-bubble--<?= $reply['sender_type'] ?>">
+                        <?= htmlspecialchars($reply['message']) ?>
+                        <span class="db-bubble__meta">
+                            <?= $reply['sender_type']==='admin' ? '<i class="fas fa-user-shield" style="margin-right:3px;"></i>Admin' : '<i class="fas fa-user" style="margin-right:3px;"></i>You' ?>
+                            · <?= date('M j, g:i A', strtotime($reply['created_at'])) ?>
+                        </span>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+                <?php endif; ?>
+
+                <?php if ($is_rejected): ?>
+                <div class="db-chat-disabled"><i class="fas fa-ban"></i> Chat disabled for rejected requests.</div>
+                <?php else: ?>
+                <button class="db-reply-toggle" onclick="toggleReply(<?= $rid ?>)">
+                    <i class="fas fa-reply" style="margin-right:4px;"></i><?= empty($req_replies) ? 'Reply to this note' : 'Add a reply' ?>
+                </button>
+                <div class="db-reply-area" id="reply-area-<?= $rid ?>">
+                    <form method="POST" action="my-requests.php<?= $status_filter ? '?status='.urlencode($status_filter) : '' ?>">
+                        <input type="hidden" name="action"         value="resident_reply">
+                        <input type="hidden" name="request_id"     value="<?= $rid ?>">
+                        <input type="hidden" name="current_status" value="<?= htmlspecialchars($status_filter) ?>">
+                        <textarea name="reply_message" class="db-reply-textarea" rows="3" placeholder="Type your reply…" required></textarea>
+                        <div class="db-reply-actions">
+                            <button type="submit" class="db-btn-send"><i class="fas fa-paper-plane" style="margin-right:4px;"></i>Send</button>
+                            <button type="button" class="db-btn-cancel-reply" onclick="toggleReply(<?= $rid ?>)">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+                <?php endif; ?>
             </div>
+            <?php endif; ?>
+
+            <!-- Footer -->
+            <div class="db-req-card__footer">
+                <button class="db-btn db-btn--ghost db-btn--sm" onclick="viewRequestDetails(<?= $rid ?>)">
+                    <i class="fas fa-eye"></i> View Details
+                </button>
+            </div>
+        </div>
+        <?php endwhile; ?>
+    </div>
+    <?php endif; ?>
+</div>
+</div>
+
+<!-- Details Modal -->
+<div class="db-modal" id="detailsModal">
+    <div class="db-modal__box">
+        <div class="db-modal__header">
+            <h3><i class="fas fa-file-alt" style="margin-right:8px;opacity:.7;"></i>Request Details</h3>
+            <button class="db-modal__close" onclick="closeModal()">×</button>
+        </div>
+        <div class="db-modal__body" id="modalBody">
+            <div class="db-spinner">
+                <div class="spinner-border" style="color:var(--db-sky);width:1.75rem;height:1.75rem;border-width:2px;" role="status"></div>
+                <span>Loading…</span>
+            </div>
+        </div>
+        <div class="db-modal__footer">
+            <button class="db-btn db-btn--ghost" onclick="closeModal()"><i class="fas fa-times"></i> Close</button>
         </div>
     </div>
 </div>
 
 <script>
-function toggleReplyForm(rid) {
+function toggleReply(rid) {
     const area = document.getElementById('reply-area-' + rid);
     if (!area) return;
     area.classList.toggle('open');
@@ -578,28 +547,35 @@ function toggleReplyForm(rid) {
 }
 
 function viewRequestDetails(requestId) {
-    if (!requestId || requestId <= 0 || isNaN(requestId)) return;
-    const modal     = new bootstrap.Modal(document.getElementById('detailsModal'));
-    const modalBody = document.getElementById('modalBody');
-    modalBody.innerHTML = `<div class="text-center py-5"><div class="spinner-border" style="color:var(--accent);width:1.75rem;height:1.75rem;border-width:2px;" role="status"></div><p style="color:var(--muted);font-size:0.875rem;margin-top:0.75rem;">Loading...</p></div>`;
-    modal.show();
+    if (!requestId || isNaN(requestId)) return;
+    const modal = document.getElementById('detailsModal');
+    document.getElementById('modalBody').innerHTML = `<div class="db-spinner"><div class="spinner-border" style="color:var(--db-sky);width:1.75rem;height:1.75rem;border-width:2px;" role="status"></div><span>Loading…</span></div>`;
+    modal.classList.add('open');
     fetch('get_request_details.php?id=' + requestId)
         .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
         .then(text => {
             try {
                 const d = JSON.parse(text);
-                modalBody.innerHTML = d.success ? d.html
-                    : `<div style="background:#fff1f1;border:1px solid #f2b4b4;border-radius:8px;padding:1rem;color:#a01b1b;font-size:0.9rem;"><i class="fas fa-exclamation-triangle me-2"></i>${d.message||'Failed to load'}</div>`;
+                document.getElementById('modalBody').innerHTML = d.success ? d.html
+                    : `<div style="padding:24px;"><div class="db-alert db-alert--error"><i class="fas fa-exclamation-triangle"></i> ${d.message || 'Failed to load details.'}</div></div>`;
             } catch(e) {
-                modalBody.innerHTML = `<div style="background:#fff1f1;border:1px solid #f2b4b4;border-radius:8px;padding:1rem;color:#a01b1b;font-size:0.9rem;"><i class="fas fa-exclamation-triangle me-2"></i>Invalid server response.</div>`;
+                document.getElementById('modalBody').innerHTML = `<div style="padding:24px;"><div class="db-alert db-alert--error"><i class="fas fa-exclamation-triangle"></i> Invalid server response.</div></div>`;
             }
         })
         .catch(err => {
-            modalBody.innerHTML = `<div style="background:#fff1f1;border:1px solid #f2b4b4;border-radius:8px;padding:1rem;color:#a01b1b;font-size:0.9rem;"><i class="fas fa-exclamation-triangle me-2"></i>Network error: ${err.message}</div>`;
+            document.getElementById('modalBody').innerHTML = `<div style="padding:24px;"><div class="db-alert db-alert--error"><i class="fas fa-exclamation-triangle"></i> Network error: ${err.message}</div></div>`;
         });
 }
 
-setTimeout(() => document.querySelectorAll('.alert-dismissible').forEach(el => new bootstrap.Alert(el).close()), 5000);
+function closeModal() {
+    document.getElementById('detailsModal').classList.remove('open');
+}
+
+document.getElementById('detailsModal').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+});
+
+setTimeout(() => document.querySelectorAll('.db-alert').forEach(a => { a.style.opacity='0'; setTimeout(()=>a.remove(),400); }), 5000);
 </script>
 
 <?php $requests_stmt->close(); include '../../includes/footer.php'; ?>

@@ -84,7 +84,7 @@ include __DIR__ . '/../../includes/header.php';
             <button class="btn btn-secondary" onclick="window.print()">
                 <i class="fas fa-print"></i> Print Report
             </button>
-            <a href="beneficiaries.php" class="btn btn-secondary">
+            <a href="beneficiaries-debug.php" class="btn btn-secondary">
                 <i class="fas fa-arrow-left"></i> Back to List
             </a>
         </div>

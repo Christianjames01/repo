@@ -565,15 +565,15 @@ body { font-family: 'Sora', sans-serif; background: var(--db-bg); color: var(--d
         </div>
         <div class="rm-hero__actions">
             <?php if ($is_super_admin): ?>
-                <a href="<?= BASE_URL ?>modules/notifications/email-residents.php" class="db-btn db-btn--info db-btn--sm">
+                <a href="<?= BASE_URL ?>/modules/notifications/email-residents.php" class="db-btn db-btn--info db-btn--sm">
                     <i class="fas fa-envelope"></i> Email Residents
                 </a>
-                <a href="<?= BASE_URL ?>modules/notifications/email-history.php" class="db-btn db-btn--info db-btn--sm">
+                <a href="<?= BASE_URL ?>/modules/notifications/email-history.php" class="db-btn db-btn--info db-btn--sm">
                     <i class="fas fa-history"></i> Email History
                 </a>
             <?php endif; ?>
             <?php if ($stats['unread'] > 0): ?>
-                <a href="<?= BASE_URL ?>modules/notifications/mark_all_read.php" class="db-btn db-btn--success db-btn--sm">
+                <a href="<?= BASE_URL ?>/modules/notifications/mark_all_read.php" class="db-btn db-btn--success db-btn--sm">
                     <i class="fas fa-check-double"></i> Mark All Read
                 </a>
             <?php endif; ?>

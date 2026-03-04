@@ -10,539 +10,458 @@ require_once '../../includes/security.php';
 require_once '../../includes/functions.php';
 
 requireLogin();
-$user_role = getCurrentUserRole();
+$user_role   = getCurrentUserRole();
 $resident_id = getCurrentResidentId();
-$user_id = getCurrentUserId();
+$user_id     = getCurrentUserId();
 
 if ($user_role !== 'Resident') {
-    header('Location: ../dashboard/index.php');
-    exit();
+    header('Location: ../dashboard/index.php'); exit();
 }
 
-// Check if resident is verified
-$verify_sql = "SELECT is_verified FROM tbl_residents WHERE resident_id = ?";
-$verify_stmt = $conn->prepare($verify_sql);
+$verify_stmt = $conn->prepare("SELECT is_verified FROM tbl_residents WHERE resident_id = ?");
 $verify_stmt->bind_param("i", $resident_id);
 $verify_stmt->execute();
-$verify_result = $verify_stmt->get_result();
-$verify_data = $verify_result->fetch_assoc();
+$verify_data = $verify_stmt->get_result()->fetch_assoc();
 $verify_stmt->close();
 
 if (!$verify_data || $verify_data['is_verified'] != 1) {
-    header('Location: not-verified-blotter.php');
-    exit();
+    header('Location: not-verified-blotter.php'); exit();
 }
 
-$page_title = 'File Blotter Complaint';
+$page_title      = 'File Blotter Complaint';
 $success_message = '';
-$error_message = '';
+$error_message   = '';
 
-// Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $complainant_id = $resident_id;
-    $respondent_id = !empty($_POST['respondent_id']) ? intval($_POST['respondent_id']) : null;
-    $respondent_name = !empty($_POST['respondent_name']) ? trim($_POST['respondent_name']) : null;
-    $incident_date = $_POST['incident_date'];
-    $incident_time = !empty($_POST['incident_time']) ? $_POST['incident_time'] : null;
-    $incident_type = trim($_POST['incident_type']);
-    $description = trim($_POST['description']);
-    $location = trim($_POST['location']);
-    $remarks = !empty($_POST['remarks']) ? trim($_POST['remarks']) : null;
-    
-    $status = 'Pending';
-    
-    // Generate case number (format: YEAR-XXXXXX)
-    $year = date('Y');
-    $count_sql = "SELECT COUNT(*) as count FROM tbl_blotter WHERE YEAR(created_at) = YEAR(CURDATE())";
-    $count_result = $conn->query($count_sql);
-    $count_row = $count_result->fetch_assoc();
+    $complainant_id  = $resident_id;
+    $respondent_id   = !empty($_POST['respondent_id'])   ? intval($_POST['respondent_id'])     : null;
+    $respondent_name = !empty($_POST['respondent_name']) ? trim($_POST['respondent_name'])      : null;
+    $incident_date   = $_POST['incident_date']   ?? '';
+    $incident_time   = !empty($_POST['incident_time']) ? $_POST['incident_time'] : null;
+    $incident_type   = trim($_POST['incident_type']   ?? '');
+    $description     = trim($_POST['description']     ?? '');
+    $location        = trim($_POST['location']        ?? '');
+    $remarks         = !empty($_POST['remarks']) ? trim($_POST['remarks']) : null;
+    $status          = 'Pending';
+
+    $year        = date('Y');
+    $count_row   = $conn->query("SELECT COUNT(*) as count FROM tbl_blotter WHERE YEAR(created_at)=YEAR(CURDATE())")->fetch_assoc();
     $case_number = $year . '-' . str_pad($count_row['count'] + 1, 6, '0', STR_PAD_LEFT);
-    
-    // Validate inputs
+
     if (empty($incident_date) || empty($incident_type) || empty($description) || empty($location)) {
-        $error_message = "Please fill in all required fields.";
+        $error_message = 'Please fill in all required fields.';
     } elseif (empty($respondent_id) && empty($respondent_name)) {
-        $error_message = "Please select a respondent from the list or enter their name manually.";
+        $error_message = 'Please select a respondent or enter their name manually.';
     } else {
-        // Insert blotter record
-        $stmt = $conn->prepare("INSERT INTO tbl_blotter (case_number, complainant_id, respondent_id, respondent_name, incident_date, incident_time, incident_type, description, location, status, remarks) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt = $conn->prepare("INSERT INTO tbl_blotter (case_number,complainant_id,respondent_id,respondent_name,incident_date,incident_time,incident_type,description,location,status,remarks) VALUES (?,?,?,?,?,?,?,?,?,?,?)");
         $stmt->bind_param("siissssssss", $case_number, $complainant_id, $respondent_id, $respondent_name, $incident_date, $incident_time, $incident_type, $description, $location, $status, $remarks);
-        
+
         if ($stmt->execute()) {
             $blotter_id = $conn->insert_id;
             $stmt->close();
 
-            // ─── 1. Notify Admins/Staff ───────────────────────────────────
-            $admin_sql = "SELECT user_id FROM tbl_users 
-                          WHERE (
-                              role LIKE '%Admin%' OR 
-                              role LIKE '%admin%' OR 
-                              role LIKE '%Staff%' OR 
-                              role LIKE '%staff%'
-                          ) 
-                          AND is_active = 1";
-            $admin_result = $conn->query($admin_sql);
-
+            // Notify admins
+            $admin_result = $conn->query("SELECT user_id FROM tbl_users WHERE (role LIKE '%Admin%' OR role LIKE '%Staff%') AND is_active=1");
             if ($admin_result && $admin_result->num_rows > 0) {
-                $admin_title = "New Blotter Complaint Filed";
-                $admin_message = "A new blotter complaint (Case #$case_number) has been filed by a resident. Type: $incident_type. Please review and take action.";
-                
-                $admin_notif_stmt = $conn->prepare("INSERT INTO tbl_notifications (user_id, title, message, type, reference_type, reference_id, is_read, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, NOW())");
-                $admin_notif_type = 'blotter_filed';
-                $ref_type = 'blotter';
-                
-                while ($admin_row = $admin_result->fetch_assoc()) {
-                    $admin_notif_stmt->bind_param("issssi", $admin_row['user_id'], $admin_title, $admin_message, $admin_notif_type, $ref_type, $blotter_id);
-                    $admin_notif_stmt->execute();
-                }
-                $admin_notif_stmt->close();
+                $an = $conn->prepare("INSERT INTO tbl_notifications (user_id,title,message,type,reference_type,reference_id,is_read,created_at) VALUES (?,?,?,'blotter_filed','blotter',?,0,NOW())");
+                $at = "New Blotter Complaint Filed";
+                $am = "New blotter complaint (Case #$case_number) filed. Type: $incident_type.";
+                while ($ar = $admin_result->fetch_assoc()) { $an->bind_param("issi",$ar['user_id'],$at,$am,$blotter_id); $an->execute(); }
+                $an->close();
             }
+            // Notify resident
+            $rn = $conn->prepare("INSERT INTO tbl_notifications (user_id,title,message,type,reference_type,reference_id,is_read,created_at) VALUES (?,?,?,'blotter_filed','blotter',?,0,NOW())");
+            $rt = "Blotter Complaint Filed Successfully";
+            $rm = "Your blotter complaint (Case #$case_number) is now pending review.";
+            $rn->bind_param("issi",$user_id,$rt,$rm,$blotter_id);
+            $rn->execute(); $rn->close();
 
-            // ─── 2. Notify the Resident who filed ────────────────────────
-            $res_notif_stmt = $conn->prepare("INSERT INTO tbl_notifications 
-                (user_id, title, message, type, reference_type, reference_id, is_read, created_at) 
-                VALUES (?, ?, ?, ?, ?, ?, 0, NOW())");
-            $res_title   = "Blotter Complaint Filed Successfully";
-            $res_message = "Your blotter complaint (Case #$case_number) has been received and is now pending review. Type: $incident_type. You will be contacted by barangay officials.";
-            $res_type    = 'blotter_filed';
-            $res_ref     = 'blotter';
-            $res_notif_stmt->bind_param("issssi", $user_id, $res_title, $res_message, $res_type, $res_ref, $blotter_id);
-            $res_notif_stmt->execute();
-            $res_notif_stmt->close();
-
-            $success_message = "Your complaint has been filed successfully! Case Number: " . $case_number . ". You will be contacted by barangay officials regarding your complaint.";
-            
-            // Clear form
-            $_POST = array();
+            $success_message = "Complaint filed successfully! Case Number: <strong>$case_number</strong>. Barangay officials will be in touch.";
+            $_POST = [];
         } else {
-            $error_message = "Error filing complaint: " . $conn->error;
+            $error_message = 'Error filing complaint: ' . $conn->error;
             $stmt->close();
         }
     }
 }
 
-// Get all residents for respondent dropdown (excluding current resident)
-$residents_sql = "SELECT resident_id, CONCAT(first_name, ' ', last_name) as full_name FROM tbl_residents WHERE resident_id != ? ORDER BY last_name, first_name";
-$stmt = $conn->prepare($residents_sql);
-$stmt->bind_param("i", $resident_id);
-$stmt->execute();
-$residents_result = $stmt->get_result();
-$residents = $residents_result->fetch_all(MYSQLI_ASSOC);
-$stmt->close();
+$res_stmt = $conn->prepare("SELECT resident_id, CONCAT(first_name,' ',last_name) as full_name FROM tbl_residents WHERE resident_id != ? ORDER BY last_name,first_name");
+$res_stmt->bind_param("i", $resident_id);
+$res_stmt->execute();
+$residents = $res_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$res_stmt->close();
 
 include '../../includes/header.php';
 ?>
-
 <style>
-/* Enhanced Modern Styles */
-:root {
-    --transition-speed: 0.3s;
-    --shadow-sm: 0 2px 8px rgba(0,0,0,0.08);
-    --shadow-md: 0 4px 16px rgba(0,0,0,0.12);
-    --shadow-lg: 0 8px 24px rgba(0,0,0,0.15);
-    --border-radius: 12px;
-    --border-radius-lg: 16px;
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=DM+Mono:wght@300;400;500&display=swap');
+:root{--db-navy:#0d1b36;--db-navy-mid:#152849;--db-navy-light:#1c3461;--db-amber:#f59e0b;--db-amber-light:#fef3c7;--db-amber-dark:#b45309;--db-rose:#e11d48;--db-rose-light:#ffe4e6;--db-sky:#0ea5e9;--db-sky-light:#e0f2fe;--db-indigo:#6366f1;--db-indigo-light:#e0e7ff;--db-success:#10b981;--db-success-light:#d1fae5;--db-danger:#ef4444;--db-danger-light:#fee2e2;--db-bg:#eef2f7;--db-surf:#ffffff;--db-surf2:#f8fafc;--db-border:#e2e8f0;--db-text:#0f172a;--db-muted:#64748b;--db-radius:14px;--db-radius-sm:8px;--db-radius-lg:20px;--db-shadow:0 1px 3px rgba(13,27,54,.06),0 4px 16px rgba(13,27,54,.07);--db-shadow-lg:0 8px 40px rgba(13,27,54,.14),0 2px 8px rgba(13,27,54,.06);}
+*,*::before,*::after{box-sizing:border-box;}
+body{font-family:'Sora',sans-serif;background:var(--db-bg);color:var(--db-text);font-size:13.5px;}
+
+/* ── Hero ── */
+.rm-hero{background:linear-gradient(135deg,var(--db-navy) 0%,var(--db-navy-light) 65%,#1a3a4a 100%);padding:28px 36px;margin-bottom:24px;border-radius:0 0 var(--db-radius-lg) var(--db-radius-lg);position:relative;overflow:hidden;}
+.rm-hero__ring{position:absolute;border-radius:50%;border:1px solid rgba(255,255,255,.06);pointer-events:none;}
+.rm-hero__ring--1{width:300px;height:300px;top:-130px;right:-60px;}
+.rm-hero__ring--2{width:180px;height:180px;top:-50px;right:70px;border-color:rgba(14,165,233,.12);}
+.rm-hero__ring--3{width:100px;height:100px;bottom:-40px;left:40%;border-color:rgba(16,185,129,.14);}
+.rm-hero__inner{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+.rm-hero__left{display:flex;align-items:center;gap:16px;}
+.rm-hero__icon{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#0ea5e9,#0284c7);display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff;box-shadow:0 4px 16px rgba(14,165,233,.4);flex-shrink:0;}
+.rm-hero__title{font-size:22px;font-weight:800;color:#fff;letter-spacing:-.4px;margin-bottom:3px;}
+.rm-hero__sub{font-size:13px;color:rgba(255,255,255,.55);}
+
+/* ── Alerts ── */
+.db-alert{display:flex;align-items:center;gap:12px;padding:14px 18px;border-radius:var(--db-radius);margin-bottom:16px;font-weight:500;font-size:13.5px;border-left:4px solid;}
+.db-alert--success{background:var(--db-success-light);color:#065f46;border-color:var(--db-success);}
+.db-alert--error{background:var(--db-danger-light);color:#7f1d1d;border-color:var(--db-danger);}
+.db-alert--info{background:var(--db-sky-light);color:#0369a1;border-color:var(--db-sky);}
+.db-alert--warning{background:var(--db-amber-light);color:#92400e;border-color:var(--db-amber);}
+.db-alert__close{margin-left:auto;background:none;border:none;cursor:pointer;font-size:18px;opacity:.6;flex-shrink:0;}
+
+/* ── Panel ── */
+.db-panel{background:var(--db-surf);border-radius:var(--db-radius-lg);border:1px solid var(--db-border);box-shadow:var(--db-shadow);margin-bottom:18px;overflow:hidden;animation:dbFadeUp .35s ease both;}
+@keyframes dbFadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.db-panel__header{display:flex;align-items:center;justify-content:space-between;padding:16px 22px;border-bottom:1px solid var(--db-border);gap:10px;}
+.db-panel__title{display:flex;align-items:center;gap:10px;}
+.db-panel__title h2{font-size:14px;font-weight:700;margin:0;}
+.db-panel__icon{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:14px;}
+.db-panel__icon--sky{background:var(--db-sky-light);color:var(--db-sky);}
+.db-panel__icon--amber{background:var(--db-amber-light);color:var(--db-amber-dark);}
+.db-panel__icon--rose{background:var(--db-rose-light);color:var(--db-rose);}
+.db-panel__body{padding:22px;}
+
+/* ── Form Controls ── */
+.db-form-group{margin-bottom:18px;}
+.db-form-label{font-family:'DM Mono',monospace;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.8px;color:var(--db-muted);display:block;margin-bottom:7px;}
+.db-form-label span{color:var(--db-rose);margin-left:2px;}
+.db-form-control{width:100%;border:2px solid var(--db-border);border-radius:var(--db-radius-sm);padding:10px 14px;font-family:'Sora',sans-serif;font-size:13px;color:var(--db-text);background:var(--db-surf);transition:border-color .18s,box-shadow .18s;outline:none;}
+.db-form-control:focus{border-color:var(--db-sky);box-shadow:0 0 0 4px rgba(14,165,233,.1);}
+.db-form-control::placeholder{color:#b0bec5;}
+textarea.db-form-control{resize:vertical;min-height:120px;line-height:1.6;}
+.db-form-hint{font-size:11.5px;color:var(--db-muted);margin-top:5px;}
+
+/* ── Respondent Section ── */
+.db-respondent-box{background:var(--db-surf2);border:1px solid var(--db-border);border-radius:var(--db-radius);padding:18px;}
+.db-or-divider{text-align:center;font-size:11px;color:var(--db-muted);font-weight:600;letter-spacing:.5px;margin:14px 0;position:relative;}
+.db-or-divider::before,.db-or-divider::after{content:'';position:absolute;top:50%;width:calc(50% - 24px);height:1px;background:var(--db-border);}
+.db-or-divider::before{left:0;}
+.db-or-divider::after{right:0;}
+
+/* ── Grid ── */
+.db-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+.db-grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px;}
+
+/* ── Checkbox ── */
+.db-check{display:flex;align-items:flex-start;gap:10px;padding:14px 16px;background:var(--db-surf2);border:2px solid var(--db-border);border-radius:var(--db-radius-sm);margin-bottom:20px;transition:border-color .18s;}
+.db-check:has(input:checked){border-color:var(--db-sky);background:var(--db-sky-light);}
+.db-check input{width:18px;height:18px;margin-top:1px;accent-color:var(--db-sky);flex-shrink:0;cursor:pointer;}
+.db-check label{font-size:12.5px;line-height:1.6;color:var(--db-text);cursor:pointer;}
+
+/* ── Buttons ── */
+.db-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:var(--db-radius-sm);font-family:'Sora',sans-serif;font-size:13px;font-weight:600;cursor:pointer;border:1px solid transparent;text-decoration:none;transition:all .18s;white-space:nowrap;}
+.db-btn--lg{padding:12px 28px;font-size:14px;}
+.db-btn--primary{background:linear-gradient(135deg,var(--db-navy),var(--db-navy-light));color:#fff;}
+.db-btn--primary:hover{background:linear-gradient(135deg,var(--db-navy-light),#2748a0);transform:translateY(-1px);box-shadow:0 4px 14px rgba(13,27,54,.25);color:#fff;}
+.db-btn--ghost{background:var(--db-surf2);color:var(--db-text);border-color:var(--db-border);}
+.db-btn--ghost:hover{background:var(--db-border);}
+.db-btn-group{display:flex;flex-direction:column;gap:10px;}
+
+/* ── Sidebar Info Blocks ── */
+.db-info-block{background:var(--db-surf2);border:1px solid var(--db-border);border-radius:var(--db-radius);padding:16px;margin-bottom:14px;}
+.db-info-block__title{font-size:12px;font-weight:700;color:var(--db-text);margin-bottom:10px;display:flex;align-items:center;gap:7px;}
+.db-info-block__title i{color:var(--db-sky);}
+.db-info-block ul{margin:0;padding-left:16px;}
+.db-info-block ul li{font-size:12px;color:var(--db-muted);margin-bottom:5px;line-height:1.5;}
+.db-warning-block{background:var(--db-rose-light);border:1px solid #fecdd3;border-radius:var(--db-radius);padding:16px;}
+.db-warning-block__title{font-size:12px;font-weight:700;color:#9f1239;margin-bottom:10px;display:flex;align-items:center;gap:7px;}
+.db-warning-block ul{margin:0;padding-left:16px;}
+.db-warning-block ul li{font-size:12px;color:#be123c;margin-bottom:5px;line-height:1.5;}
+
+/* ── Modal ── */
+.db-modal{display:none;position:fixed;inset:0;z-index:9999;background:rgba(13,27,54,.45);backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:20px;}
+.db-modal.open{display:flex;}
+.db-modal__box{background:var(--db-surf);border-radius:var(--db-radius-lg);box-shadow:var(--db-shadow-lg);width:100%;max-width:500px;overflow:hidden;animation:dbFadeUp .2s ease;}
+.db-modal__header{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid var(--db-border);background:linear-gradient(135deg,var(--db-navy),var(--db-navy-light));}
+.db-modal__header h3{font-size:15px;font-weight:700;color:#fff;margin:0;}
+.db-modal__close{background:none;border:none;color:rgba(255,255,255,.7);font-size:20px;cursor:pointer;line-height:1;padding:0;}
+.db-modal__body{padding:22px;}
+.db-modal__footer{padding:16px 22px;border-top:1px solid var(--db-border);display:flex;justify-content:flex-end;gap:10px;}
+.db-summary-row{display:flex;flex-direction:column;gap:2px;margin-bottom:14px;}
+.db-summary-row:last-child{margin-bottom:0;}
+.db-summary-label{font-family:'DM Mono',monospace;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--db-muted);}
+.db-summary-value{font-size:13px;font-weight:600;color:var(--db-text);line-height:1.5;}
+.db-summary-value.scrollable{max-height:100px;overflow-y:auto;background:var(--db-surf2);padding:8px 10px;border-radius:var(--db-radius-sm);border:1px solid var(--db-border);}
+.db-modal-warning{background:var(--db-amber-light);border:1px solid #fde68a;border-radius:var(--db-radius-sm);padding:12px 14px;font-size:12px;color:var(--db-amber-dark);margin-bottom:16px;}
+
+@media(max-width:768px){
+    .rm-hero{padding:20px;border-radius:0;}
+    .db-grid-2,.db-grid-3{grid-template-columns:1fr;}
 }
-
-.card {
-    border: none;
-    border-radius: var(--border-radius);
-    box-shadow: var(--shadow-sm);
-    transition: all var(--transition-speed) ease;
-    overflow: hidden;
-}
-
-.card:hover { box-shadow: var(--shadow-md); }
-
-.card-body { padding: 1.75rem; }
-
-.form-label {
-    font-weight: 700;
-    font-size: 0.875rem;
-    color: #1a1a1a;
-    margin-bottom: 0.75rem;
-}
-
-.form-control, .form-select {
-    border: 2px solid #e9ecef;
-    border-radius: 8px;
-    padding: 0.75rem 1rem;
-    transition: all var(--transition-speed) ease;
-    font-size: 0.95rem;
-}
-
-.form-control:focus, .form-select:focus {
-    border-color: #0d6efd;
-    box-shadow: 0 0 0 4px rgba(13, 110, 253, 0.1);
-}
-
-.btn {
-    border-radius: 8px;
-    padding: 0.625rem 1.5rem;
-    font-weight: 600;
-    transition: all var(--transition-speed) ease;
-    border: none;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-}
-
-.btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
-.btn:active { transform: translateY(0); }
-.btn-lg { padding: 0.875rem 2rem; font-size: 1.05rem; }
-
-.alert {
-    border: none;
-    border-radius: var(--border-radius);
-    padding: 1.25rem 1.5rem;
-    box-shadow: var(--shadow-sm);
-    border-left: 4px solid;
-}
-
-.alert-success { background: linear-gradient(135deg, #d1f4e0 0%, #e7f9ee 100%); border-left-color: #198754; }
-.alert-danger  { background: linear-gradient(135deg, #ffd6d6 0%, #ffe5e5 100%); border-left-color: #dc3545; }
-.alert-info    { background: linear-gradient(135deg, #d1ecf1 0%, #e7f5f7 100%); border-left-color: #0dcaf0; }
-.alert-warning { background: linear-gradient(135deg, #fff3cd 0%, #fff9e5 100%); border-left-color: #ffc107; }
-.alert i { font-size: 1.1rem; }
-
-.bg-light { background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%) !important; }
-
-.form-check-input {
-    width: 1.25rem;
-    height: 1.25rem;
-    border: 2px solid #dee2e6;
-    border-radius: 4px;
-}
-
-.form-check-input:checked { background-color: #0d6efd; border-color: #0d6efd; }
-.form-check-label { padding-left: 0.5rem; }
-
-.modal-content { border-radius: var(--border-radius); border: none; box-shadow: var(--shadow-lg); }
-.modal-header { border-bottom: 2px solid #e9ecef; border-radius: var(--border-radius) var(--border-radius) 0 0; }
-.modal-header.bg-primary { background: linear-gradient(135deg, #0d6efd 0%, #0b5ed7 100%) !important; }
-.modal-footer { border-top: 2px solid #e9ecef; }
-
-@media (max-width: 768px) {
-    .container-fluid { padding-left: 1rem; padding-right: 1rem; }
-    .card-body { padding: 1.25rem; }
-    .btn { padding: 0.5rem 1rem; font-size: 0.875rem; }
-}
-
-html { scroll-behavior: smooth; }
 </style>
 
-<div class="container-fluid py-4">
-    <!-- Header -->
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <h2 class="mb-1 fw-bold">
-                        <i class="fas fa-file-alt me-2 text-primary"></i>
-                        File Blotter Complaint
-                    </h2>
-                    <p class="text-muted mb-0">Submit a complaint to the barangay office</p>
-                </div>
-                <a href="my-blotter.php" class="btn btn-secondary">
-                    <i class="fas fa-arrow-left me-2"></i>Back to My Blotter
-                </a>
+<!-- Hero -->
+<div class="rm-hero">
+    <div class="rm-hero__ring rm-hero__ring--1"></div>
+    <div class="rm-hero__ring rm-hero__ring--2"></div>
+    <div class="rm-hero__ring rm-hero__ring--3"></div>
+    <div class="rm-hero__inner">
+        <div class="rm-hero__left">
+            <div class="rm-hero__icon"><i class="fas fa-file-alt"></i></div>
+            <div>
+                <div class="rm-hero__title">File Blotter Complaint</div>
+                <div class="rm-hero__sub">Submit a complaint to the barangay office</div>
             </div>
         </div>
-    </div>
-
-    <!-- Success Message -->
-    <?php if ($success_message): ?>
-    <div class="alert alert-success alert-dismissible fade show">
-        <i class="fas fa-check-circle me-2"></i><?= $success_message ?>
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        <div class="mt-2">
-            <a href="my-blotter.php" class="btn btn-sm btn-success">
-                <i class="fas fa-eye me-1"></i>View My Blotter Records
-            </a>
-        </div>
-    </div>
-    <?php endif; ?>
-
-    <!-- Error Message -->
-    <?php if ($error_message): ?>
-    <div class="alert alert-danger alert-dismissible fade show">
-        <i class="fas fa-exclamation-circle me-2"></i><?= $error_message ?>
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    </div>
-    <?php endif; ?>
-
-    <!-- Information Alert -->
-    <div class="alert alert-info alert-dismissible fade show">
-        <h5 class="alert-heading fw-bold">
-            <i class="fas fa-info-circle me-2"></i>Before Filing a Complaint
-        </h5>
-        <p class="mb-2">Please ensure that:</p>
-        <ul class="mb-0">
-            <li>You provide accurate and truthful information</li>
-            <li>The incident details are complete and clear</li>
-            <li>You have tried to resolve the matter amicably if possible</li>
-            <li>Filing false complaints may result in legal consequences</li>
-        </ul>
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    </div>
-
-    <!-- Form Card -->
-    <div class="row">
-        <div class="col-12">
-            <div class="card border-0 shadow-sm">
-                <div class="card-body">
-                    <form method="POST" id="blotterForm">
-                        <div class="row">
-                            <!-- Respondent Selection -->
-                            <div class="col-12 mb-3">
-                                <label class="form-label">Who are you filing this complaint against? <span class="text-danger">*</span></label>
-                                <div class="card bg-light">
-                                    <div class="card-body">
-                                        <div class="mb-3">
-                                            <label for="respondent_id" class="form-label">Select from Registered Residents</label>
-                                            <select name="respondent_id" id="respondent_id" class="form-select">
-                                                <option value="">-- Select Respondent --</option>
-                                                <?php foreach ($residents as $resident): ?>
-                                                <option value="<?= $resident['resident_id'] ?>" <?= (isset($_POST['respondent_id']) && $_POST['respondent_id'] == $resident['resident_id']) ? 'selected' : '' ?>>
-                                                    <?= htmlspecialchars($resident['full_name']) ?>
-                                                </option>
-                                                <?php endforeach; ?>
-                                            </select>
-                                        </div>
-                                        <div class="text-center text-muted my-2">
-                                            <small>- OR -</small>
-                                        </div>
-                                        <div>
-                                            <label for="respondent_name" class="form-label">Enter Name Manually (if not in list)</label>
-                                            <input type="text" name="respondent_name" id="respondent_name" class="form-control" placeholder="Enter respondent's full name" value="<?= htmlspecialchars($_POST['respondent_name'] ?? '') ?>">
-                                            <small class="text-muted">
-                                                <i class="fas fa-info-circle me-1"></i>
-                                                Use this only if the person is not a registered resident
-                                            </small>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Incident Date & Time -->
-                            <div class="col-md-6 mb-3">
-                                <label for="incident_date" class="form-label">When did the incident happen? <span class="text-danger">*</span></label>
-                                <input type="date" name="incident_date" id="incident_date" class="form-control" value="<?= $_POST['incident_date'] ?? '' ?>" required max="<?= date('Y-m-d') ?>">
-                            </div>
-
-                            <div class="col-md-6 mb-3">
-                                <label for="incident_time" class="form-label">What time did it happen? (Optional)</label>
-                                <input type="time" name="incident_time" id="incident_time" class="form-control" value="<?= $_POST['incident_time'] ?? '' ?>">
-                            </div>
-
-                            <!-- Incident Type & Location -->
-                            <div class="col-md-6 mb-3">
-                                <label for="incident_type" class="form-label">Type of Incident <span class="text-danger">*</span></label>
-                                <select name="incident_type" id="incident_type" class="form-select" required>
-                                    <option value="">Select Incident Type</option>
-                                    <option value="Noise Complaint"    <?= (isset($_POST['incident_type']) && $_POST['incident_type'] == 'Noise Complaint')    ? 'selected' : '' ?>>Noise Complaint</option>
-                                    <option value="Physical Assault"   <?= (isset($_POST['incident_type']) && $_POST['incident_type'] == 'Physical Assault')   ? 'selected' : '' ?>>Physical Assault</option>
-                                    <option value="Verbal Abuse"       <?= (isset($_POST['incident_type']) && $_POST['incident_type'] == 'Verbal Abuse')       ? 'selected' : '' ?>>Verbal Abuse / Threats</option>
-                                    <option value="Theft"              <?= (isset($_POST['incident_type']) && $_POST['incident_type'] == 'Theft')              ? 'selected' : '' ?>>Theft</option>
-                                    <option value="Property Damage"    <?= (isset($_POST['incident_type']) && $_POST['incident_type'] == 'Property Damage')    ? 'selected' : '' ?>>Property Damage</option>
-                                    <option value="Boundary Dispute"   <?= (isset($_POST['incident_type']) && $_POST['incident_type'] == 'Boundary Dispute')   ? 'selected' : '' ?>>Boundary Dispute</option>
-                                    <option value="Domestic Violence"  <?= (isset($_POST['incident_type']) && $_POST['incident_type'] == 'Domestic Violence')  ? 'selected' : '' ?>>Domestic Violence</option>
-                                    <option value="Harassment"         <?= (isset($_POST['incident_type']) && $_POST['incident_type'] == 'Harassment')         ? 'selected' : '' ?>>Harassment</option>
-                                    <option value="Others"             <?= (isset($_POST['incident_type']) && $_POST['incident_type'] == 'Others')             ? 'selected' : '' ?>>Others</option>
-                                </select>
-                            </div>
-
-                            <div class="col-md-6 mb-3">
-                                <label for="location" class="form-label">Where did it happen? <span class="text-danger">*</span></label>
-                                <input type="text" name="location" id="location" class="form-control" placeholder="Enter exact location of incident" value="<?= htmlspecialchars($_POST['location'] ?? '') ?>" required>
-                            </div>
-
-                            <!-- Description -->
-                            <div class="col-12 mb-3">
-                                <label for="description" class="form-label">What happened? (Detailed Description) <span class="text-danger">*</span></label>
-                                <textarea name="description" id="description" class="form-control" rows="6" placeholder="Please provide a detailed description of what happened. Include all relevant facts, witnesses (if any), and any other important information..." required><?= htmlspecialchars($_POST['description'] ?? '') ?></textarea>
-                                <small class="text-muted">
-                                    <i class="fas fa-info-circle me-1"></i>
-                                    Be as detailed as possible. This will help the barangay officials understand and resolve your complaint.
-                                </small>
-                            </div>
-
-                            <!-- Remarks -->
-                            <div class="col-12 mb-3">
-                                <label for="remarks" class="form-label">Additional Information (Optional)</label>
-                                <textarea name="remarks" id="remarks" class="form-control" rows="3" placeholder="Any additional information, evidence, or witnesses you want to mention..."><?= htmlspecialchars($_POST['remarks'] ?? '') ?></textarea>
-                            </div>
-                        </div>
-
-                        <!-- Agreement Checkbox -->
-                        <div class="form-check mb-4">
-                            <input class="form-check-input" type="checkbox" id="agreement" required>
-                            <label class="form-check-label" for="agreement">
-                                I hereby declare that all information provided above is true and correct to the best of my knowledge. I understand that filing false complaints may result in legal consequences.
-                            </label>
-                        </div>
-
-                        <div class="d-grid gap-2">
-                            <button type="button" class="btn btn-primary btn-lg" id="submitBtn">
-                                <i class="fas fa-paper-plane me-2"></i>Submit Complaint
-                            </button>
-                            <a href="my-blotter.php" class="btn btn-outline-secondary">
-                                <i class="fas fa-times me-2"></i>Cancel
-                            </a>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </div>
+        <a href="my-blotter.php" class="db-btn db-btn--ghost"><i class="fas fa-arrow-left"></i> Back to My Blotter</a>
     </div>
 </div>
 
-<!-- Submit Confirmation Modal -->
-<div class="modal fade" id="submitModal" tabindex="-1" aria-labelledby="submitModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title" id="submitModalLabel">
-                    <i class="fas fa-exclamation-triangle me-2"></i>Confirm Complaint Submission
-                </h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <div class="alert alert-warning mb-3">
-                    <i class="fas fa-info-circle me-2"></i>
-                    <strong>Please review your complaint carefully before submitting.</strong>
-                </div>
-                
-                <h6 class="fw-bold mb-3">Complaint Summary:</h6>
-                
-                <div class="mb-3">
-                    <label class="text-muted small text-uppercase" style="font-size: 0.75rem; letter-spacing: 0.5px;">Respondent:</label>
-                    <div class="fw-bold" id="modal_respondent">-</div>
-                </div>
-                
-                <div class="row mb-3">
-                    <div class="col-6">
-                        <label class="text-muted small text-uppercase" style="font-size: 0.75rem; letter-spacing: 0.5px;">Incident Date:</label>
-                        <div class="fw-bold" id="modal_date">-</div>
-                    </div>
-                    <div class="col-6">
-                        <label class="text-muted small text-uppercase" style="font-size: 0.75rem; letter-spacing: 0.5px;">Incident Time:</label>
-                        <div class="fw-bold" id="modal_time">-</div>
-                    </div>
-                </div>
-                
-                <div class="mb-3">
-                    <label class="text-muted small text-uppercase" style="font-size: 0.75rem; letter-spacing: 0.5px;">Incident Type:</label>
-                    <div class="fw-bold" id="modal_type">-</div>
-                </div>
-                
-                <div class="mb-3">
-                    <label class="text-muted small text-uppercase" style="font-size: 0.75rem; letter-spacing: 0.5px;">Location:</label>
-                    <div class="fw-bold" id="modal_location">-</div>
-                </div>
-                
-                <div class="mb-3">
-                    <label class="text-muted small text-uppercase" style="font-size: 0.75rem; letter-spacing: 0.5px;">Description:</label>
-                    <div class="fw-bold text-break" id="modal_description" style="max-height: 150px; overflow-y: auto;">-</div>
-                </div>
+<div style="padding:0 24px 24px;">
 
-                <div class="alert alert-info mb-0">
-                    <small>
-                        <i class="fas fa-shield-alt me-1"></i>
-                        By submitting this complaint, you confirm that all information provided is accurate and truthful. False complaints may result in legal consequences.
-                    </small>
+<?php if ($success_message): ?>
+<div class="db-alert db-alert--success">
+    <i class="fas fa-check-circle" style="flex-shrink:0;font-size:16px;"></i>
+    <div><?= $success_message ?> <a href="my-blotter.php" style="color:#065f46;font-weight:700;margin-left:8px;"><i class="fas fa-eye"></i> View Records</a></div>
+    <button class="db-alert__close" onclick="this.parentElement.remove()">×</button>
+</div>
+<?php endif; ?>
+<?php if ($error_message): ?>
+<div class="db-alert db-alert--error"><i class="fas fa-exclamation-circle" style="flex-shrink:0;"></i> <?= htmlspecialchars($error_message) ?> <button class="db-alert__close" onclick="this.parentElement.remove()">×</button></div>
+<?php endif; ?>
+
+<!-- Info notice -->
+<div class="db-alert db-alert--info" id="infoAlert">
+    <i class="fas fa-info-circle" style="flex-shrink:0;font-size:16px;"></i>
+    <div>
+        <strong>Before Filing:</strong> Provide accurate and truthful information. Filing false complaints may result in legal consequences.
+    </div>
+    <button class="db-alert__close" onclick="this.parentElement.remove()">×</button>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 280px;gap:18px;align-items:start;">
+
+    <!-- Main Form -->
+    <div>
+        <form method="POST" id="blotterForm">
+
+            <!-- Respondent -->
+            <div class="db-panel" style="animation-delay:.05s">
+                <div class="db-panel__header">
+                    <div class="db-panel__title">
+                        <div class="db-panel__icon db-panel__icon--rose"><i class="fas fa-user-shield"></i></div>
+                        <h2>Who are you filing against?</h2>
+                    </div>
+                </div>
+                <div class="db-panel__body">
+                    <div class="db-respondent-box">
+                        <div class="db-form-group" style="margin-bottom:0;">
+                            <label class="db-form-label">Select from Registered Residents</label>
+                            <select name="respondent_id" id="respondent_id" class="db-form-control">
+                                <option value="">— Select Respondent —</option>
+                                <?php foreach ($residents as $res): ?>
+                                <option value="<?= $res['resident_id'] ?>" <?= (isset($_POST['respondent_id']) && $_POST['respondent_id'] == $res['resident_id']) ? 'selected' : '' ?>>
+                                    <?= htmlspecialchars($res['full_name']) ?>
+                                </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="db-or-divider">OR</div>
+                        <div class="db-form-group" style="margin-bottom:0;">
+                            <label class="db-form-label">Enter Name Manually <span style="font-family:'Sora';text-transform:none;letter-spacing:0;font-size:11px;color:var(--db-muted);">(if not in list)</span></label>
+                            <input type="text" name="respondent_name" id="respondent_name" class="db-form-control" placeholder="Enter respondent's full name" value="<?= htmlspecialchars($_POST['respondent_name'] ?? '') ?>">
+                            <div class="db-form-hint">Use this only if the person is not a registered resident.</div>
+                        </div>
+                    </div>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                    <i class="fas fa-times me-2"></i>Cancel
-                </button>
-                <button type="button" class="btn btn-primary" id="confirmSubmitBtn">
-                    <i class="fas fa-check me-2"></i>Confirm & Submit
-                </button>
+
+            <!-- Incident Details -->
+            <div class="db-panel" style="animation-delay:.1s">
+                <div class="db-panel__header">
+                    <div class="db-panel__title">
+                        <div class="db-panel__icon db-panel__icon--amber"><i class="fas fa-calendar-alt"></i></div>
+                        <h2>Incident Details</h2>
+                    </div>
+                </div>
+                <div class="db-panel__body">
+                    <div class="db-grid-2">
+                        <div class="db-form-group">
+                            <label class="db-form-label">Incident Date <span>*</span></label>
+                            <input type="date" name="incident_date" id="incident_date" class="db-form-control" value="<?= $_POST['incident_date'] ?? '' ?>" max="<?= date('Y-m-d') ?>" required>
+                        </div>
+                        <div class="db-form-group">
+                            <label class="db-form-label">Incident Time <span style="color:var(--db-muted);font-size:9px;">(Optional)</span></label>
+                            <input type="time" name="incident_time" id="incident_time" class="db-form-control" value="<?= $_POST['incident_time'] ?? '' ?>">
+                        </div>
+                    </div>
+                    <div class="db-grid-2">
+                        <div class="db-form-group">
+                            <label class="db-form-label">Incident Type <span>*</span></label>
+                            <select name="incident_type" id="incident_type" class="db-form-control" required>
+                                <option value="">Select Type</option>
+                                <?php
+                                $types = ['Noise Complaint','Physical Assault','Verbal Abuse','Theft','Property Damage','Boundary Dispute','Domestic Violence','Harassment','Others'];
+                                foreach ($types as $t):
+                                ?>
+                                <option value="<?= $t ?>" <?= (isset($_POST['incident_type']) && $_POST['incident_type']===$t)?'selected':'' ?>><?= $t ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="db-form-group">
+                            <label class="db-form-label">Location <span>*</span></label>
+                            <input type="text" name="location" id="location" class="db-form-control" placeholder="Exact location of incident" value="<?= htmlspecialchars($_POST['location'] ?? '') ?>" required>
+                        </div>
+                    </div>
+                    <div class="db-form-group">
+                        <label class="db-form-label">Detailed Description <span>*</span></label>
+                        <textarea name="description" id="description" class="db-form-control" rows="6" placeholder="Describe what happened in detail. Include all relevant facts, witnesses, and other important information…" required><?= htmlspecialchars($_POST['description'] ?? '') ?></textarea>
+                        <div class="db-form-hint"><i class="fas fa-info-circle" style="margin-right:4px;"></i>Be as detailed as possible to help barangay officials understand and resolve your complaint.</div>
+                    </div>
+                    <div class="db-form-group" style="margin-bottom:0;">
+                        <label class="db-form-label">Additional Information <span style="color:var(--db-muted);font-size:9px;">(Optional)</span></label>
+                        <textarea name="remarks" id="remarks" class="db-form-control" rows="3" placeholder="Evidence, witnesses, or any other relevant information…"><?= htmlspecialchars($_POST['remarks'] ?? '') ?></textarea>
+                    </div>
+                </div>
             </div>
+
+            <!-- Agreement & Submit -->
+            <div class="db-panel" style="animation-delay:.15s">
+                <div class="db-panel__body">
+                    <div class="db-check">
+                        <input type="checkbox" id="agreement" required>
+                        <label for="agreement">I hereby declare that all information provided above is true and correct to the best of my knowledge. I understand that filing false complaints may result in legal consequences.</label>
+                    </div>
+                    <div class="db-btn-group">
+                        <button type="button" class="db-btn db-btn--primary db-btn--lg" id="submitBtn" style="justify-content:center;">
+                            <i class="fas fa-paper-plane"></i> Submit Complaint
+                        </button>
+                        <a href="my-blotter.php" class="db-btn db-btn--ghost" style="justify-content:center;">
+                            <i class="fas fa-times"></i> Cancel
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+        </form>
+    </div>
+
+    <!-- Sidebar -->
+    <div style="position:sticky;top:20px;">
+        <div class="db-info-block">
+            <div class="db-info-block__title"><i class="fas fa-info-circle"></i> Guidelines</div>
+            <ul>
+                <li>Provide accurate and complete information</li>
+                <li>Include all relevant facts and details</li>
+                <li>Mention any witnesses if applicable</li>
+                <li>Attach supporting information if available</li>
+                <li>For emergencies, call <strong>911</strong> immediately</li>
+                <li>You will be given a case number for tracking</li>
+            </ul>
+        </div>
+        <div class="db-warning-block">
+            <div class="db-warning-block__title"><i class="fas fa-exclamation-triangle"></i> Important Warning</div>
+            <ul>
+                <li>All complaints are recorded and reviewed</li>
+                <li>Filing a false complaint is a punishable offense</li>
+                <li>Barangay officials may call you for follow-up</li>
+                <li>Cases are handled with confidentiality</li>
+            </ul>
+        </div>
+    </div>
+
+</div>
+</div>
+
+<!-- Confirm Modal -->
+<div class="db-modal" id="confirmModal">
+    <div class="db-modal__box">
+        <div class="db-modal__header">
+            <h3><i class="fas fa-exclamation-triangle" style="margin-right:8px;"></i> Confirm Submission</h3>
+            <button class="db-modal__close" onclick="document.getElementById('confirmModal').classList.remove('open')">×</button>
+        </div>
+        <div class="db-modal__body">
+            <div class="db-modal-warning"><i class="fas fa-shield-alt" style="margin-right:6px;"></i> Please review your complaint carefully. Once submitted, it will be forwarded to barangay officials.</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 18px;">
+                <div class="db-summary-row">
+                    <div class="db-summary-label">Respondent</div>
+                    <div class="db-summary-value" id="s_respondent">—</div>
+                </div>
+                <div class="db-summary-row">
+                    <div class="db-summary-label">Incident Type</div>
+                    <div class="db-summary-value" id="s_type">—</div>
+                </div>
+                <div class="db-summary-row">
+                    <div class="db-summary-label">Date</div>
+                    <div class="db-summary-value" id="s_date">—</div>
+                </div>
+                <div class="db-summary-row">
+                    <div class="db-summary-label">Time</div>
+                    <div class="db-summary-value" id="s_time">—</div>
+                </div>
+            </div>
+            <div class="db-summary-row">
+                <div class="db-summary-label">Location</div>
+                <div class="db-summary-value" id="s_location">—</div>
+            </div>
+            <div class="db-summary-row" style="margin-bottom:0;">
+                <div class="db-summary-label">Description</div>
+                <div class="db-summary-value scrollable" id="s_description">—</div>
+            </div>
+        </div>
+        <div class="db-modal__footer">
+            <button type="button" class="db-btn db-btn--ghost" onclick="document.getElementById('confirmModal').classList.remove('open')"><i class="fas fa-times"></i> Cancel</button>
+            <button type="button" class="db-btn db-btn--primary" id="confirmSubmitBtn"><i class="fas fa-check"></i> Confirm & Submit</button>
         </div>
     </div>
 </div>
 
 <script>
-// Clear manual name if dropdown is selected
+// Mutual exclusivity: dropdown ↔ manual name
 document.getElementById('respondent_id').addEventListener('change', function() {
-    if (this.value) {
-        document.getElementById('respondent_name').value = '';
-        document.getElementById('respondent_name').disabled = true;
-    } else {
-        document.getElementById('respondent_name').disabled = false;
-    }
+    const mn = document.getElementById('respondent_name');
+    if (this.value) { mn.value = ''; mn.disabled = true; } else { mn.disabled = false; }
 });
-
-// Clear dropdown if manual name is entered
 document.getElementById('respondent_name').addEventListener('input', function() {
-    if (this.value.trim()) {
-        document.getElementById('respondent_id').value = '';
-        document.getElementById('respondent_id').disabled = true;
-    } else {
-        document.getElementById('respondent_id').disabled = false;
-    }
+    const dd = document.getElementById('respondent_id');
+    if (this.value.trim()) { dd.value = ''; dd.disabled = true; } else { dd.disabled = false; }
 });
 
-// Show modal with form data
+// Open confirm modal
 document.getElementById('submitBtn').addEventListener('click', function() {
     const form = document.getElementById('blotterForm');
-    
-    if (!form.checkValidity()) {
-        form.reportValidity();
-        return;
+    if (!form.checkValidity()) { form.reportValidity(); return; }
+    if (!document.getElementById('agreement').checked) { alert('Please agree to the declaration before submitting.'); return; }
+
+    const rid  = document.getElementById('respondent_id').value;
+    const rnam = document.getElementById('respondent_name').value.trim();
+    if (!rid && !rnam) { alert('Please select a respondent or enter their name manually.'); return; }
+
+    let respondentDisplay = rnam;
+    if (rid) {
+        const opt = document.querySelector(`#respondent_id option[value="${rid}"]`);
+        respondentDisplay = opt ? opt.textContent.trim() : '—';
     }
 
-    if (!document.getElementById('agreement').checked) {
-        alert('Please agree to the declaration before submitting.');
-        return;
-    }
+    const d = document.getElementById('incident_date').value;
+    document.getElementById('s_respondent').textContent  = respondentDisplay || '—';
+    document.getElementById('s_type').textContent        = document.getElementById('incident_type').value || '—';
+    document.getElementById('s_date').textContent        = d ? new Date(d).toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}) : '—';
+    document.getElementById('s_time').textContent        = document.getElementById('incident_time').value || 'Not specified';
+    document.getElementById('s_location').textContent    = document.getElementById('location').value || '—';
+    document.getElementById('s_description').textContent = document.getElementById('description').value || '—';
 
-    const respondentId   = document.getElementById('respondent_id').value;
-    const respondentName = document.getElementById('respondent_name').value;
-    const incidentDate   = document.getElementById('incident_date').value;
-    const incidentTime   = document.getElementById('incident_time').value;
-    const incidentType   = document.getElementById('incident_type').value;
-    const location       = document.getElementById('location').value;
-    const description    = document.getElementById('description').value;
-
-    if (!respondentId && !respondentName.trim()) {
-        alert('Please select a respondent from the list or enter their name manually.');
-        return;
-    }
-
-    let respondentDisplay = '';
-    if (respondentId) {
-        const selectedOption = document.querySelector(`#respondent_id option[value="${respondentId}"]`);
-        respondentDisplay = selectedOption ? selectedOption.text : '-';
-    } else {
-        respondentDisplay = respondentName;
-    }
-    
-    document.getElementById('modal_respondent').textContent  = respondentDisplay;
-    document.getElementById('modal_date').textContent        = incidentDate ? new Date(incidentDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : '-';
-    document.getElementById('modal_time').textContent        = incidentTime || 'Not specified';
-    document.getElementById('modal_type').textContent        = incidentType || '-';
-    document.getElementById('modal_location').textContent    = location || '-';
-    document.getElementById('modal_description').textContent = description || '-';
-
-    const modal = new bootstrap.Modal(document.getElementById('submitModal'));
-    modal.show();
+    document.getElementById('confirmModal').classList.add('open');
 });
 
-// Handle confirm submit
 document.getElementById('confirmSubmitBtn').addEventListener('click', function() {
     document.getElementById('blotterForm').submit();
 });
 
-// Auto-dismiss alerts after 5 seconds
-setTimeout(function() {
-    const alerts = document.querySelectorAll('.alert-dismissible');
-    alerts.forEach(alert => {
-        const bsAlert = new bootstrap.Alert(alert);
-        bsAlert.close();
-    });
-}, 5000);
-</script>
+document.getElementById('confirmModal').addEventListener('click', function(e) {
+    if (e.target === this) this.classList.remove('open');
+});
 
+setTimeout(() => document.querySelectorAll('.db-alert').forEach(a => { a.style.opacity='0'; setTimeout(()=>a.remove(),400); }), 6000);
+</script>
 <?php include '../../includes/footer.php'; ?>

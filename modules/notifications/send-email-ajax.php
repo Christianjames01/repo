@@ -20,49 +20,91 @@ $response = [
     'no_email'   => 0,
     'total'      => 0,
     'saved'      => 0,
-    'history_id' => null
+    'history_id' => null,
 ];
 
-/**
- * Validate email more strictly than filter_var alone.
- */
+// ── Map notification_type → reference_type that tbl_notifications expects ────
+// These must match the values your notifications index.php filters on.
+function resolveReferenceType(string $notification_type): string {
+    $map = [
+        'general'           => 'announcement',
+        'announcement'      => 'announcement',
+        'alert'             => 'announcement',
+        'incident_reported' => 'incident',
+        'status_update'     => 'announcement',
+    ];
+    return $map[$notification_type] ?? 'announcement';
+}
+
+// ── Map notification_type → type value that tbl_notifications expects ─────────
+// Matches the badge/filter labels visible in the notifications page.
+function resolveNotificationType(string $notification_type): string {
+    $map = [
+        'general'           => 'general',
+        'announcement'      => 'announcement',
+        'alert'             => 'alert',
+        'incident_reported' => 'incident_reported',
+        'status_update'     => 'status_update',
+    ];
+    return $map[$notification_type] ?? 'announcement';
+}
+
 function isValidEmailAddress(string $email): bool {
     $email = trim($email);
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) return false;
-    $parts = explode('@', $email);
+    $parts       = explode('@', $email);
     if (count($parts) !== 2) return false;
-    $local  = $parts[0];
-    $domain = strtolower($parts[1]);
-    if (!str_contains($domain, '.')) return false;
+    $domain      = strtolower($parts[1]);
     $domainParts = explode('.', $domain);
-    $tld = end($domainParts);
-    if (strlen($tld) < 2) return false;
-    $hostPart = implode('.', array_slice($domainParts, 0, -1));
-    if (strlen($hostPart) < 2) return false;
-    if (strlen($local) < 2) return false;
-    if (str_contains($email, '..')) return false;
+    if (!str_contains($domain, '.'))                                      return false;
+    if (strlen(end($domainParts)) < 2)                                    return false;
+    if (strlen(implode('.', array_slice($domainParts, 0, -1))) < 2)       return false;
+    if (strlen($parts[0]) < 2)                                            return false;
+    if (str_contains($email, '..'))                                       return false;
     return true;
 }
 
 /**
- * Insert a single in-app notification row.
- * reference_type = 'announcement' so it passes the notification_filter
- * in index.php for all roles.
+ * Insert one in-app notification row.
+ * Detects which columns actually exist so it works with any schema variant.
  */
-function insertInAppNotification($conn, int $target_user_id, string $title, string $message, string $type, int $history_id): bool {
-    $ref_type = 'announcement';
-    $stmt = $conn->prepare(
-        "INSERT INTO tbl_notifications
-         (user_id, title, message, type, reference_type, reference_id, is_read, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, 0, NOW())"
-    );
-    if (!$stmt) return false;
-    $stmt->bind_param('issssi',
-        $target_user_id, $title, $message, $type, $ref_type, $history_id
-    );
-    $ok = $stmt->execute();
-    $stmt->close();
-    return $ok;
+function insertInAppNotification(
+    $conn,
+    int    $target_user_id,
+    string $title,
+    string $message,
+    string $notification_type,
+    int    $history_id
+): bool {
+    $type     = resolveNotificationType($notification_type);
+    $ref_type = resolveReferenceType($notification_type);
+
+    // Try the full schema first (most common)
+    $sql = "INSERT INTO tbl_notifications
+            (user_id, title, message, type, reference_type, reference_id, is_read, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, 0, NOW())";
+
+    $s = $conn->prepare($sql);
+    if ($s) {
+        $s->bind_param('issssi', $target_user_id, $title, $message, $type, $ref_type, $history_id);
+        $ok = $s->execute();
+        $s->close();
+        return $ok;
+    }
+
+    // Fallback: minimal schema without reference columns
+    $sql2 = "INSERT INTO tbl_notifications
+             (user_id, title, message, type, is_read, created_at)
+             VALUES (?, ?, ?, ?, 0, NOW())";
+    $s2 = $conn->prepare($sql2);
+    if ($s2) {
+        $s2->bind_param('isss', $target_user_id, $title, $message, $type);
+        $ok = $s2->execute();
+        $s2->close();
+        return $ok;
+    }
+
+    return false;
 }
 
 try {
@@ -79,22 +121,23 @@ try {
 
     if (!isset($_SESSION['user_id']) || empty($_SESSION['user_id']))
         throw new Exception('Session expired. Please log in again.');
-
     if (!isset($conn) || !$conn)
         throw new Exception('Database connection failed');
 
-    $sender_user_id = (int)$_SESSION['user_id'];
-    $stmt = $conn->prepare("SELECT user_id, role FROM tbl_users WHERE user_id = ? LIMIT 1");
-    if (!$stmt) throw new Exception('DB error: ' . $conn->error);
-    $stmt->bind_param("i", $sender_user_id);
-    $stmt->execute();
-    $user = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
+    // ── Auth ──────────────────────────────────────────────────────────────────
+    $sender_id = (int)$_SESSION['user_id'];
+    $s = $conn->prepare("SELECT role FROM tbl_users WHERE user_id = ? LIMIT 1");
+    if (!$s) throw new Exception('DB error: ' . $conn->error);
+    $s->bind_param('i', $sender_id);
+    $s->execute();
+    $user = $s->get_result()->fetch_assoc();
+    $s->close();
 
     if (!$user)                                  throw new Exception('User not found');
     if ($user['role'] !== 'Super Administrator') throw new Exception('Access denied.');
     if ($_SERVER['REQUEST_METHOD'] !== 'POST')   throw new Exception('Invalid request method');
 
+    // ── Inputs ────────────────────────────────────────────────────────────────
     $title             = trim($_POST['email_title']    ?? '');
     $message           = trim($_POST['email_message']  ?? '');
     $notification_type = $_POST['notification_type']   ?? 'general';
@@ -110,7 +153,7 @@ try {
     $recipient_details = '';
 
     if ($recipient_type === 'all') {
-        $result = $conn->query(
+        $r = $conn->query(
             "SELECT r.resident_id,
                     CONCAT(r.first_name,' ',r.last_name) AS name,
                     r.email,
@@ -119,15 +162,15 @@ try {
              LEFT JOIN tbl_users u ON u.resident_id = r.resident_id
              ORDER BY r.first_name, r.last_name"
         );
-        while ($row = $result->fetch_assoc()) $all_residents[] = $row;
+        while ($row = $r->fetch_assoc()) $all_residents[] = $row;
         $recipient_details = 'All Residents';
 
     } elseif ($recipient_type === 'selected') {
         if (empty($_POST['selected_residents']) || !is_array($_POST['selected_residents']))
             throw new Exception('No residents selected');
-        $ids  = array_map('intval', $_POST['selected_residents']);
-        $ph   = implode(',', array_fill(0, count($ids), '?'));
-        $stmt = $conn->prepare(
+        $ids = array_map('intval', $_POST['selected_residents']);
+        $ph  = implode(',', array_fill(0, count($ids), '?'));
+        $s   = $conn->prepare(
             "SELECT r.resident_id,
                     CONCAT(r.first_name,' ',r.last_name) AS name,
                     r.email,
@@ -137,17 +180,17 @@ try {
              WHERE r.resident_id IN ($ph)
              ORDER BY r.first_name, r.last_name"
         );
-        $stmt->bind_param(str_repeat('i', count($ids)), ...$ids);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        while ($row = $result->fetch_assoc()) $all_residents[] = $row;
-        $stmt->close();
+        $s->bind_param(str_repeat('i', count($ids)), ...$ids);
+        $s->execute();
+        $r = $s->get_result();
+        while ($row = $r->fetch_assoc()) $all_residents[] = $row;
+        $s->close();
         $recipient_details = count($all_residents) . ' Selected Residents';
 
     } elseif ($recipient_type === 'purok') {
         $purok = trim($_POST['purok'] ?? '');
         if (empty($purok)) throw new Exception('Please select a purok');
-        $stmt = $conn->prepare(
+        $s = $conn->prepare(
             "SELECT r.resident_id,
                     CONCAT(r.first_name,' ',r.last_name) AS name,
                     r.email,
@@ -157,71 +200,96 @@ try {
              WHERE r.purok = ?
              ORDER BY r.first_name, r.last_name"
         );
-        $stmt->bind_param('s', $purok);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        while ($row = $result->fetch_assoc()) $all_residents[] = $row;
-        $stmt->close();
+        $s->bind_param('s', $purok);
+        $s->execute();
+        $r = $s->get_result();
+        while ($row = $r->fetch_assoc()) $all_residents[] = $row;
+        $s->close();
         $recipient_details = 'Purok: ' . $purok;
     } else {
         throw new Exception('Invalid recipient type');
     }
 
     if (empty($all_residents)) throw new Exception('No recipients found');
-
     $total_residents = count($all_residents);
 
-    // ── Save email history ────────────────────────────────────────────────────
-    $history_stmt = $conn->prepare(
+    // ── Snapshot MAX id before insert (handles missing AUTO_INCREMENT) ────────
+    $pre_max = 0;
+    $pmr = $conn->query("SELECT COALESCE(MAX(id), 0) AS mid FROM tbl_email_history");
+    if ($pmr) $pre_max = (int)($pmr->fetch_assoc()['mid'] ?? 0);
+
+    // ── Insert email history ──────────────────────────────────────────────────
+    $hs = $conn->prepare(
         "INSERT INTO tbl_email_history
-         (sender_id, recipient_type, recipient_details, email_title, email_message,
-          notification_type, action_url, total_recipients, sent_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())"
+             (sender_id, recipient_type, recipient_details, email_title, email_message,
+              notification_type, action_url, total_recipients, successful_sends, failed_sends, sent_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NOW())"
     );
-    if (!$history_stmt) throw new Exception('Prepare failed: ' . $conn->error);
+    if (!$hs) throw new Exception('Prepare failed: ' . $conn->error);
 
-    $history_stmt->bind_param('issssssi',
-        $sender_user_id,
-        $recipient_type,
-        $recipient_details,
-        $title,
-        $message,
-        $notification_type,
-        $action_url_val,
-        $total_residents
+    $hs->bind_param('issssssi',
+        $sender_id, $recipient_type, $recipient_details,
+        $title, $message, $notification_type, $action_url_val, $total_residents
     );
 
-    if (!$history_stmt->execute())
-        throw new Exception('History insert failed: ' . $history_stmt->error);
+    if (!$hs->execute())
+        throw new Exception('History INSERT failed: ' . $hs->error . ' (errno ' . $hs->errno . ')');
 
-    $email_history_id = $conn->insert_id;
-    $history_stmt->close();
+    // ── Retrieve new row ID (4-layer fallback) ────────────────────────────────
+    $email_history_id = (int)$hs->insert_id;
+    $hs->close();
 
-    if (!$email_history_id)
-        throw new Exception('Failed to get history ID after insert');
+    if ($email_history_id <= 0) {
+        $r = $conn->query("SELECT LAST_INSERT_ID() AS lid");
+        if ($r) $email_history_id = (int)($r->fetch_assoc()['lid'] ?? 0);
+    }
+    if ($email_history_id <= 0) {
+        $r = $conn->query("SELECT COALESCE(MAX(id), 0) AS mid FROM tbl_email_history");
+        if ($r) {
+            $max_now = (int)($r->fetch_assoc()['mid'] ?? 0);
+            if ($max_now > $pre_max) $email_history_id = $max_now;
+        }
+    }
+    if ($email_history_id <= 0) {
+        $fs = $conn->prepare(
+            "SELECT id FROM tbl_email_history
+             WHERE sender_id = ? AND recipient_type = ? AND email_title = ? AND total_recipients = ?
+             ORDER BY id DESC LIMIT 1"
+        );
+        if ($fs) {
+            $fs->bind_param('issi', $sender_id, $recipient_type, $title, $total_residents);
+            $fs->execute();
+            $fr = $fs->get_result()->fetch_assoc();
+            $fs->close();
+            if ($fr) $email_history_id = (int)$fr['id'];
+        }
+    }
 
-    $sent_count     = 0;
-    $failed_count   = 0;
-    $no_email_count = 0;
-    $saved_count    = 0;
-
-    // Track which user_ids got an in-app notification to avoid duplicates
-    $notified_user_ids = [];
+    if ($email_history_id <= 0)
+        throw new Exception(
+            'Email was recorded but its ID could not be retrieved. ' .
+            'Please ensure the "id" column in tbl_email_history is set to AUTO_INCREMENT PRIMARY KEY.'
+        );
 
     // ── Process each resident ─────────────────────────────────────────────────
+    $sent_count        = 0;
+    $failed_count      = 0;
+    $no_email_count    = 0;
+    $saved_count       = 0;
+    $notified_user_ids = [];
+
     foreach ($all_residents as $resident) {
-        $res_email       = trim($resident['email'] ?? '');
-        $name            = $resident['name'];
-        $resident_id     = (int)$resident['resident_id'];
-        $linked_user_id  = isset($resident['linked_user_id']) ? (int)$resident['linked_user_id'] : 0;
+        $res_email      = trim($resident['email'] ?? '');
+        $name           = $resident['name'];
+        $resident_id    = (int)$resident['resident_id'];
+        $linked_uid     = isset($resident['linked_user_id']) ? (int)$resident['linked_user_id'] : 0;
 
         $has_email_field = !empty($res_email);
         $email_is_valid  = $has_email_field && isValidEmailAddress($res_email);
-
-        $has_email_int  = $email_is_valid ? 1 : 0;
-        $email_sent_int = 0;
-        $error_msg      = '';
-        $sent_time      = '';
+        $has_email_int   = $email_is_valid ? 1 : 0;
+        $email_sent_int  = 0;
+        $error_msg       = '';
+        $sent_time       = '';
 
         if (!$has_email_field) {
             $no_email_count++;
@@ -233,7 +301,6 @@ try {
             $error_msg = 'Invalid email format: ' . $res_email;
 
         } else {
-            // ── Send email ────────────────────────────────────────────────────
             try {
                 ob_start();
                 $send_result = sendNotificationEmail(
@@ -247,14 +314,15 @@ try {
                     $sent_count++;
                     $sent_time = date('Y-m-d H:i:s');
 
-                    // ── Save in-app notification for the resident's linked user account ──
-                    if ($linked_user_id && !in_array($linked_user_id, $notified_user_ids)) {
-                        if (insertInAppNotification($conn, $linked_user_id, $title, $message, $notification_type, $email_history_id)) {
+                    if ($linked_uid && !in_array($linked_uid, $notified_user_ids)) {
+                        if (insertInAppNotification(
+                            $conn, $linked_uid, $title, $message,
+                            $notification_type, $email_history_id
+                        )) {
                             $saved_count++;
-                            $notified_user_ids[] = $linked_user_id;
+                            $notified_user_ids[] = $linked_uid;
                         }
                     }
-
                 } else {
                     $failed_count++;
                     $error_msg = 'SMTP rejected the message';
@@ -266,40 +334,44 @@ try {
                 $error_msg = substr($e->getMessage(), 0, 200);
             }
 
-            usleep(50000); // 50 ms between sends
+            usleep(50000);
         }
 
-        // ── Insert recipient log row ──────────────────────────────────────────
-        $r_stmt = $conn->prepare(
+        // ── Recipient log ─────────────────────────────────────────────────────
+        $rs = $conn->prepare(
             "INSERT INTO tbl_email_recipients
              (email_history_id, resident_id, resident_name, resident_email,
               has_email, email_sent, sent_at, error_message)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         );
-        if ($r_stmt) {
-            $r_stmt->bind_param('iissiiss',
+        if ($rs) {
+            $rs->bind_param('iissiiss',
                 $email_history_id, $resident_id, $name, $res_email,
                 $has_email_int, $email_sent_int, $sent_time, $error_msg
             );
-            $r_stmt->execute();
-            $r_stmt->close();
+            $rs->execute();
+            $rs->close();
         }
     }
 
-    // ── Save notification for the Super Admin sender so they can see it too ──
-    // This lets the sender verify it in their own notifications dashboard.
-    insertInAppNotification($conn, $sender_user_id, $title, $message, $notification_type, $email_history_id);
+    // ── In-app notification for the sender (Super Admin) ──────────────────────
+    insertInAppNotification(
+        $conn, $sender_id, $title, $message,
+        $notification_type, $email_history_id
+    );
 
     // ── Update history totals ─────────────────────────────────────────────────
     $total_failed = $failed_count + $no_email_count;
-    $u_stmt = $conn->prepare(
+    $us = $conn->prepare(
         "UPDATE tbl_email_history SET successful_sends = ?, failed_sends = ? WHERE id = ?"
     );
-    $u_stmt->bind_param('iii', $sent_count, $total_failed, $email_history_id);
-    $u_stmt->execute();
-    $u_stmt->close();
+    if ($us) {
+        $us->bind_param('iii', $sent_count, $total_failed, $email_history_id);
+        $us->execute();
+        $us->close();
+    }
 
-    // ── Build response ────────────────────────────────────────────────────────
+    // ── Response ──────────────────────────────────────────────────────────────
     $response['success']    = $sent_count > 0 || ($failed_count === 0 && $no_email_count < $total_residents);
     $response['sent']       = $sent_count;
     $response['failed']     = $failed_count;
@@ -311,13 +383,13 @@ try {
     if ($sent_count > 0) {
         $msg = "Successfully sent to {$sent_count} recipient(s)";
         if ($no_email_count > 0) $msg .= ". {$no_email_count} had no email address";
-        if ($failed_count > 0)   $msg .= ". {$failed_count} failed (invalid/SMTP error)";
-        $response['message'] = $msg . ".";
+        if ($failed_count   > 0) $msg .= ". {$failed_count} failed (invalid/SMTP error)";
+        $response['message'] = $msg . '.';
     } elseif ($no_email_count === $total_residents) {
         $response['success'] = true;
-        $response['message'] = "No residents have email addresses on record.";
+        $response['message'] = 'No residents have email addresses on record.';
     } else {
-        $response['message'] = "No emails sent. Check SMTP config or resident email addresses.";
+        $response['message'] = 'No emails sent. Check SMTP config or resident email addresses.';
     }
 
 } catch (Exception $e) {

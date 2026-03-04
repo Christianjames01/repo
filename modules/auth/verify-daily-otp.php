@@ -2,9 +2,16 @@
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
+// Must be FIRST — before any require_once
+ini_set('session.cookie_path', '/');
+ini_set('session.cookie_domain', '');
+
 require_once '../../config/config.php';
 require_once '../../config/database.php';
+require_once '../../config/session.php';  
 require_once '../../includes/email_helper.php';
+
+
 
 // START SESSION
 if (session_status() === PHP_SESSION_NONE) {
@@ -139,8 +146,8 @@ elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['verification_code
                     $_SESSION['role'] = $user['role_name'];
                     $_SESSION['role_name'] = $user['role_name'];
                     $_SESSION['resident_id'] = $user['resident_id'];
-                    $_SESSION['is_verified'] = $user['is_verified'] ?? 1;
-                    $_SESSION['LAST_ACTIVITY'] = time();
+                    $_SESSION['is_verified'] = 1;
+                    $_SESSION['LAST_ACTIVITY'] = time(); 
                     $_SESSION['logged_in'] = true;
                     
                     // Regenerate session ID for security
@@ -386,9 +393,9 @@ if (!empty($email) && isset($_SESSION['temp_user_id'])) {
             </div>
         <?php endif; ?>
 
-        <form method="POST">
-            <div class="form-group">
-                <label>Verification Code</label>
+<form method="POST" action="?email=<?php echo urlencode($email); ?>">
+    <div class="form-group">
+        <label>Verification Code</label>
                 <input type="text" name="verification_code" id="verification_code"
                        class="code-input" placeholder="000000" maxlength="6" 
                        pattern="[0-9]{6}" required autofocus autocomplete="off">
@@ -407,8 +414,8 @@ if (!empty($email) && isset($_SESSION['temp_user_id'])) {
 
         <div class="divider">Didn't receive the code?</div>
 
-        <form method="POST">
-            <input type="hidden" name="resend_code" value="1">
+        <form method="POST" action="?email=<?php echo urlencode($email); ?>">
+    <input type="hidden" name="resend_code" value="1">
             <button type="submit" class="btn-resend">
                 <i class="fas fa-redo"></i> Resend Code
             </button>
