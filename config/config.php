@@ -6,13 +6,7 @@
 // ============================================
 date_default_timezone_set('Asia/Manila');
 
-// Session Configuration - MUST be set BEFORE session_start()
-if (session_status() === PHP_SESSION_NONE) {
-    ini_set('session.cookie_httponly', 1);
-    ini_set('session.use_only_cookies', 1);
-    ini_set('session.cookie_secure', 0); // Set to 1 if using HTTPS
-    session_start();
-}
+
 
 // Database Configuration
 $servername = "localhost";
