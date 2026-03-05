@@ -116,9 +116,8 @@ function reqStatusBadge($s){$m=['Pending'=>['amber','clock'],'Approved'=>['sky',
 include '../../includes/header.php';
 $status_key = strtolower(str_replace(' ','-',$request['status']));
 ?>
-<style>
-<?php include '/barangaylink1/assets/css/_db_shared.css'; ?>
-</style>
+
+<link rel="stylesheet" href="/barangaylink1/assets/css/_db_shared.css">
 
 <!-- Hero -->
 <div class="rm-hero">
@@ -162,13 +161,13 @@ $status_key = strtolower(str_replace(' ','-',$request['status']));
             <form method="POST">
                 <input type="hidden" name="action" value="update_status">
                 <label class="db-form-label">Update Status</label>
-                <select name="status" class="db-form-control" style="margin-bottom:12px;" required>
+                <select name="status" class="db-form-control db-form-select" style="margin-bottom:12px;" required>
                     <?php foreach(['Pending','Approved','Released','Rejected'] as $s): ?>
                     <option value="<?php echo $s; ?>" <?php echo($request['status']===$s)?'selected':''; ?>><?php echo $s; ?></option>
                     <?php endforeach; ?>
                 </select>
                 <label class="db-form-label">Remarks <span style="font-weight:400;color:var(--db-muted);">(optional)</span></label>
-                <textarea name="remarks" class="db-form-control" rows="3" style="margin-bottom:12px;" placeholder="Add remarks…"><?php echo htmlspecialchars($request['remarks']??''); ?></textarea>
+                <textarea name="remarks" class="db-form-control db-form-textarea" rows="3" style="margin-bottom:12px;" placeholder="Add remarks…"><?php echo htmlspecialchars($request['remarks']??''); ?></textarea>
                 <button type="submit" class="db-btn db-btn--primary" style="width:100%;justify-content:center;"><i class="fas fa-save"></i> Save Status</button>
             </form>
 
@@ -297,7 +296,7 @@ $status_key = strtolower(str_replace(' ','-',$request['status']));
                 <form method="POST">
                     <input type="hidden" name="action" value="admin_reply">
                     <label class="db-form-label" style="margin-bottom:6px;">Reply to Resident</label>
-                    <textarea name="reply_message" class="db-form-control" rows="3" placeholder="Type your reply…" <?php echo $is_rejected?'disabled':''; ?> required style="resize:none;"></textarea>
+                    <textarea name="reply_message" class="db-form-control db-form-textarea" rows="3" placeholder="Type your reply…" <?php echo $is_rejected?'disabled':''; ?> required style="resize:none;"></textarea>
                     <div style="margin-top:8px;">
                         <button type="submit" class="db-btn db-btn--primary db-btn--sm" <?php echo $is_rejected?'disabled':''; ?>><i class="fas fa-paper-plane"></i> Send Reply</button>
                     </div>
@@ -437,7 +436,7 @@ $status_key = strtolower(str_replace(' ','-',$request['status']));
             </div>
             <div class="db-panel__body" style="padding:16px;">
                 <?php foreach([['Name',htmlspecialchars($request['first_name'].' '.$request['last_name'])],['Contact',htmlspecialchars($request['contact_number']??'N/A')],['Email',htmlspecialchars($request['email']??'N/A')],['Address',htmlspecialchars($request['address']??'N/A')]] as [$l,$v]): ?>
-                <div class="db-info-item" style="margin-bottom:8px;">
+                <div class="db-info-item" style="margin-bottom:12px;">
                     <div class="db-info-label"><?php echo $l; ?></div>
                     <div class="db-info-value db-info-value--block" style="font-weight:<?php echo $l==='Address'?'400':'600'; ?>;"><?php echo $v; ?></div>
                 </div>

@@ -1,939 +1,393 @@
-    <?php
-    require_once '../../config/config.php';
-    require_once '../../includes/auth_functions.php';
-    require_once '../../includes/functions.php'; 
-    requireLogin();
-    requireRole(['Resident']);
+<?php
+require_once '../../config/config.php';
+require_once '../../includes/auth_functions.php';
+require_once '../../includes/functions.php';
+requireLogin();
+requireRole(['Resident']);
 
-    $user_id = $_SESSION['user_id'];
+$user_id = $_SESSION['user_id'];
 
-    // Check verification status FIRST
-    $stmt = $conn->prepare("
-        SELECT r.is_verified, r.id_photo, r.first_name, r.last_name, r.resident_id
-        FROM tbl_users u
-        JOIN tbl_residents r ON u.resident_id = r.resident_id
-        WHERE u.user_id = ?
-    ");
-    $stmt->bind_param("i", $user_id);
+$stmt = $conn->prepare("SELECT r.is_verified,r.id_photo,r.first_name,r.last_name,r.resident_id FROM tbl_users u JOIN tbl_residents r ON u.resident_id=r.resident_id WHERE u.user_id=?");
+$stmt->bind_param("i", $user_id);
+$stmt->execute();
+$user_data = $stmt->get_result()->fetch_assoc();
+$stmt->close();
+
+if (!$user_data || $user_data['is_verified'] != 1) { header("Location: health-verification.php"); exit(); }
+
+$page_title  = 'Book Appointment';
+$resident_id = $user_data['resident_id'];
+
+// BOOK
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'book_appointment') {
+    $appointment_type     = trim($_POST['appointment_type']);
+    $appointment_date     = $_POST['appointment_date'];
+    $appointment_time     = $_POST['appointment_time'];
+    $contact_number       = trim($_POST['contact_number']);
+    $purpose              = trim($_POST['purpose']);
+    $symptoms             = isset($_POST['symptoms'])             ? trim($_POST['symptoms'])             : '';
+    $special_instructions = isset($_POST['special_instructions']) ? trim($_POST['special_instructions']) : '';
+
+    if (strtotime($appointment_date) < strtotime('+1 day', strtotime(date('Y-m-d')))) {
+        $_SESSION['error_message'] = "Appointments must be booked at least 1 day in advance.";
+    } else {
+        $stmt = $conn->prepare("INSERT INTO tbl_health_appointments (resident_id,appointment_type,appointment_date,appointment_time,contact_number,purpose,symptoms,special_instructions,status,created_by) VALUES (?,?,?,?,?,?,?,?,'Scheduled',?)");
+        $stmt->bind_param("isssssssi", $resident_id, $appointment_type, $appointment_date, $appointment_time, $contact_number, $purpose, $symptoms, $special_instructions, $user_id);
+        if ($stmt->execute()) {
+            $appointment_id = $stmt->insert_id;
+            $stmt->close();
+            if ($appointment_id > 0) {
+                $resident_name        = $user_data['first_name'] . ' ' . $user_data['last_name'];
+                $notification_title   = "New Health Appointment Booked";
+                $notification_message = "$resident_name has booked a $appointment_type appointment for " . date('F j, Y', strtotime($appointment_date)) . " at " . date('g:i A', strtotime($appointment_time)) . ". Purpose: $purpose";
+                $admin_users = $conn->query("SELECT user_id FROM tbl_users WHERE role IN ('Admin','Staff','Super Admin','Super Administrator')");
+                if ($admin_users) { while ($admin = $admin_users->fetch_assoc()) { createNotification($conn, $admin['user_id'], $notification_title, $notification_message, 'appointment_booked', $appointment_id, 'appointment'); } }
+                $_SESSION['success_message'] = "Appointment booked successfully! You will be notified once it's confirmed.";
+            } else { $_SESSION['error_message'] = "Appointment was created but there was an issue. Please contact admin."; }
+        } else { $_SESSION['error_message'] = "Error booking appointment. Please try again."; $stmt->close(); }
+    }
+    header("Location: book-appointment.php"); exit;
+}
+
+// CANCEL
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'cancel_appointment') {
+    $appointment_id      = (int)$_POST['appointment_id'];
+    $cancellation_reason = isset($_POST['cancellation_reason']) ? trim($_POST['cancellation_reason']) : '';
+    if ($appointment_id <= 0) { $_SESSION['error_message'] = "Invalid appointment ID."; header("Location: book-appointment.php"); exit; }
+    $stmt = $conn->prepare("SELECT a.*,r.first_name,r.last_name FROM tbl_health_appointments a JOIN tbl_residents r ON a.resident_id=r.resident_id WHERE a.appointment_id=? AND a.resident_id=?");
+    $stmt->bind_param("ii", $appointment_id, $resident_id);
     $stmt->execute();
     $result = $stmt->get_result();
-    $user_data = $result->fetch_assoc();
-    $stmt->close();
-
-    // If not verified, redirect to health verification page
-    if (!$user_data || $user_data['is_verified'] != 1) {
-        header("Location: health-verification.php");
-        exit();
-    }
-
-    // Continue with normal page - user is verified
-    $page_title = 'Book Appointment';
-    $resident_id = $user_data['resident_id'];
-
-    // HANDLE FORM SUBMISSION FOR BOOKING
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'book_appointment') {
-        $appointment_type = trim($_POST['appointment_type']);
-        $appointment_date = $_POST['appointment_date'];
-        $appointment_time = $_POST['appointment_time'];
-        $contact_number = trim($_POST['contact_number']);
-        $purpose = trim($_POST['purpose']);
-        $symptoms = isset($_POST['symptoms']) ? trim($_POST['symptoms']) : '';
-        $special_instructions = isset($_POST['special_instructions']) ? trim($_POST['special_instructions']) : '';
-        
-        // Validate date is at least 1 day in advance
-        $selected_date = strtotime($appointment_date);
-        $tomorrow = strtotime('+1 day', strtotime(date('Y-m-d')));
-        
-        if ($selected_date < $tomorrow) {
-            $_SESSION['error_message'] = "Appointments must be booked at least 1 day in advance.";
-        } else {
-            // Insert appointment
-            $stmt = $conn->prepare("
-                INSERT INTO tbl_health_appointments 
-                (resident_id, appointment_type, appointment_date, appointment_time, 
-                contact_number, purpose, symptoms, special_instructions, status, created_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Scheduled', ?)
-            ");
-            $stmt->bind_param("isssssssi", $resident_id, $appointment_type, $appointment_date, 
-                $appointment_time, $contact_number, $purpose, $symptoms, $special_instructions, $user_id);
-            
-        if ($stmt->execute()) {
-    $appointment_id = $stmt->insert_id; // ← safer: read before close
-    $stmt->close();
-                
-                if ($appointment_id > 0) {
-                    $resident_name = $user_data['first_name'] . ' ' . $user_data['last_name'];
-                    $notification_title = "New Health Appointment Booked";
-                    $notification_message = "$resident_name has booked a $appointment_type appointment for " . 
-                                        date('F j, Y', strtotime($appointment_date)) . " at " . 
-                                        date('g:i A', strtotime($appointment_time)) . ". Purpose: $purpose";
-
-                    $admin_users = $conn->query("
-                        SELECT user_id FROM tbl_users 
-                        WHERE role IN ('Admin', 'Staff', 'Super Admin', 'Super Administrator')
-                    ");
-
-                    if ($admin_users) {
-                        while ($admin = $admin_users->fetch_assoc()) {
-                            createNotification(
-                                $conn,
-                                $admin['user_id'],
-                                $notification_title,
-                                $notification_message,
-                                'appointment_booked',
-                                $appointment_id,
-                                'appointment'
-                            );
-                        }
-                    }
-
-                    $_SESSION['success_message'] = "Appointment booked successfully! You will be notified once it's confirmed.";
-                } else {
-                    error_log("ERROR: Failed to get appointment_id after insert. insert_id = " . $appointment_id);
-                    $_SESSION['error_message'] = "Appointment was created but there was an issue. Please contact admin.";
-                }
-            } else {
-                error_log("ERROR: Failed to insert appointment: " . $stmt->error);
-                $_SESSION['error_message'] = "Error booking appointment. Please try again.";
+    if ($result->num_rows > 0) {
+        $appointment = $result->fetch_assoc(); $stmt->close();
+        if (in_array($appointment['status'], ['Scheduled','Confirmed'])) {
+            $notes = "\n[" . date('Y-m-d H:i') . "] Cancelled by resident" . ($cancellation_reason ? ": $cancellation_reason" : '');
+            $stmt = $conn->prepare("UPDATE tbl_health_appointments SET status='Cancelled',notes=CONCAT(IFNULL(notes,''),?) WHERE appointment_id=?");
+            $stmt->bind_param("si", $notes, $appointment_id);
+            if ($stmt->execute()) {
                 $stmt->close();
-            }
-        }
-        
-        header("Location: book-appointment.php");
-        exit;
-    }
+                $resident_name        = $appointment['first_name'] . ' ' . $appointment['last_name'];
+                $notification_title   = "Appointment Cancelled";
+                $notification_message = "$resident_name has cancelled their " . $appointment['appointment_type'] . " appointment scheduled for " . date('F j, Y', strtotime($appointment['appointment_date'])) . " at " . date('g:i A', strtotime($appointment['appointment_time'])) . ($cancellation_reason ? ". Reason: $cancellation_reason" : ".");
+                $admin_users = $conn->query("SELECT user_id FROM tbl_users WHERE role IN ('Admin','Staff','Super Admin','Super Administrator')");
+                if ($admin_users) { while ($admin = $admin_users->fetch_assoc()) { createNotification($conn, $admin['user_id'], $notification_title, $notification_message, 'appointment_cancelled', $appointment_id, 'appointment'); } }
+                $_SESSION['success_message'] = "Appointment cancelled successfully.";
+            } else { $_SESSION['error_message'] = "Error cancelling appointment."; $stmt->close(); }
+        } else { $_SESSION['error_message'] = "This appointment cannot be cancelled."; }
+    } else { $_SESSION['error_message'] = "Invalid appointment or access denied."; $stmt->close(); }
+    header("Location: book-appointment.php"); exit;
+}
 
-    // HANDLE APPOINTMENT CANCELLATION
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'cancel_appointment') {
-        $appointment_id = (int)$_POST['appointment_id'];
-        $cancellation_reason = isset($_POST['cancellation_reason']) ? trim($_POST['cancellation_reason']) : '';
-        
-        // Verify appointment_id is valid
-        if ($appointment_id <= 0) {
-            $_SESSION['error_message'] = "Invalid appointment ID.";
-            header("Location: book-appointment.php");
-            exit;
-        }
-        
-        // Verify appointment belongs to this resident
-        $stmt = $conn->prepare("
-            SELECT a.*, r.first_name, r.last_name 
-            FROM tbl_health_appointments a
-            JOIN tbl_residents r ON a.resident_id = r.resident_id
-            WHERE a.appointment_id = ? AND a.resident_id = ?
-        ");
-        $stmt->bind_param("ii", $appointment_id, $resident_id);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        
-        if ($result->num_rows > 0) {
-            $appointment = $result->fetch_assoc();
-            $stmt->close();
-            
-            // Check if appointment can be cancelled
-            if (in_array($appointment['status'], ['Scheduled', 'Confirmed'])) {
-                // Update appointment status
-                $notes = "\n[" . date('Y-m-d H:i') . "] Cancelled by resident" . 
-                        ($cancellation_reason ? ": " . $cancellation_reason : '');
-                
-                $stmt = $conn->prepare("
-                    UPDATE tbl_health_appointments 
-                    SET status = 'Cancelled', 
-                        notes = CONCAT(IFNULL(notes, ''), ?)
-                    WHERE appointment_id = ?
-                ");
-                $stmt->bind_param("si", $notes, $appointment_id);
-                
-                if ($stmt->execute()) {
-                    $stmt->close();
-                    
-                    $resident_name = $appointment['first_name'] . ' ' . $appointment['last_name'];
-                    
-                    // Create notifications for Admin and Staff
-                    $notification_title = "Appointment Cancelled";
-                    $notification_message = "$resident_name has cancelled their " . $appointment['appointment_type'] . 
-                                        " appointment scheduled for " . date('F j, Y', strtotime($appointment['appointment_date'])) .
-                                        " at " . date('g:i A', strtotime($appointment['appointment_time'])) .
-                                        ($cancellation_reason ? ". Reason: $cancellation_reason" : ".");
-                    
-                    // Get all Admin and Staff users
-                    $admin_users = $conn->query("
-                        SELECT user_id FROM tbl_users 
-                        WHERE role IN ('Admin', 'Staff', 'Super Admin', 'Super Administrator')
-                    ");
-                    
-                    if ($admin_users) {
-                        while ($admin = $admin_users->fetch_assoc()) {
-                            createNotification(
-                                $conn,
-                                $admin['user_id'],
-                                $notification_title,
-                                $notification_message,
-                                'appointment_cancelled',
-                                $appointment_id,  // Now this will be the actual ID
-                                'appointment'
-                            );
-                        }
-                    }
-                    
-                    $_SESSION['success_message'] = "Appointment cancelled successfully.";
-                } else {
-                    $_SESSION['error_message'] = "Error cancelling appointment.";
-                    $stmt->close();
-                }
-            } else {
-                $_SESSION['error_message'] = "This appointment cannot be cancelled.";
-            }
-        } else {
-            $_SESSION['error_message'] = "Invalid appointment or access denied.";
-            $stmt->close();
-        }
-        
-        header("Location: book-appointment.php");
-        exit;
-    }
+$stmt = $conn->prepare("SELECT * FROM tbl_health_appointments WHERE resident_id=? ORDER BY appointment_date DESC,appointment_time DESC LIMIT 10");
+$stmt->bind_param("i", $resident_id);
+$stmt->execute();
+$appointments = $stmt->get_result();
+$stmt->close();
 
-    // Get my appointments from tbl_health_appointments
-    $stmt = $conn->prepare("
-        SELECT * FROM tbl_health_appointments 
-        WHERE resident_id = ? 
-        ORDER BY appointment_date DESC, appointment_time DESC
-        LIMIT 10
-    ");
-    $stmt->bind_param("i", $resident_id);
-    $stmt->execute();
-    $appointments = $stmt->get_result();
-    $stmt->close();
+include '../../includes/header.php';
+?>
 
-    include '../../includes/header.php';
-    ?>
+<style>
+:root { --rs-blue:#4299e1; --rs-green:#48bb78; --rs-orange:#ed8936; --rs-purple:#9f7aea; --rs-red:#f56565; --rs-radius:12px; --rs-shadow:0 2px 8px rgba(0,0,0,.08); --rs-shadow-md:0 4px 16px rgba(0,0,0,.12); }
 
-    <style>
-    /* Enhanced Modern Styles - EXACT MATCH from view-incidents.php */
-    :root {
-        --transition-speed: 0.3s;
-        --shadow-sm: 0 2px 8px rgba(0,0,0,0.08);
-        --shadow-md: 0 4px 16px rgba(0,0,0,0.12);
-        --shadow-lg: 0 8px 24px rgba(0,0,0,0.15);
-        --border-radius: 12px;
-        --border-radius-lg: 16px;
-    }
+.rs-page { padding:1.5rem; }
+.rs-page-header { margin-bottom:1.5rem; }
+.rs-page-header h2 { font-size:1.4rem; font-weight:700; color:#2d3748; margin:0 0 4px; display:flex; align-items:center; gap:10px; }
+.rs-page-header p  { color:#718096; margin:0; font-size:.9rem; }
 
-    /* Card Enhancements - EXACT match */
-    .card {
-        border: none;
-        border-radius: var(--border-radius);
-        box-shadow: var(--shadow-sm);
-        transition: all var(--transition-speed) ease;
-        overflow: hidden;
-    }
+.rs-alert { border:none; border-radius:var(--rs-radius); padding:1rem 1.25rem; box-shadow:var(--rs-shadow); border-left:4px solid; display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; font-size:.9rem; }
+.rs-alert--success { background:linear-gradient(135deg,#d1f4e0,#e7f9ee); border-left-color:#198754; color:#0f5132; }
+.rs-alert--danger  { background:linear-gradient(135deg,#ffd6d6,#ffe5e5); border-left-color:#dc3545; color:#842029; }
+.rs-alert__close   { margin-left:auto; background:none; border:none; cursor:pointer; opacity:.6; font-size:1.1rem; }
+.rs-alert__close:hover { opacity:1; }
 
-    .card:hover {
-        box-shadow: var(--shadow-md);
-        transform: translateY(-4px);
-    }
+.rs-card { background:#fff; border-radius:var(--rs-radius); box-shadow:var(--rs-shadow); overflow:hidden; margin-bottom:1.5rem; transition:box-shadow .2s; }
+.rs-card:hover { box-shadow:var(--rs-shadow-md); }
+.rs-card__header { background:linear-gradient(135deg,#f8f9fa,#fff); border-bottom:2px solid #e9ecef; padding:1.1rem 1.5rem; display:flex; align-items:center; gap:.6rem; }
+.rs-card__header h5 { font-weight:700; font-size:1rem; margin:0; color:#2d3748; }
+.rs-card__header-icon { width:32px; height:32px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:.9rem; color:#fff; flex-shrink:0; }
+.rs-card__body { padding:1.5rem; }
 
-    .card-header {
-        background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
-        border-bottom: 2px solid #e9ecef;
-        padding: 1.25rem 1.5rem;
-        border-radius: var(--border-radius) var(--border-radius) 0 0 !important;
-    }
+.rs-form-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:1.1rem; }
+.rs-form-group { display:flex; flex-direction:column; }
+.rs-form-group.full { grid-column:1/-1; }
+.rs-form-label { font-weight:600; color:#495057; font-size:.875rem; margin-bottom:.4rem; }
+.rs-form-control { border:2px solid #e9ecef; border-radius:8px; padding:.6rem .9rem; font-size:.95rem; transition:border-color .2s,box-shadow .2s; width:100%; }
+.rs-form-control:focus { border-color:var(--rs-blue); box-shadow:0 0 0 .2rem rgba(66,153,225,.15); outline:none; }
+textarea.rs-form-control { resize:vertical; }
+small.rs-hint { color:#718096; font-size:.78rem; margin-top:3px; }
 
-    .card-header h5 {
-        font-weight: 700;
-        font-size: 1.1rem;
-        margin: 0;
-        display: flex;
-        align-items: center;
-    }
+.rs-btn { border-radius:8px; padding:.55rem 1.25rem; font-weight:600; font-size:.9rem; border:none; cursor:pointer; display:inline-flex; align-items:center; gap:.4rem; transition:all .2s; box-shadow:0 2px 6px rgba(0,0,0,.1); }
+.rs-btn:hover { transform:translateY(-1px); box-shadow:0 4px 10px rgba(0,0,0,.15); }
+.rs-btn--primary   { background:linear-gradient(135deg,#4299e1,#3182ce); color:#fff; }
+.rs-btn--secondary { background:#e2e8f0; color:#4a5568; }
+.rs-btn--danger    { background:linear-gradient(135deg,#f56565,#e53e3e); color:#fff; }
+.rs-btn--icon      { width:32px; height:32px; padding:0; justify-content:center; border-radius:6px; }
+.rs-btn--icon.view    { background:#bee3f8; color:#2b6cb0; }
+.rs-btn--icon.cancel  { background:#fed7d7; color:#c53030; }
 
-    .card-body {
-        padding: 1.75rem;
-    }
+.rs-divider { border-top:2px solid #e9ecef; margin:1.1rem 0 0; padding-top:1.1rem; display:flex; gap:.6rem; }
 
-    /* Alert Enhancements - EXACT match */
-    .alert {
-        border: none;
-        border-radius: var(--border-radius);
-        padding: 1.25rem 1.5rem;
-        box-shadow: var(--shadow-sm);
-        border-left: 4px solid;
-    }
+/* Table */
+.rs-table-wrap { overflow-x:auto; }
+.rs-table { width:100%; border-collapse:collapse; }
+.rs-table thead th { background:linear-gradient(135deg,#f8f9fa,#fff); border-bottom:2px solid #dee2e6; font-weight:700; font-size:.8rem; text-transform:uppercase; letter-spacing:.5px; color:#495057; padding:.8rem 1rem; }
+.rs-table tbody tr { border-bottom:1px solid #f1f3f5; transition:background .15s; }
+.rs-table tbody tr:hover { background:rgba(66,153,225,.04); }
+.rs-table tbody td { padding:.8rem 1rem; vertical-align:middle; font-size:.9rem; }
 
-    .alert-success {
-        background: linear-gradient(135deg, #d1f4e0 0%, #e7f9ee 100%);
-        border-left-color: #198754;
-        color: #0f5132;
-    }
+.rs-badge { display:inline-block; padding:.3rem .75rem; border-radius:50px; font-size:.78rem; font-weight:600; letter-spacing:.2px; }
+.rs-badge--blue    { background:#bee3f8; color:#2c5282; }
+.rs-badge--green   { background:#c6f6d5; color:#276749; }
+.rs-badge--yellow  { background:#fefcbf; color:#744210; }
+.rs-badge--gray    { background:#e2e8f0; color:#4a5568; }
+.rs-badge--purple  { background:#e9d8fd; color:#553c9a; }
+.rs-badge--red     { background:#fed7d7; color:#742a2a; }
 
-    .alert-danger, .alert-error {
-        background: linear-gradient(135deg, #ffd6d6 0%, #ffe5e5 100%);
-        border-left-color: #dc3545;
-        color: #842029;
-    }
+.rs-empty { text-align:center; padding:3rem; color:#a0aec0; }
+.rs-empty i { font-size:3rem; margin-bottom:1rem; display:block; opacity:.4; }
+.rs-empty p { font-size:.95rem; margin:0; }
 
-    .alert i {
-        font-size: 1.1rem;
-    }
+/* Modals */
+.rs-modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); backdrop-filter:blur(3px); z-index:9999; align-items:center; justify-content:center; }
+.rs-modal-overlay.show { display:flex; }
+.rs-modal { background:#fff; border-radius:16px; box-shadow:0 8px 24px rgba(0,0,0,.18); width:90%; max-width:580px; max-height:90vh; overflow:hidden; display:flex; flex-direction:column; }
+.rs-modal__header { padding:1.25rem 1.5rem; border-bottom:2px solid #e9ecef; display:flex; justify-content:space-between; align-items:center; background:linear-gradient(135deg,#f8f9fa,#fff); }
+.rs-modal__title  { margin:0; font-size:1.05rem; font-weight:700; color:#2d3748; display:flex; align-items:center; gap:.5rem; }
+.rs-modal__close  { background:none; border:none; font-size:1.4rem; cursor:pointer; color:#718096; width:30px; height:30px; display:flex; align-items:center; justify-content:center; border-radius:50%; transition:background .2s; }
+.rs-modal__close:hover { background:#e9ecef; color:#2d3748; }
+.rs-modal__body   { padding:1.5rem; overflow-y:auto; }
+.rs-modal__footer { padding:1rem 1.5rem; border-top:2px solid #e9ecef; display:flex; justify-content:flex-end; gap:.6rem; background:#f8f9fa; }
 
-    /* Enhanced Badges */
-    .badge {
-        font-weight: 600;
-        padding: 0.5rem 1rem;
-        border-radius: 50px;
-        font-size: 0.85rem;
-        letter-spacing: 0.3px;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-    }
+.rs-detail-row { display:flex; padding:.65rem 0; border-bottom:1px solid #e9ecef; font-size:.9rem; }
+.rs-detail-row:last-child { border-bottom:none; }
+.rs-detail-row label { font-weight:600; color:#718096; width:170px; flex-shrink:0; font-size:.8rem; text-transform:uppercase; letter-spacing:.3px; padding-top:2px; }
+.rs-detail-row span  { flex:1; color:#2d3748; }
 
-    /* Enhanced Buttons */
-    .btn {
-        border-radius: 8px;
-        padding: 0.625rem 1.5rem;
-        font-weight: 600;
-        transition: all var(--transition-speed) ease;
-        border: none;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-    }
+.rs-cancel-info { background:linear-gradient(135deg,#fffbf0,#fff8e1); border-left:4px solid #ed8936; border-radius:8px; padding:1rem; margin-bottom:1rem; font-size:.9rem; }
+.rs-cancel-info-row { display:flex; justify-content:space-between; padding:.35rem 0; border-bottom:1px solid rgba(0,0,0,.07); }
+.rs-cancel-info-row:last-child { border-bottom:none; }
+.rs-warning-box { background:linear-gradient(135deg,#fffbf0,#fff8e1); border-left:4px solid #ed8936; border-radius:8px; padding:.9rem 1rem; margin-bottom:1rem; font-size:.875rem; color:#744210; display:flex; gap:.5rem; }
 
-    .btn:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    }
+@media(max-width:768px){ .rs-form-grid{ grid-template-columns:1fr; } }
+</style>
 
-    .btn:active {
-        transform: translateY(0);
-    }
+<div class="rs-page">
+    <div class="rs-page-header">
+        <h2><i class="fas fa-calendar-plus" style="color:var(--rs-blue);"></i> Book Appointment</h2>
+        <p>Schedule your health center visit</p>
+    </div>
 
-    .btn-icon {
-        width: 32px;
-        height: 32px;
-        padding: 0;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 6px;
-        margin: 0 2px;
-    }
+    <?php if (isset($_SESSION['success_message'])): ?>
+    <div class="rs-alert rs-alert--success">
+        <i class="fas fa-check-circle"></i>
+        <?php echo htmlspecialchars($_SESSION['success_message']); unset($_SESSION['success_message']); ?>
+        <button class="rs-alert__close" onclick="this.parentElement.remove()">×</button>
+    </div>
+    <?php endif; ?>
+    <?php if (isset($_SESSION['error_message'])): ?>
+    <div class="rs-alert rs-alert--danger">
+        <i class="fas fa-exclamation-circle"></i>
+        <?php echo htmlspecialchars($_SESSION['error_message']); unset($_SESSION['error_message']); ?>
+        <button class="rs-alert__close" onclick="this.parentElement.remove()">×</button>
+    </div>
+    <?php endif; ?>
 
-    /* Form Enhancements */
-    .form-label {
-        font-weight: 600;
-        color: #495057;
-        margin-bottom: 0.5rem;
-        font-size: 0.9rem;
-    }
-
-    .form-control, .form-select {
-        border: 2px solid #e9ecef;
-        border-radius: 8px;
-        padding: 0.625rem 1rem;
-        transition: all var(--transition-speed) ease;
-        font-size: 0.95rem;
-    }
-
-    .form-control:focus, .form-select:focus {
-        border-color: #0d6efd;
-        box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.1);
-        outline: none;
-    }
-
-    .form-grid {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 1.25rem;
-    }
-
-    .form-group {
-        display: flex;
-        flex-direction: column;
-    }
-
-    .form-group.full-width {
-        grid-column: 1 / -1;
-    }
-
-    /* Table Enhancements */
-    .table {
-        margin-bottom: 0;
-    }
-
-    .table thead th {
-        background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
-        border-bottom: 2px solid #dee2e6;
-        font-weight: 700;
-        font-size: 0.875rem;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        color: #495057;
-        padding: 1rem;
-    }
-
-    .table tbody tr {
-        transition: all var(--transition-speed) ease;
-        border-bottom: 1px solid #f1f3f5;
-    }
-
-    .table tbody tr:hover {
-        background: linear-gradient(135deg, rgba(13, 110, 253, 0.03) 0%, rgba(13, 110, 253, 0.05) 100%);
-    }
-
-    .table tbody td {
-        padding: 1rem;
-        vertical-align: middle;
-    }
-
-    /* Empty State */
-    .empty-state {
-        text-align: center;
-        padding: 4rem 2rem;
-        color: #6c757d;
-    }
-
-    .empty-state i {
-        font-size: 4rem;
-        margin-bottom: 1.5rem;
-        opacity: 0.3;
-    }
-
-    .empty-state h3 {
-        font-size: 1.5rem;
-        font-weight: 700;
-        margin-bottom: 1rem;
-    }
-
-    .empty-state p {
-        font-size: 1.1rem;
-        margin-bottom: 0;
-    }
-
-    /* Modal Styles */
-    .modal {
-        display: none;
-        position: fixed;
-        z-index: 9999;
-        left: 0;
-        top: 0;
-        width: 100%;
-        height: 100%;
-        overflow: auto;
-        background-color: rgba(0, 0, 0, 0.6);
-        backdrop-filter: blur(4px);
-    }
-
-    .modal.show {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .modal-content {
-        background: white;
-        border-radius: var(--border-radius-lg);
-        box-shadow: var(--shadow-lg);
-        width: 90%;
-        max-width: 600px;
-        max-height: 90vh;
-        overflow: hidden;
-        display: flex;
-        flex-direction: column;
-    }
-
-    .modal-header {
-        padding: 1.5rem;
-        border-bottom: 2px solid #e9ecef;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
-    }
-
-    .modal-title {
-        margin: 0;
-        font-size: 1.25rem;
-        font-weight: 700;
-        color: #2d3748;
-    }
-
-    .close-btn {
-        background: none;
-        border: none;
-        font-size: 1.5rem;
-        cursor: pointer;
-        color: #718096;
-        transition: all var(--transition-speed) ease;
-        width: 32px;
-        height: 32px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 50%;
-    }
-
-    .close-btn:hover {
-        background: #e9ecef;
-        color: #2d3748;
-    }
-
-    .modal-body {
-        padding: 1.75rem;
-        overflow-y: auto;
-    }
-
-    .appointment-detail-row {
-        display: flex;
-        padding: 0.75rem 0;
-        border-bottom: 1px solid #e9ecef;
-    }
-
-    .appointment-detail-row:last-child {
-        border-bottom: none;
-    }
-
-    .appointment-detail-row label {
-        font-weight: 600;
-        color: #718096;
-        width: 180px;
-        flex-shrink: 0;
-    }
-
-    .appointment-detail-row span {
-        color: #2d3748;
-        flex: 1;
-    }
-
-    /* Cancel Modal */
-    .cancel-info {
-        background: linear-gradient(135deg, #fff3cd 0%, #fff8e1 100%);
-        padding: 1rem;
-        border-radius: 8px;
-        margin-bottom: 1rem;
-        border-left: 4px solid #ffc107;
-    }
-
-    .cancel-info-row {
-        display: flex;
-        justify-content: space-between;
-        padding: 0.5rem 0;
-        border-bottom: 1px solid rgba(0,0,0,0.1);
-    }
-
-    .cancel-info-row:last-child {
-        border-bottom: none;
-    }
-
-    .warning-text {
-        background: linear-gradient(135deg, #fff3cd 0%, #fff8e1 100%);
-        border-left: 4px solid #ffc107;
-        padding: 1rem;
-        border-radius: 8px;
-        margin-bottom: 1.5rem;
-        color: #856404;
-        display: flex;
-        align-items: flex-start;
-        gap: 0.5rem;
-    }
-
-    .modal-actions {
-        display: flex;
-        gap: 1rem;
-        margin-top: 1.5rem;
-        justify-content: flex-end;
-    }
-
-    /* Responsive */
-    @media (max-width: 768px) {
-        .container-fluid {
-            padding-left: 1rem;
-            padding-right: 1rem;
-        }
-        
-        .form-grid {
-            grid-template-columns: 1fr;
-        }
-    }
-
-    /* Smooth Scrolling */
-    html {
-        scroll-behavior: smooth;
-    }
-    </style>
-
-    <div class="container-fluid py-4">
-        <!-- Header - EXACT MATCH from view-incidents.php -->
-        <div class="row mb-4">
-            <div class="col-md-12">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h2 class="mb-0 fw-bold">
-                            <i class="fas fa-calendar-plus me-2"></i>
-                            Book Appointment
-                        </h2>
-                        <p class="text-muted mb-0 mt-1">Schedule your health center visit</p>
+    <!-- Book Form -->
+    <div class="rs-card">
+        <div class="rs-card__header">
+            <div class="rs-card__header-icon" style="background:var(--rs-blue);"><i class="fas fa-edit"></i></div>
+            <h5>Book New Appointment</h5>
+        </div>
+        <div class="rs-card__body">
+            <form method="POST" id="appointmentForm">
+                <input type="hidden" name="action" value="book_appointment">
+                <div class="rs-form-grid">
+                    <div class="rs-form-group">
+                        <label class="rs-form-label">Appointment Type <span style="color:var(--rs-red);">*</span></label>
+                        <select name="appointment_type" class="rs-form-control" required>
+                            <option value="">Select Type</option>
+                            <?php foreach(['General Check-up','Vaccination','Prenatal','Dental','Family Planning','Medical Consultation','Laboratory','Other'] as $t): ?>
+                            <option value="<?php echo $t; ?>"><?php echo $t; ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="rs-form-group">
+                        <label class="rs-form-label">Preferred Date <span style="color:var(--rs-red);">*</span></label>
+                        <input type="date" name="appointment_date" class="rs-form-control" required min="<?php echo date('Y-m-d', strtotime('+1 day')); ?>">
+                        <small class="rs-hint">Must be booked at least 1 day in advance</small>
+                    </div>
+                    <div class="rs-form-group">
+                        <label class="rs-form-label">Preferred Time <span style="color:var(--rs-red);">*</span></label>
+                        <select name="appointment_time" class="rs-form-control" required>
+                            <option value="">Select Time</option>
+                            <?php foreach(['08:00:00'=>'8:00 AM','09:00:00'=>'9:00 AM','10:00:00'=>'10:00 AM','11:00:00'=>'11:00 AM','13:00:00'=>'1:00 PM','14:00:00'=>'2:00 PM','15:00:00'=>'3:00 PM','16:00:00'=>'4:00 PM'] as $v=>$l): ?>
+                            <option value="<?php echo $v; ?>"><?php echo $l; ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="rs-form-group">
+                        <label class="rs-form-label">Contact Number <span style="color:var(--rs-red);">*</span></label>
+                        <input type="text" name="contact_number" class="rs-form-control" required placeholder="09XX XXX XXXX">
+                    </div>
+                    <div class="rs-form-group full">
+                        <label class="rs-form-label">Purpose / Reason for Visit <span style="color:var(--rs-red);">*</span></label>
+                        <textarea name="purpose" class="rs-form-control" rows="3" required placeholder="Describe your reason for booking this appointment"></textarea>
+                    </div>
+                    <div class="rs-form-group full">
+                        <label class="rs-form-label">Symptoms (if any)</label>
+                        <textarea name="symptoms" class="rs-form-control" rows="2" placeholder="Describe any symptoms you're experiencing"></textarea>
+                    </div>
+                    <div class="rs-form-group full">
+                        <label class="rs-form-label">Special Instructions</label>
+                        <textarea name="special_instructions" class="rs-form-control" rows="2" placeholder="Any special requests or concerns"></textarea>
                     </div>
                 </div>
-            </div>
-        </div>
-
-        <?php if (isset($_SESSION['success_message'])): ?>
-            <div class="alert alert-success alert-dismissible fade show">
-                <i class="fas fa-check-circle me-2"></i>
-                <?php 
-                echo $_SESSION['success_message']; 
-                unset($_SESSION['success_message']);
-                ?>
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-        <?php endif; ?>
-
-        <?php if (isset($_SESSION['error_message'])): ?>
-            <div class="alert alert-danger alert-dismissible fade show">
-                <i class="fas fa-exclamation-circle me-2"></i>
-                <?php 
-                echo $_SESSION['error_message']; 
-                unset($_SESSION['error_message']);
-                ?>
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-        <?php endif; ?>
-
-        <!-- Appointment Form -->
-        <div class="card border-0 shadow-sm mb-4">
-            <div class="card-header">
-                <h5>
-                    <i class="fas fa-edit me-2"></i>Book New Appointment
-                </h5>
-            </div>
-            <div class="card-body">
-                <form method="POST" id="appointmentForm">
-                    <input type="hidden" name="action" value="book_appointment">
-                    
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label class="form-label">Appointment Type *</label>
-                            <select name="appointment_type" class="form-control" required>
-                                <option value="">Select Type</option>
-                                <option value="General Check-up">General Check-up</option>
-                                <option value="Vaccination">Vaccination</option>
-                                <option value="Prenatal">Prenatal</option>
-                                <option value="Dental">Dental</option>
-                                <option value="Family Planning">Family Planning</option>
-                                <option value="Medical Consultation">Medical Consultation</option>
-                                <option value="Laboratory">Laboratory</option>
-                                <option value="Other">Other</option>
-                            </select>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label class="form-label">Preferred Date *</label>
-                            <input type="date" name="appointment_date" class="form-control" required min="<?php echo date('Y-m-d', strtotime('+1 day')); ?>">
-                            <small class="text-muted">Appointments must be booked at least 1 day in advance</small>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label class="form-label">Preferred Time *</label>
-                            <select name="appointment_time" class="form-control" required>
-                                <option value="">Select Time</option>
-                                <option value="08:00:00">8:00 AM</option>
-                                <option value="09:00:00">9:00 AM</option>
-                                <option value="10:00:00">10:00 AM</option>
-                                <option value="11:00:00">11:00 AM</option>
-                                <option value="13:00:00">1:00 PM</option>
-                                <option value="14:00:00">2:00 PM</option>
-                                <option value="15:00:00">3:00 PM</option>
-                                <option value="16:00:00">4:00 PM</option>
-                            </select>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label class="form-label">Contact Number *</label>
-                            <input type="text" name="contact_number" class="form-control" required placeholder="09XX XXX XXXX">
-                        </div>
-                        
-                        <div class="form-group full-width">
-                            <label class="form-label">Purpose/Reason for Visit *</label>
-                            <textarea name="purpose" class="form-control" rows="3" required placeholder="Please describe your reason for booking this appointment"></textarea>
-                        </div>
-                        
-                        <div class="form-group full-width">
-                            <label class="form-label">Symptoms (if any)</label>
-                            <textarea name="symptoms" class="form-control" rows="2" placeholder="Describe any symptoms you're experiencing"></textarea>
-                        </div>
-                        
-                        <div class="form-group full-width">
-                            <label class="form-label">Special Instructions</label>
-                            <textarea name="special_instructions" class="form-control" rows="2" placeholder="Any special requests or concerns"></textarea>
-                        </div>
-                    </div>
-                    
-                    <div class="d-flex gap-2 mt-3 pt-3" style="border-top: 2px solid #e9ecef;">
-                        <button type="submit" class="btn btn-primary">
-                            <i class="fas fa-calendar-check me-2"></i>Book Appointment
-                        </button>
-                        <button type="reset" class="btn btn-secondary">
-                            <i class="fas fa-redo me-2"></i>Reset
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-
-        <!-- My Appointments -->
-        <div class="card border-0 shadow-sm">
-            <div class="card-header">
-                <h5>
-                    <i class="fas fa-calendar-alt me-2"></i>My Appointments
-                </h5>
-            </div>
-            <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle">
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Time</th>
-                                <th>Type</th>
-                                <th>Purpose</th>
-                                <th>Status</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php if ($appointments->num_rows > 0): ?>
-                                <?php while ($apt = $appointments->fetch_assoc()): ?>
-                                    <tr>
-                                        <td><?php echo date('M d, Y', strtotime($apt['appointment_date'])); ?></td>
-                                        <td><?php echo date('h:i A', strtotime($apt['appointment_time'])); ?></td>
-                                        <td><span class="badge bg-info"><?php echo htmlspecialchars($apt['appointment_type']); ?></span></td>
-                                        <td><?php echo htmlspecialchars(substr($apt['purpose'], 0, 50)) . (strlen($apt['purpose']) > 50 ? '...' : ''); ?></td>
-                                        <td>
-                                            <span class="badge bg-<?php 
-                                                echo $apt['status'] === 'Confirmed' ? 'success' : 
-                                                    ($apt['status'] === 'Scheduled' ? 'warning' : 
-                                                    ($apt['status'] === 'Completed' ? 'info' : 
-                                                    ($apt['status'] === 'Cancelled' ? 'secondary' : 'warning'))); 
-                                            ?>">
-                                                <?php echo $apt['status']; ?>
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <div class="d-flex gap-1">
-                                                <button class="btn-icon btn-info" onclick='viewAppointment(<?php echo json_encode($apt); ?>)' title="View Details">
-                                                    <i class="fas fa-eye"></i>
-                                                </button>
-                                                <?php if (in_array($apt['status'], ['Scheduled', 'Confirmed'])): ?>
-                                                    <button class="btn-icon btn-danger" 
-                                                            onclick="openCancelModal(<?php echo intval($apt['appointment_id']); ?>, <?php echo htmlspecialchars(json_encode($apt), ENT_QUOTES, 'UTF-8'); ?>)" 
-                                                            title="Cancel">
-                                                        <i class="fas fa-times"></i>
-                                                    </button>
-                                                <?php endif; ?>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                <?php endwhile; ?>
-                            <?php else: ?>
-                                <tr>
-                                    <td colspan="6">
-                                        <div class="empty-state">
-                                            <i class="fas fa-calendar"></i>
-                                            <p>No appointments yet</p>
-                                        </div>
-                                    </td>
-                                </tr>
-                            <?php endif; ?>
-                        </tbody>
-                    </table>
+                <div class="rs-divider">
+                    <button type="submit" class="rs-btn rs-btn--primary"><i class="fas fa-calendar-check"></i> Book Appointment</button>
+                    <button type="reset"  class="rs-btn rs-btn--secondary"><i class="fas fa-redo"></i> Reset</button>
                 </div>
-            </div>
+            </form>
         </div>
     </div>
 
-    <!-- View Appointment Modal -->
-    <div id="viewAppointmentModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 class="modal-title">Appointment Details</h2>
-                <button class="close-btn" onclick="closeModal('viewAppointmentModal')">&times;</button>
-            </div>
-            <div class="modal-body" id="appointmentDetails">
-                <!-- Details will be populated by JavaScript -->
+    <!-- My Appointments -->
+    <div class="rs-card">
+        <div class="rs-card__header">
+            <div class="rs-card__header-icon" style="background:var(--rs-purple);"><i class="fas fa-calendar-alt"></i></div>
+            <h5>My Appointments</h5>
+        </div>
+        <div class="rs-card__body" style="padding:0;">
+            <div class="rs-table-wrap">
+                <table class="rs-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Time</th>
+                            <th>Type</th>
+                            <th>Purpose</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php if ($appointments->num_rows > 0): ?>
+                        <?php while ($apt = $appointments->fetch_assoc()):
+                            $sta_class = match($apt['status']) {
+                                'Confirmed'  => 'rs-badge--green',
+                                'Scheduled'  => 'rs-badge--yellow',
+                                'Completed'  => 'rs-badge--blue',
+                                'Cancelled'  => 'rs-badge--gray',
+                                default      => 'rs-badge--yellow',
+                            };
+                        ?>
+                        <tr>
+                            <td style="font-weight:600;"><?php echo date('M d, Y', strtotime($apt['appointment_date'])); ?></td>
+                            <td><?php echo date('g:i A', strtotime($apt['appointment_time'])); ?></td>
+                            <td><span class="rs-badge rs-badge--blue"><?php echo htmlspecialchars($apt['appointment_type']); ?></span></td>
+                            <td style="color:#4a5568;"><?php echo htmlspecialchars(mb_strimwidth($apt['purpose'], 0, 50, '…')); ?></td>
+                            <td><span class="rs-badge <?php echo $sta_class; ?>"><?php echo $apt['status']; ?></span></td>
+                            <td>
+                                <div style="display:flex;gap:5px;">
+                                    <button class="rs-btn rs-btn--icon view" onclick='viewAppointment(<?php echo json_encode($apt); ?>)' title="View"><i class="fas fa-eye"></i></button>
+                                    <?php if (in_array($apt['status'], ['Scheduled','Confirmed'])): ?>
+                                    <button class="rs-btn rs-btn--icon cancel" onclick="openCancelModal(<?php echo intval($apt['appointment_id']); ?>, <?php echo htmlspecialchars(json_encode($apt), ENT_QUOTES); ?>)" title="Cancel"><i class="fas fa-times"></i></button>
+                                    <?php endif; ?>
+                                </div>
+                            </td>
+                        </tr>
+                        <?php endwhile; ?>
+                    <?php else: ?>
+                        <tr><td colspan="6"><div class="rs-empty"><i class="fas fa-calendar"></i><p>No appointments yet</p></div></td></tr>
+                    <?php endif; ?>
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
+</div>
 
-    <!-- Cancel Appointment Modal -->
-    <div id="cancelAppointmentModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 class="modal-title"><i class="fas fa-exclamation-triangle me-2"></i>Cancel Appointment</h2>
-                <button class="close-btn" onclick="closeModal('cancelAppointmentModal')">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="cancel-info" id="cancelInfo">
-                    <!-- Info will be populated by JavaScript -->
+<!-- View Modal -->
+<div id="viewModal" class="rs-modal-overlay">
+    <div class="rs-modal">
+        <div class="rs-modal__header">
+            <div class="rs-modal__title"><i class="fas fa-calendar-check" style="color:var(--rs-blue);"></i> Appointment Details</div>
+            <button class="rs-modal__close" onclick="closeModal('viewModal')">×</button>
+        </div>
+        <div class="rs-modal__body" id="viewModalBody"></div>
+        <div class="rs-modal__footer">
+            <button class="rs-btn rs-btn--secondary" onclick="closeModal('viewModal')"><i class="fas fa-times"></i> Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Cancel Modal -->
+<div id="cancelModal" class="rs-modal-overlay">
+    <div class="rs-modal">
+        <div class="rs-modal__header">
+            <div class="rs-modal__title"><i class="fas fa-exclamation-triangle" style="color:var(--rs-orange);"></i> Cancel Appointment</div>
+            <button class="rs-modal__close" onclick="closeModal('cancelModal')">×</button>
+        </div>
+        <div class="rs-modal__body">
+            <div class="rs-cancel-info" id="cancelInfo"></div>
+            <div class="rs-warning-box"><i class="fas fa-info-circle" style="margin-top:2px;"></i> Are you sure you want to cancel this appointment? This action cannot be undone.</div>
+            <form method="POST" id="cancelForm">
+                <input type="hidden" name="action" value="cancel_appointment">
+                <input type="hidden" name="appointment_id" id="cancelAptId">
+                <div class="rs-form-group">
+                    <label class="rs-form-label">Reason for Cancellation (Optional)</label>
+                    <textarea name="cancellation_reason" class="rs-form-control" rows="3" placeholder="Please provide a reason…"></textarea>
                 </div>
-                <p class="warning-text">
-                    <i class="fas fa-info-circle"></i> 
-                    Are you sure you want to cancel this appointment? This action cannot be undone.
-                </p>
-                <form method="POST" id="cancelForm">
-                    <input type="hidden" name="action" value="cancel_appointment">
-                    <input type="hidden" name="appointment_id" id="cancelAppointmentId">
-                    
-                    <div class="form-group">
-                        <label class="form-label">Reason for Cancellation (Optional)</label>
-                        <textarea name="cancellation_reason" class="form-control" rows="3" placeholder="Please provide a reason for cancelling..."></textarea>
-                    </div>
-                    
-                    <div class="modal-actions">
-                        <button type="button" class="btn btn-secondary" onclick="closeModal('cancelAppointmentModal')">
-                            <i class="fas fa-arrow-left me-2"></i>Go Back
-                        </button>
-                        <button type="submit" class="btn btn-danger">
-                            <i class="fas fa-times-circle me-2"></i>Yes, Cancel Appointment
-                        </button>
-                    </div>
-                </form>
-            </div>
+            </form>
+        </div>
+        <div class="rs-modal__footer">
+            <button class="rs-btn rs-btn--secondary" onclick="closeModal('cancelModal')"><i class="fas fa-arrow-left"></i> Go Back</button>
+            <button class="rs-btn rs-btn--danger" onclick="document.getElementById('cancelForm').submit()"><i class="fas fa-times-circle"></i> Yes, Cancel</button>
         </div>
     </div>
+</div>
 
-    <script>
-    function viewAppointment(appointment) {
-        const modal = document.getElementById('viewAppointmentModal');
-        const details = document.getElementById('appointmentDetails');
-        
-        const statusClass = appointment.status === 'Confirmed' ? 'bg-success' : 
-                        (appointment.status === 'Scheduled' ? 'bg-warning' : 
-                        (appointment.status === 'Completed' ? 'bg-info' : 'bg-secondary'));
-        
-        details.innerHTML = `
-    <div class="appointment-detail-row">
-        <label>Appointment Type:</label>
-        <span><span class="badge bg-info">${appointment.appointment_type}</span></span>
-    </div>
-    <div class="appointment-detail-row">
-        <label>Date:</label>
-        <span>${new Date(appointment.appointment_date + 'T00:00:00').toLocaleDateString('en-US', {year: 'numeric', month: 'long', day: 'numeric'})}</span>
-    </div>
-    <div class="appointment-detail-row">
-        <label>Time:</label>
-       <span>${new Date(appointment.appointment_date + 'T00:00:00').toLocaleDateString('en-US', {year: 'numeric', month: 'long', day: 'numeric'})}</span>
-    </div>
-    <div class="appointment-detail-row">
-        <label>Status:</label>
-        <span><span class="badge ${statusClass}">${appointment.status}</span></span>
-    </div>
-    <div class="appointment-detail-row">
-        <label>Purpose:</label>
-        <span>${appointment.purpose}</span>
-    </div>
-    ${appointment.symptoms ? `
-    <div class="appointment-detail-row">
-        <label>Symptoms:</label>
-        <span>${appointment.symptoms}</span>
-    </div>
-    ` : ''}
-    <div class="appointment-detail-row">
-        <label>Contact Number:</label>
-        <span>${appointment.contact_number || 'Not provided'}</span>
-    </div>
-    ${appointment.special_instructions ? `
-    <div class="appointment-detail-row">
-        <label>Special Instructions:</label>
-        <span>${appointment.special_instructions}</span>
-    </div>
-    ` : ''}
-    ${appointment.notes ? `
-    <div class="appointment-detail-row">
-        <label>Notes:</label>
-        <span>${appointment.notes}</span>
-    </div>
-    ` : ''}
-`;
-        
-        modal.classList.add('show');
-    }
+<script>
+function viewAppointment(apt) {
+    const statusBadge = {Confirmed:'rs-badge--green',Scheduled:'rs-badge--yellow',Completed:'rs-badge--blue',Cancelled:'rs-badge--gray'}[apt.status]||'rs-badge--gray';
+    const fmt = d => new Date(d+'T00:00:00').toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
+    const row = (l,v) => `<div class="rs-detail-row"><label>${l}</label><span>${v}</span></div>`;
+    document.getElementById('viewModalBody').innerHTML =
+        row('Type',`<span class="rs-badge rs-badge--blue">${apt.appointment_type}</span>`) +
+        row('Date', fmt(apt.appointment_date)) +
+        row('Time', new Date('1970-01-01T'+apt.appointment_time).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})) +
+        row('Status',`<span class="rs-badge ${statusBadge}">${apt.status}</span>`) +
+        row('Purpose', apt.purpose) +
+        (apt.symptoms ? row('Symptoms', apt.symptoms) : '') +
+        row('Contact', apt.contact_number||'Not provided') +
+        (apt.special_instructions ? row('Special Instructions', apt.special_instructions) : '') +
+        (apt.notes ? row('Notes', apt.notes.replace(/\n/g,'<br>')) : '');
+    openModal('viewModal');
+}
 
-    function openCancelModal(appointmentId, appointment) {
-        const modal = document.getElementById('cancelAppointmentModal');
-        const cancelInfo = document.getElementById('cancelInfo');
-        const appointmentIdInput = document.getElementById('cancelAppointmentId');
-        
-        appointmentId = parseInt(appointmentId);
-        
-        if (isNaN(appointmentId) || appointmentId <= 0) {
-            alert('Invalid appointment ID');
-            return;
-        }
-        
-        appointmentIdInput.value = appointmentId;
-        
-        cancelInfo.innerHTML = `
-            <div class="cancel-info-row">
-                <strong>Appointment ID:</strong>
-                <span>#${appointmentId}</span>
-            </div>
-            <div class="cancel-info-row">
-                <strong>Type:</strong>
-                <span>${appointment.appointment_type}</span>
-            </div>
-            <div class="cancel-info-row">
-                <strong>Date:</strong>
-                <span>${new Date(appointment.appointment_date).toLocaleDateString('en-US', {year: 'numeric', month: 'long', day: 'numeric'})}</span>
-            </div>
-            <div class="cancel-info-row">
-                <strong>Time:</strong>
-                <span>${new Date('1970-01-01T' + appointment.appointment_time).toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit'})}</span>
-            </div>
-        `;
-        
-        modal.classList.add('show');
-    }
+function openCancelModal(appointmentId, apt) {
+    appointmentId = parseInt(appointmentId);
+    if (isNaN(appointmentId)||appointmentId<=0) { alert('Invalid appointment ID'); return; }
+    document.getElementById('cancelAptId').value = appointmentId;
+    document.getElementById('cancelInfo').innerHTML =
+        `<div class="rs-cancel-info-row"><strong>Appointment ID</strong><span>#${appointmentId}</span></div>
+         <div class="rs-cancel-info-row"><strong>Type</strong><span>${apt.appointment_type}</span></div>
+         <div class="rs-cancel-info-row"><strong>Date</strong><span>${new Date(apt.appointment_date+'T00:00:00').toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})}</span></div>
+         <div class="rs-cancel-info-row"><strong>Time</strong><span>${new Date('1970-01-01T'+apt.appointment_time).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}</span></div>`;
+    openModal('cancelModal');
+}
 
-    function closeModal(modalId) {
-        document.getElementById(modalId).classList.remove('show');
-    }
+function openModal(id)  { document.getElementById(id).classList.add('show'); }
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+window.onclick = e => { if (e.target.classList.contains('rs-modal-overlay')) e.target.classList.remove('show'); };
 
-    window.onclick = function(event) {
-        if (event.target.classList.contains('modal')) {
-            event.target.classList.remove('show');
-        }
-    }
+document.getElementById('appointmentForm').addEventListener('submit', function(e) {
+    const date = new Date(document.querySelector('[name="appointment_date"]').value);
+    const today = new Date(); today.setHours(0,0,0,0);
+    if (date <= today) { e.preventDefault(); alert('Please select a date at least 1 day from today.'); }
+});
 
-    document.getElementById('appointmentForm').addEventListener('submit', function(e) {
-        const date = new Date(document.querySelector('[name="appointment_date"]').value);
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        
-        if (date <= today) {
-            e.preventDefault();
-            alert('Please select a date at least 1 day from today.');
-        }
-    });
+setTimeout(() => { document.querySelectorAll('.rs-alert').forEach(a => { a.style.transition='opacity .4s'; a.style.opacity='0'; setTimeout(()=>a.remove(),400); }); }, 5000);
+</script>
 
-    document.getElementById('cancelForm').addEventListener('submit', function(e) {
-        const appointmentId = document.getElementById('cancelAppointmentId').value;
-        
-        if (!appointmentId || appointmentId == '' || appointmentId == '0') {
-            e.preventDefault();
-            alert('Error: Invalid appointment ID. Please try again.');
-            return false;
-        }
-    });
-
-    // Auto-dismiss alerts
-    document.addEventListener('DOMContentLoaded', function() {
-        var alerts = document.querySelectorAll('.alert-dismissible');
-        alerts.forEach(function(alert) {
-            setTimeout(function() {
-                var bsAlert = new bootstrap.Alert(alert);
-                bsAlert.close();
-            }, 5000);
-        });
-    });
-    </script>
-
-    <?php include '../../includes/footer.php'; ?>
+<?php include '../../includes/footer.php'; ?>

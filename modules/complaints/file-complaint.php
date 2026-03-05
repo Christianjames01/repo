@@ -38,431 +38,332 @@ if (!$resident_id) {
 include '../../includes/header.php';
 ?>
 
-<style>
-/* Enhanced Modern Styles */
-:root {
-    --transition-speed: 0.3s;
-    --shadow-sm: 0 2px 8px rgba(0,0,0,0.08);
-    --shadow-md: 0 4px 16px rgba(0,0,0,0.12);
-    --shadow-lg: 0 8px 24px rgba(0,0,0,0.15);
-    --border-radius: 12px;
-    --border-radius-lg: 16px;
-}
+<link rel="stylesheet" href="/barangaylink1/assets/css/_db_shared.css">
 
-/* Card Enhancements */
-.card {
-    border: none;
-    border-radius: var(--border-radius);
-    box-shadow: var(--shadow-sm);
-    transition: all var(--transition-speed) ease;
-    overflow: hidden;
-}
-
-.card:hover {
-    box-shadow: var(--shadow-md);
-}
-
-.card-header {
-    background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
-    border-bottom: 2px solid #e9ecef;
-    padding: 1.25rem 1.5rem;
-    font-weight: 700;
-}
-
-.card-body {
-    padding: 1.75rem;
-}
-
-/* Form Enhancements */
-.form-label {
-    font-weight: 700;
-    font-size: 0.875rem;
-    color: #1a1a1a;
-    margin-bottom: 0.75rem;
-}
-
-.form-control, .form-select {
-    border: 2px solid #e9ecef;
-    border-radius: 8px;
-    padding: 0.75rem 1rem;
-    transition: all var(--transition-speed) ease;
-    font-size: 0.95rem;
-}
-
-.form-control:focus, .form-select:focus {
-    border-color: #0d6efd;
-    box-shadow: 0 0 0 4px rgba(13, 110, 253, 0.1);
-}
-
-.form-control-lg, .form-select-lg {
-    padding: 0.875rem 1.25rem;
-    font-size: 1rem;
-}
-
-/* Enhanced Buttons */
-.btn {
-    border-radius: 8px;
-    padding: 0.625rem 1.5rem;
-    font-weight: 600;
-    transition: all var(--transition-speed) ease;
-    border: none;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-}
-
-.btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-}
-
-.btn:active {
-    transform: translateY(0);
-}
-
-.btn-lg {
-    padding: 0.875rem 2rem;
-    font-size: 1.05rem;
-}
-
-.btn-sm {
-    padding: 0.5rem 1rem;
-    font-size: 0.875rem;
-}
-
-/* Alert Enhancements */
-.alert {
-    border: none;
-    border-radius: var(--border-radius);
-    padding: 1.25rem 1.5rem;
-    box-shadow: var(--shadow-sm);
-    border-left: 4px solid;
-}
-
-.alert-danger {
-    background: linear-gradient(135deg, #ffd6d6 0%, #ffe5e5 100%);
-    border-left-color: #dc3545;
-}
-
-.alert i {
-    font-size: 1.1rem;
-}
-
-/* Info Cards */
-.bg-light {
-    background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%) !important;
-}
-
-/* Form Text */
-.form-text {
-    font-size: 0.875rem;
-    color: #6c757d;
-    margin-top: 0.5rem;
-}
-
-/* Checkbox Enhancement */
-.form-check-input {
-    width: 1.25rem;
-    height: 1.25rem;
-    border: 2px solid #dee2e6;
-    border-radius: 4px;
-}
-
-.form-check-input:checked {
-    background-color: #0d6efd;
-    border-color: #0d6efd;
-}
-
-.form-check-label {
-    padding-left: 0.5rem;
-}
-
-/* Priority Border Colors */
-.border-success {
-    border-width: 2px !important;
-}
-
-.border-warning {
-    border-width: 2px !important;
-}
-
-.border-danger {
-    border-width: 2px !important;
-}
-
-/* Responsive Adjustments */
-@media (max-width: 768px) {
-    .container-fluid {
-        padding-left: 1rem;
-        padding-right: 1rem;
-    }
-    
-    .card-body {
-        padding: 1.25rem;
-    }
-    
-    .btn {
-        padding: 0.5rem 1rem;
-        font-size: 0.875rem;
-    }
-}
-
-/* Smooth Scrolling */
-html {
-    scroll-behavior: smooth;
-}
-</style>
-
-<div class="container-fluid py-4">
-    <div class="row justify-content-center">
-        <div class="col-lg-10">
-            <!-- Header -->
-            <div class="row mb-4">
-                <div class="col-12">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h2 class="mb-1 fw-bold">
-                                <i class="fas fa-file-alt me-2 text-primary"></i>
-                                File a Complaint
-                            </h2>
-                            <p class="text-muted mb-0">Submit your concern or complaint to the barangay office</p>
-                        </div>
-                        <a href="view-complaints.php" class="btn btn-secondary">
-                            <i class="fas fa-arrow-left me-2"></i>Back to Complaints
-                        </a>
-                    </div>
-                </div>
+<!-- Hero -->
+<div class="rm-hero">
+    <div class="rm-hero__ring rm-hero__ring--1"></div>
+    <div class="rm-hero__ring rm-hero__ring--2"></div>
+    <div class="rm-hero__ring rm-hero__ring--3"></div>
+    <div class="rm-hero__inner">
+        <div class="rm-hero__left">
+            <div class="rm-hero__icon rm-hero__icon--rose"><i class="fas fa-file-alt"></i></div>
+            <div>
+                <div class="rm-hero__title">File a Complaint</div>
+                <div class="rm-hero__sub">Submit your concern or complaint to the barangay office</div>
             </div>
-
-            <!-- Error Message -->
-            <?php if (isset($_SESSION['error_message'])): ?>
-            <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                <i class="fas fa-exclamation-circle me-2"></i>
-                <?php 
-                echo htmlspecialchars($_SESSION['error_message']); 
-                unset($_SESSION['error_message']);
-                ?>
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-            <?php endif; ?>
-
-            <form action="process-complaint.php" method="POST" enctype="multipart/form-data" id="complaintForm">
-                <input type="hidden" name="action" value="file_complaint">
-                <input type="hidden" name="resident_id" value="<?php echo $resident_id; ?>">
-
-                <div class="row">
-                    <!-- Left Column -->
-                    <div class="col-lg-8">
-                        <!-- Complaint Information -->
-                        <div class="card border-0 shadow-sm mb-4">
-                            <div class="card-header">
-                                <h5 class="mb-0"><i class="fas fa-info-circle me-2"></i>Complaint Information</h5>
-                            </div>
-                            <div class="card-body">
-                                <div class="mb-3">
-                                    <label for="subject" class="form-label">Subject <span class="text-danger">*</span></label>
-                                    <input type="text" class="form-control form-control-lg" id="subject" name="subject" 
-                                           placeholder="Brief description of your complaint" required maxlength="255">
-                                    <div class="form-text">
-                                        <i class="fas fa-info-circle me-1"></i>Keep it short and descriptive
-                                    </div>
-                                </div>
-
-                                <div class="row">
-                                    <div class="col-md-6 mb-3">
-                                        <label for="category" class="form-label">Category <span class="text-danger">*</span></label>
-                                        <select class="form-select form-select-lg" id="category" name="category" required>
-                                            <option value="">Select category</option>
-                                            <option value="Noise">Noise Disturbance</option>
-                                            <option value="Garbage">Garbage/Waste Management</option>
-                                            <option value="Property">Property Dispute</option>
-                                            <option value="Infrastructure">Infrastructure/Road Issues</option>
-                                            <option value="Public Safety">Public Safety Concern</option>
-                                            <option value="Services">Barangay Services</option>
-                                            <option value="Utilities">Utilities (Water/Electric)</option>
-                                            <option value="Animals">Stray Animals</option>
-                                            <option value="Other">Other</option>
-                                        </select>
-                                    </div>
-
-                                    <div class="col-md-6 mb-3">
-                                        <label for="priority" class="form-label">Priority Level <span class="text-danger">*</span></label>
-                                        <select class="form-select form-select-lg" id="priority" name="priority" required>
-                                            <option value="Low">Low - Not urgent, can wait</option>
-                                            <option value="Medium" selected>Medium - Normal concern</option>
-                                            <option value="High">High - Needs attention soon</option>
-                                            <option value="Urgent">Urgent - Immediate attention required</option>
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <div class="mb-3">
-                                    <label for="description" class="form-label">Detailed Description <span class="text-danger">*</span></label>
-                                    <textarea class="form-control" id="description" name="description" rows="6" 
-                                              placeholder="Please provide as much detail as possible about your complaint..." required></textarea>
-                                    <div class="form-text">
-                                        <i class="fas fa-info-circle me-1"></i>
-                                        Include: What happened? When? Where? Who was involved?
-                                    </div>
-                                </div>
-
-                                <div class="mb-3">
-                                    <label for="location" class="form-label">Location/Address</label>
-                                    <input type="text" class="form-control form-control-lg" id="location" name="location" 
-                                           placeholder="Specific location where the issue occurred" value="<?php echo htmlspecialchars($resident_info['address']); ?>">
-                                </div>
-
-                                <div class="mb-3">
-                                    <label for="attachments" class="form-label">Attachments (Optional)</label>
-                                    <input type="file" class="form-control" id="attachments" name="attachments[]" 
-                                           accept="image/*,.pdf,.doc,.docx" multiple>
-                                    <div class="form-text">
-                                        <i class="fas fa-info-circle me-1"></i>
-                                        Upload photos, documents, or evidence (Max 5MB per file, up to 5 files)
-                                    </div>
-                                </div>
-
-                                <div class="form-check mb-3">
-                                    <input class="form-check-input" type="checkbox" id="terms" required>
-                                    <label class="form-check-label" for="terms">
-                                        I certify that the information provided is true and accurate to the best of my knowledge.
-                                    </label>
-                                </div>
-
-                                <div class="d-grid gap-2">
-                                    <button type="submit" class="btn btn-primary btn-lg" id="submitBtn">
-                                        <i class="fas fa-paper-plane me-2"></i>Submit Complaint
-                                    </button>
-                                    <a href="view-complaints.php" class="btn btn-outline-secondary">
-                                        <i class="fas fa-times me-2"></i>Cancel
-                                    </a>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Right Column -->
-                    <div class="col-lg-4">
-                        <!-- Your Information -->
-                        <div class="card border-0 shadow-sm mb-4">
-                            <div class="card-header">
-                                <h5 class="mb-0"><i class="fas fa-user me-2"></i>Your Information</h5>
-                            </div>
-                            <div class="card-body">
-                                <div class="mb-3">
-                                    <label class="text-muted small text-uppercase" style="font-size: 0.75rem; letter-spacing: 0.5px;">Name</label>
-                                    <p class="mb-0 fw-bold"><?php echo htmlspecialchars($resident_info['first_name'] . ' ' . $resident_info['last_name']); ?></p>
-                                </div>
-                                <div class="mb-3">
-                                    <label class="text-muted small text-uppercase" style="font-size: 0.75rem; letter-spacing: 0.5px;">Contact Number</label>
-                                    <p class="mb-0"><?php echo htmlspecialchars($resident_info['contact_number']); ?></p>
-                                </div>
-                                <div class="mb-3">
-                                    <label class="text-muted small text-uppercase" style="font-size: 0.75rem; letter-spacing: 0.5px;">Email</label>
-                                    <p class="mb-0"><?php echo htmlspecialchars($resident_info['email']); ?></p>
-                                </div>
-                                <div class="mb-0">
-                                    <label class="text-muted small text-uppercase" style="font-size: 0.75rem; letter-spacing: 0.5px;">Address</label>
-                                    <p class="mb-0"><?php echo htmlspecialchars($resident_info['address']); ?></p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Important Notes -->
-                        <div class="card border-0 shadow-sm bg-light">
-                            <div class="card-body">
-                                <h6 class="fw-bold mb-3">
-                                    <i class="fas fa-lightbulb me-2 text-warning"></i>Important Notes
-                                </h6>
-                                <ul class="small mb-0 ps-3">
-                                    <li class="mb-2">Provide accurate and honest information</li>
-                                    <li class="mb-2">You will receive a complaint number for tracking</li>
-                                    <li class="mb-2">Response time depends on priority level</li>
-                                    <li class="mb-2">You can track your complaint status online</li>
-                                    <li class="mb-0">For emergencies, call the barangay hotline</li>
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </form>
         </div>
+        <a href="view-complaints.php" class="db-btn db-btn--glass db-btn--sm">
+            <i class="fas fa-arrow-left"></i> Back to Complaints
+        </a>
     </div>
 </div>
 
+<div style="padding: 0 24px 32px;">
+
+<?php if (isset($_SESSION['error_message'])): ?>
+<div class="db-alert db-alert--error">
+    <i class="fas fa-exclamation-circle"></i>
+    <?php echo htmlspecialchars($_SESSION['error_message']); unset($_SESSION['error_message']); ?>
+    <button class="db-alert__close" onclick="this.parentElement.remove()">×</button>
+</div>
+<?php endif; ?>
+
+<form action="process-complaint.php" method="POST" enctype="multipart/form-data" id="complaintForm">
+    <input type="hidden" name="action" value="file_complaint">
+    <input type="hidden" name="resident_id" value="<?php echo $resident_id; ?>">
+
+    <div style="display: grid; grid-template-columns: 1fr 320px; gap: 20px; align-items: start;">
+
+        <!-- ── Left Column ── -->
+        <div>
+
+            <!-- Complaint Information -->
+            <div class="db-panel" style="animation-delay:.05s">
+                <div class="db-panel__header">
+                    <div class="db-panel__title">
+                        <div class="db-panel__icon db-panel__icon--rose"><i class="fas fa-info-circle"></i></div>
+                        <h2>Complaint Information</h2>
+                    </div>
+                </div>
+                <div class="db-panel__body">
+
+                    <div class="db-form-group">
+                        <label class="db-form-label">Subject <span class="req" style="color:var(--db-rose);">*</span></label>
+                        <input type="text" class="db-form-control" id="subject" name="subject"
+                               placeholder="Brief description of your complaint" required maxlength="255">
+                        <div style="font-size:11px; color:var(--db-muted); margin-top:5px;">
+                            <i class="fas fa-info-circle me-1"></i>Keep it short and descriptive
+                        </div>
+                    </div>
+
+                    <div class="db-form-row db-form-row--2">
+                        <div class="db-form-group">
+                            <label class="db-form-label">Category <span style="color:var(--db-rose);">*</span></label>
+                            <select class="db-form-select" id="category" name="category" required>
+                                <option value="">Select category</option>
+                                <option value="Noise">Noise Disturbance</option>
+                                <option value="Garbage">Garbage / Waste Management</option>
+                                <option value="Property">Property Dispute</option>
+                                <option value="Infrastructure">Infrastructure / Road Issues</option>
+                                <option value="Public Safety">Public Safety Concern</option>
+                                <option value="Services">Barangay Services</option>
+                                <option value="Utilities">Utilities (Water / Electric)</option>
+                                <option value="Animals">Stray Animals</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+
+                        <div class="db-form-group">
+                            <label class="db-form-label">Priority Level <span style="color:var(--db-rose);">*</span></label>
+                            <select class="db-form-select" id="priority" name="priority" required>
+                                <option value="Low">Low — Not urgent, can wait</option>
+                                <option value="Medium" selected>Medium — Normal concern</option>
+                                <option value="High">High — Needs attention soon</option>
+                                <option value="Urgent">Urgent — Immediate attention required</option>
+                            </select>
+                            <!-- priority indicator pill -->
+                            <div id="priorityPill" style="margin-top:8px; display:none;">
+                                <span id="priorityBadge" class="db-badge"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="db-form-group">
+                        <label class="db-form-label">Detailed Description <span style="color:var(--db-rose);">*</span></label>
+                        <textarea class="db-form-textarea" id="description" name="description" rows="6"
+                                  placeholder="Please provide as much detail as possible about your complaint…" required></textarea>
+                        <div style="font-size:11px; color:var(--db-muted); margin-top:5px;">
+                            <i class="fas fa-info-circle me-1"></i>Include: What happened? When? Where? Who was involved?
+                        </div>
+                    </div>
+
+                    <div class="db-form-group">
+                        <label class="db-form-label">Location / Address</label>
+                        <input type="text" class="db-form-control" id="location" name="location"
+                               placeholder="Specific location where the issue occurred"
+                               value="<?php echo htmlspecialchars($resident_info['address']); ?>">
+                    </div>
+
+                    <!-- File Upload -->
+                    <div class="db-form-group">
+                        <label class="db-form-label">Attachments <span style="font-weight:400; text-transform:none; letter-spacing:0; color:var(--db-muted);">(Optional)</span></label>
+                        <label for="attachments" class="db-upload-zone" id="uploadZone">
+                            <div class="db-upload-zone__icon"><i class="fas fa-cloud-upload-alt"></i></div>
+                            <div class="db-upload-zone__text" id="uploadText">Click to upload or drag files here</div>
+                            <div class="db-upload-zone__hint">Images, PDF, DOC — Max 5MB each · Up to 5 files</div>
+                        </label>
+                        <input type="file" id="attachments" name="attachments[]"
+                               accept="image/*,.pdf,.doc,.docx" multiple style="display:none;"
+                               onchange="handleAttachments(this)">
+                        <div id="fileList" style="margin-top:8px;"></div>
+                    </div>
+
+                    <!-- Terms -->
+                    <div style="display:flex; align-items:flex-start; gap:10px; padding:14px; background:var(--db-surf2); border:1px solid var(--db-border); border-radius:var(--db-radius-sm); margin-bottom:18px;">
+                        <input type="checkbox" id="terms" name="terms" required
+                               style="width:16px; height:16px; margin-top:2px; accent-color:var(--db-navy); flex-shrink:0; cursor:pointer;">
+                        <label for="terms" style="font-size:12.5px; color:var(--db-text); cursor:pointer; line-height:1.5;">
+                            I certify that the information provided is true and accurate to the best of my knowledge.
+                        </label>
+                    </div>
+
+                    <!-- Actions -->
+                    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                        <button type="submit" class="db-btn db-btn--danger" id="submitBtn">
+                            <i class="fas fa-paper-plane"></i> Submit Complaint
+                        </button>
+                        <a href="view-complaints.php" class="db-btn db-btn--ghost">
+                            <i class="fas fa-times"></i> Cancel
+                        </a>
+                    </div>
+
+                </div>
+            </div>
+
+        </div><!-- /left -->
+
+        <!-- ── Right Column ── -->
+        <div>
+
+            <!-- Resident Info -->
+            <div class="db-side-card">
+                <div class="db-side-card__header">
+                    <div class="db-panel__icon db-panel__icon--navy" style="width:28px;height:28px;font-size:12px;"><i class="fas fa-user"></i></div>
+                    <span>Your Information</span>
+                    <span class="db-badge db-badge--muted" style="margin-left:auto;"><i class="fas fa-lock"></i> Auto-filled</span>
+                </div>
+                <div class="db-side-card__body">
+                    <div style="display:flex; flex-direction:column; gap:12px;">
+                        <div>
+                            <div style="font-size:10.5px; color:var(--db-muted); text-transform:uppercase; letter-spacing:.5px; font-weight:600; margin-bottom:3px;">Name</div>
+                            <div style="font-size:13px; font-weight:700;"><?php echo htmlspecialchars($resident_info['first_name'] . ' ' . $resident_info['last_name']); ?></div>
+                        </div>
+                        <div>
+                            <div style="font-size:10.5px; color:var(--db-muted); text-transform:uppercase; letter-spacing:.5px; font-weight:600; margin-bottom:3px;">Contact Number</div>
+                            <div style="font-size:13px;"><?php echo htmlspecialchars($resident_info['contact_number']); ?></div>
+                        </div>
+                        <div>
+                            <div style="font-size:10.5px; color:var(--db-muted); text-transform:uppercase; letter-spacing:.5px; font-weight:600; margin-bottom:3px;">Email</div>
+                            <div style="font-size:13px;"><?php echo htmlspecialchars($resident_info['email']); ?></div>
+                        </div>
+                        <div>
+                            <div style="font-size:10.5px; color:var(--db-muted); text-transform:uppercase; letter-spacing:.5px; font-weight:600; margin-bottom:3px;">Address</div>
+                            <div style="font-size:12.5px; color:var(--db-muted);"><?php echo htmlspecialchars($resident_info['address']); ?></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Important Notes -->
+            <div class="db-side-card">
+                <div class="db-side-card__header">
+                    <div class="db-panel__icon db-panel__icon--amber" style="width:28px;height:28px;font-size:12px;"><i class="fas fa-lightbulb"></i></div>
+                    <span>Important Notes</span>
+                </div>
+                <div class="db-side-card__body" style="font-size:12px; color:var(--db-muted); line-height:1.6;">
+                    <p style="margin:0 0 7px;">• Provide accurate and honest information</p>
+                    <p style="margin:0 0 7px;">• You will receive a complaint number for tracking</p>
+                    <p style="margin:0 0 7px;">• Response time depends on priority level</p>
+                    <p style="margin:0 0 7px;">• You can track your complaint status online</p>
+                    <p style="margin:0;">• For emergencies, call the barangay hotline</p>
+                </div>
+            </div>
+
+            <!-- Priority Guide -->
+            <div class="db-side-card">
+                <div class="db-side-card__header">
+                    <div class="db-panel__icon db-panel__icon--purple" style="width:28px;height:28px;font-size:12px;"><i class="fas fa-layer-group"></i></div>
+                    <span>Priority Guide</span>
+                </div>
+                <div class="db-side-card__body" style="display:flex; flex-direction:column; gap:8px;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span class="db-badge db-badge--success"><i class="fas fa-circle"></i> Low</span>
+                        <span style="font-size:11.5px; color:var(--db-muted);">Not urgent, can wait</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span class="db-badge db-badge--amber"><i class="fas fa-circle"></i> Medium</span>
+                        <span style="font-size:11.5px; color:var(--db-muted);">Normal concern</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span class="db-badge db-badge--rose"><i class="fas fa-exclamation-circle"></i> High</span>
+                        <span style="font-size:11.5px; color:var(--db-muted);">Needs attention soon</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span class="db-badge db-badge--danger" style="background:#fee2e2; color:#7f1d1d; border:none;"><i class="fas fa-fire"></i> Urgent</span>
+                        <span style="font-size:11.5px; color:var(--db-muted);">Immediate attention</span>
+                    </div>
+                </div>
+            </div>
+
+        </div><!-- /right -->
+
+    </div><!-- /grid -->
+</form>
+
+</div><!-- /padding wrapper -->
+
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const form = document.getElementById('complaintForm');
-    const submitBtn = document.getElementById('submitBtn');
-    
-    // Form validation
-    form.addEventListener('submit', function(e) {
-        if (!form.checkValidity()) {
-            e.preventDefault();
-            e.stopPropagation();
-        } else {
-            // Show loading state
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Submitting...';
-        }
-        form.classList.add('was-validated');
-    });
+// Priority badge colours
+const priorityMap = {
+    Low:    { cls: 'db-badge--success', icon: 'fa-circle',            label: 'Low Priority' },
+    Medium: { cls: 'db-badge--amber',   icon: 'fa-exclamation-circle', label: 'Medium Priority' },
+    High:   { cls: 'db-badge--rose',    icon: 'fa-exclamation-triangle',label: 'High Priority' },
+    Urgent: { cls: 'db-badge--danger',  icon: 'fa-fire',               label: 'Urgent' },
+};
 
-    // File upload validation
-    const fileInput = document.getElementById('attachments');
-    fileInput.addEventListener('change', function() {
-        const files = this.files;
-        let totalSize = 0;
-        let valid = true;
-
-        if (files.length > 5) {
-            alert('Maximum 5 files allowed');
-            this.value = '';
-            return;
-        }
-
-        for (let file of files) {
-            totalSize += file.size;
-            if (file.size > 5242880) { // 5MB
-                alert('Each file must be less than 5MB');
-                this.value = '';
-                return;
-            }
-        }
-
-        if (totalSize > 26214400) { // 25MB total
-            alert('Total file size must be less than 25MB');
-            this.value = '';
-            return;
-        }
-    });
-
-    // Priority color coding
-    const prioritySelect = document.getElementById('priority');
-    prioritySelect.addEventListener('change', function() {
-        this.classList.remove('border-success', 'border-warning', 'border-danger');
-        
-        switch(this.value) {
-            case 'Low':
-                this.classList.add('border-success');
-                break;
-            case 'Medium':
-                this.classList.add('border-warning');
-                break;
-            case 'High':
-            case 'Urgent':
-                this.classList.add('border-danger');
-                break;
-        }
-    });
-
-    // Auto-dismiss alerts after 5 seconds
-    setTimeout(function() {
-        const alerts = document.querySelectorAll('.alert-dismissible');
-        alerts.forEach(alert => {
-            const bsAlert = new bootstrap.Alert(alert);
-            bsAlert.close();
-        });
-    }, 5000);
+document.getElementById('priority').addEventListener('change', function () {
+    const pill   = document.getElementById('priorityPill');
+    const badge  = document.getElementById('priorityBadge');
+    const config = priorityMap[this.value];
+    if (!config) { pill.style.display = 'none'; return; }
+    badge.className = 'db-badge ' + config.cls;
+    badge.innerHTML = `<i class="fas ${config.icon}"></i> ${config.label}`;
+    pill.style.display = 'block';
 });
+
+// Trigger on load for default selected value
+document.getElementById('priority').dispatchEvent(new Event('change'));
+
+// File upload handling
+function handleAttachments(input) {
+    const zone     = document.getElementById('uploadZone');
+    const text     = document.getElementById('uploadText');
+    const fileList = document.getElementById('fileList');
+    const files    = input.files;
+
+    if (files.length > 5) {
+        alert('Maximum 5 files allowed.');
+        input.value = '';
+        zone.classList.remove('has-file');
+        text.textContent = 'Click to upload or drag files here';
+        fileList.innerHTML = '';
+        return;
+    }
+
+    let totalSize = 0;
+    for (let f of files) {
+        if (f.size > 5 * 1024 * 1024) {
+            alert(`File "${f.name}" exceeds 5MB limit.`);
+            input.value = '';
+            zone.classList.remove('has-file');
+            text.textContent = 'Click to upload or drag files here';
+            fileList.innerHTML = '';
+            return;
+        }
+        totalSize += f.size;
+    }
+
+    if (files.length > 0) {
+        zone.classList.add('has-file');
+        text.innerHTML = `<i class="fas fa-check-circle" style="color:var(--db-success);"></i> ${files.length} file${files.length > 1 ? 's' : ''} selected`;
+
+        let html = '';
+        for (let f of files) {
+            const kb   = (f.size / 1024).toFixed(1);
+            const isPdf = f.type === 'application/pdf';
+            const icon = isPdf ? 'fa-file-pdf' : f.type.startsWith('image/') ? 'fa-image' : 'fa-file';
+            const iconColor = isPdf ? 'var(--db-rose)' : f.type.startsWith('image/') ? 'var(--db-sky)' : 'var(--db-muted)';
+            html += `
+                <div style="display:flex; align-items:center; gap:10px; padding:8px 12px;
+                            background:var(--db-surf2); border:1px solid var(--db-border);
+                            border-radius:var(--db-radius-sm); margin-bottom:6px;">
+                    <i class="fas ${icon}" style="color:${iconColor}; font-size:16px; flex-shrink:0;"></i>
+                    <div style="flex:1; min-width:0;">
+                        <div style="font-size:12.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${f.name}</div>
+                        <div style="font-size:11px; color:var(--db-muted);">${kb} KB</div>
+                    </div>
+                    <span class="db-badge db-badge--success"><i class="fas fa-check"></i></span>
+                </div>`;
+        }
+        fileList.innerHTML = html;
+    } else {
+        zone.classList.remove('has-file');
+        text.textContent = 'Click to upload or drag files here';
+        fileList.innerHTML = '';
+    }
+}
+
+// Form submit loading state
+document.getElementById('complaintForm').addEventListener('submit', function (e) {
+    if (!this.checkValidity()) {
+        e.preventDefault();
+        this.reportValidity();
+        return;
+    }
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting…';
+});
+
+// Auto-dismiss alerts
+setTimeout(() => {
+    document.querySelectorAll('.db-alert').forEach(a => {
+        a.style.transition = 'opacity .4s';
+        a.style.opacity = '0';
+        setTimeout(() => a.remove(), 400);
+    });
+}, 5000);
 </script>
 
 <?php include '../../includes/footer.php'; ?>

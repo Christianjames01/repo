@@ -1,6 +1,11 @@
 <?php
 // config/config.php
 
+
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 // ============================================
 // CRITICAL: Set timezone FIRST before anything else
 // ============================================

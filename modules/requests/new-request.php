@@ -78,7 +78,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_request'])) {
         if (!empty($_POST['business_name'])) {
             $purpose .= "\n\nBusiness Information:";
             $purpose .= "\nBusiness Name: " . sanitizeInput($_POST['business_name']);
-            
             if (!empty($_POST['business_address'])) {
                 $purpose .= "\nBusiness Address: " . sanitizeInput($_POST['business_address']);
             }
@@ -105,1132 +104,729 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_request'])) {
                 VALUES (?, ?, ?, ?, ?, NOW())";
         
         $stmt = $conn->prepare($sql);
-        if (!$stmt) {
-            throw new Exception('Database prepare failed: ' . $conn->error);
-        }
+        if (!$stmt) throw new Exception('Database prepare failed: ' . $conn->error);
         
         $stmt->bind_param("iissi", $resident_id, $request_type_id, $purpose, $status, $payment_status);
-        
-        if (!$stmt->execute()) {
-            throw new Exception('Failed to create request: ' . $stmt->error);
-        }
+        if (!$stmt->execute()) throw new Exception('Failed to create request: ' . $stmt->error);
         
         $request_id = $conn->insert_id;
-        error_log("Request created with ID: " . $request_id);
         $stmt->close();
 
         $type_name_query = "SELECT request_type_name FROM tbl_request_types WHERE request_type_id = ?";
         $type_name_stmt = $conn->prepare($type_name_query);
         $type_name_stmt->bind_param("i", $request_type_id);
         $type_name_stmt->execute();
-        $type_name_result = $type_name_stmt->get_result();
-        $type_data = $type_name_result->fetch_assoc();
+        $type_data = $type_name_stmt->get_result()->fetch_assoc();
         $request_type_name = $type_data['request_type_name'] ?? 'Document';
         $type_name_stmt->close();
 
-        // Get resident information for notification
         $resident_info_query = "SELECT first_name, last_name FROM tbl_residents WHERE resident_id = ?";
         $resident_info_stmt = $conn->prepare($resident_info_query);
         $resident_info_stmt->bind_param("i", $resident_id);
         $resident_info_stmt->execute();
-        $resident_info_result = $resident_info_stmt->get_result();
-        $resident_info = $resident_info_result->fetch_assoc();
+        $resident_info = $resident_info_stmt->get_result()->fetch_assoc();
         $resident_info_stmt->close();
-
         $resident_name = $resident_info['first_name'] . ' ' . $resident_info['last_name'];
 
-        // Get all admins and staff to notify
         $admin_query = "SELECT user_id FROM tbl_users WHERE role IN ('Super Admin', 'Super Administrator', 'Staff', 'admin') AND is_active = 1";
         $admin_result = $conn->query($admin_query);
 
-        $notification_title = "New Document Request";
+        $notification_title   = "New Document Request";
         $notification_message = "$resident_name has submitted a request for $request_type_name";
-        $notification_type = "document_request_submitted";
-        $reference_type = "request";
+        $notification_type    = "document_request_submitted";
+        $reference_type       = "request";
 
-        // Create notification for each admin/staff
         if ($admin_result && $admin_result->num_rows > 0) {
             while ($admin = $admin_result->fetch_assoc()) {
                 $admin_id = $admin['user_id'];
-                
-                $notif_query = "INSERT INTO tbl_notifications 
-                               (user_id, type, reference_type, reference_id, title, message, is_read, created_at) 
-                               VALUES (?, ?, ?, ?, ?, ?, 0, NOW())";
-                
+                $notif_query = "INSERT INTO tbl_notifications (user_id, type, reference_type, reference_id, title, message, is_read, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, NOW())";
                 $notif_stmt = $conn->prepare($notif_query);
                 if ($notif_stmt) {
-                    $notif_stmt->bind_param("ississ", 
-                        $admin_id, 
-                        $notification_type, 
-                        $reference_type, 
-                        $request_id, 
-                        $notification_title, 
-                        $notification_message
-                    );
-                    
-                    if ($notif_stmt->execute()) {
-                        error_log("✅ Notification created for admin user_id: $admin_id");
-                    } else {
-                        error_log("❌ Failed to create notification: " . $notif_stmt->error);
-                    }
-                    
+                    $notif_stmt->bind_param("ississ", $admin_id, $notification_type, $reference_type, $request_id, $notification_title, $notification_message);
+                    $notif_stmt->execute();
                     $notif_stmt->close();
                 }
             }
-            
-            error_log("✅ Document request notifications sent to " . $admin_result->num_rows . " admin(s)/staff");
-        } else {
-            error_log("⚠️ WARNING: No admins/staff found to notify!");
         }
 
-        // ── Notify the RESIDENT that their request was submitted ──────────────
-        $res_notif_query = "INSERT INTO tbl_notifications 
-                           (user_id, type, reference_type, reference_id, title, message, is_read, created_at) 
-                           VALUES (?, ?, ?, ?, ?, ?, 0, NOW())";
+        $res_notif_query = "INSERT INTO tbl_notifications (user_id, type, reference_type, reference_id, title, message, is_read, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, NOW())";
         $res_notif_stmt = $conn->prepare($res_notif_query);
         if ($res_notif_stmt) {
             $res_notif_type    = "document_request_submitted";
             $res_ref_type      = "request";
             $res_notif_title   = "Request Submitted Successfully";
             $res_notif_message = "Your request for {$request_type_name} has been submitted and is now pending review.";
-            $res_notif_stmt->bind_param("ississ",
-                $user_id,
-                $res_notif_type,
-                $res_ref_type,
-                $request_id,
-                $res_notif_title,
-                $res_notif_message
-            );
-            if ($res_notif_stmt->execute()) {
-                error_log("✅ Resident notification created for user_id: $user_id");
-            } else {
-                error_log("❌ Failed to create resident notification: " . $res_notif_stmt->error);
-            }
+            $res_notif_stmt->bind_param("ississ", $user_id, $res_notif_type, $res_ref_type, $request_id, $res_notif_title, $res_notif_message);
+            $res_notif_stmt->execute();
             $res_notif_stmt->close();
         }
-        // ── End resident notification ─────────────────────────────────────────
 
-        error_log("✅ Document request notifications sent to admins/staff and resident");
-        
-        // FILE UPLOAD SECTION
-        $upload_success = true;
-        $upload_errors = [];
+        // FILE UPLOAD
         $upload_dir = '../../uploads/requests/';
-
-        error_log("=== FILE UPLOAD START ===");
-        error_log("Request ID: " . $request_id);
-
-        // Ensure upload directory exists
-        if (!file_exists($upload_dir)) {
-            if (!mkdir($upload_dir, 0755, true)) {
-                throw new Exception('Failed to create upload directory.');
-            }
-            error_log("Created base upload directory: " . $upload_dir);
-        }
-
-        if (!is_writable($upload_dir)) {
-            throw new Exception('Upload directory is not writable: ' . $upload_dir);
-        }
-
-        // Create request-specific directory
+        if (!file_exists($upload_dir)) mkdir($upload_dir, 0755, true);
+        if (!is_writable($upload_dir)) throw new Exception('Upload directory is not writable.');
+        
         $request_upload_dir = $upload_dir . $request_id . '/';
-        if (!file_exists($request_upload_dir)) {
-            if (!mkdir($request_upload_dir, 0755, true)) {
-                throw new Exception('Failed to create request directory: ' . $request_upload_dir);
-            }
-            error_log("Created request directory: " . $request_upload_dir);
-        }
+        if (!file_exists($request_upload_dir)) mkdir($request_upload_dir, 0755, true);
 
-        $files_uploaded_count = 0;
         $files_saved_to_db = 0;
+        $upload_errors     = [];
 
-        // Check if files were uploaded
         if (isset($_FILES['requirements']) && is_array($_FILES['requirements']['name'])) {
             $file_count = count($_FILES['requirements']['name']);
-            error_log("Processing $file_count file upload slots");
-            
             for ($i = 0; $i < $file_count; $i++) {
-                // Skip if no file uploaded in this slot
-                if ($_FILES['requirements']['error'][$i] === UPLOAD_ERR_NO_FILE) {
-                    error_log("Slot $i: No file uploaded (skipping)");
-                    continue;
-                }
+                if ($_FILES['requirements']['error'][$i] === UPLOAD_ERR_NO_FILE) continue;
+                if ($_FILES['requirements']['error'][$i] !== UPLOAD_ERR_OK) { $upload_errors[] = "Upload error slot $i"; continue; }
                 
-                // Check for upload errors
-                if ($_FILES['requirements']['error'][$i] !== UPLOAD_ERR_OK) {
-                    $error_msg = "Upload error in slot $i: Code " . $_FILES['requirements']['error'][$i];
-                    error_log("❌ " . $error_msg);
-                    $upload_errors[] = $error_msg;
-                    continue;
-                }
-                
-                // Get file details
-                $filename = $_FILES['requirements']['name'][$i];
-                $file_tmp = $_FILES['requirements']['tmp_name'][$i];
-                $file_size = $_FILES['requirements']['size'][$i];
-                $file_type = $_FILES['requirements']['type'][$i];
+                $filename       = $_FILES['requirements']['name'][$i];
+                $file_tmp       = $_FILES['requirements']['tmp_name'][$i];
+                $file_size      = $_FILES['requirements']['size'][$i];
+                $file_type      = $_FILES['requirements']['type'][$i];
                 $requirement_id = isset($_POST['requirement_ids'][$i]) ? intval($_POST['requirement_ids'][$i]) : null;
                 
-                error_log("📄 Slot $i: Processing '$filename' (Size: $file_size bytes, Type: $file_type)");
-                
-                // Validate file type
                 $file_ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
-                $allowed_extensions = ['jpg', 'jpeg', 'png', 'gif', 'pdf', 'bmp', 'webp', 'svg', 'jfif'];
+                if (!in_array($file_ext, ['jpg','jpeg','png','gif','pdf','bmp','webp','svg','jfif'])) { $upload_errors[] = "Invalid type: $filename"; continue; }
+                if ($file_size > 5 * 1024 * 1024) { $upload_errors[] = "Too large: $filename"; continue; }
                 
-                if (!in_array($file_ext, $allowed_extensions)) {
-                    $error_msg = "Invalid file type for: $filename (only JPG, PNG, GIF, PDF, BMP, WEBP, SVG, JFIF allowed)";
-                    error_log("❌ " . $error_msg);
-                    $upload_errors[] = $error_msg;
-                    continue;
-                }
-                
-                // Validate file size (5MB max)
-                if ($file_size > 5 * 1024 * 1024) {
-                    $error_msg = "File too large: $filename (max 5MB)";
-                    error_log("❌ " . $error_msg);
-                    $upload_errors[] = $error_msg;
-                    continue;
-                }
-                
-                // Validate temporary file exists
-                if (!file_exists($file_tmp)) {
-                    $error_msg = "Temporary file not found for: $filename";
-                    error_log("❌ " . $error_msg);
-                    $upload_errors[] = $error_msg;
-                    continue;
-                }
-                
-                // Generate unique filename
-                $new_filename = 'req_' . $request_id . '_' . uniqid() . '.' . $file_ext;
+                $new_filename    = 'req_' . $request_id . '_' . uniqid() . '.' . $file_ext;
                 $server_file_path = $request_upload_dir . $new_filename;
+                $db_file_path    = 'uploads/requests/' . $request_id . '/' . $new_filename;
                 
-                // Store relative path WITHOUT leading slash for database
-                $db_file_path = 'uploads/requests/' . $request_id . '/' . $new_filename;
-                
-                error_log("Moving file: '$file_tmp' → '$server_file_path'");
-                error_log("DB path will be: '$db_file_path'");
-                
-                // Move uploaded file
                 if (move_uploaded_file($file_tmp, $server_file_path)) {
-                    error_log("✅ File moved successfully");
-                    
-                    // Verify file was actually saved
-                    if (!file_exists($server_file_path)) {
-                        $error_msg = "File move reported success but file doesn't exist: $new_filename";
-                        error_log("❌ " . $error_msg);
-                        $upload_errors[] = $error_msg;
-                        continue;
-                    }
-                    
                     $actual_size = filesize($server_file_path);
-                    error_log("✅ File verified on disk: " . number_format($actual_size/1024, 2) . " KB");
-                    
-                    $files_uploaded_count++;
-                    
-                    // Insert into database
-                    $insert_sql = "INSERT INTO tbl_request_attachments 
-                                  (request_id, requirement_id, file_name, file_path, file_type, file_size, uploaded_at) 
-                                  VALUES (?, ?, ?, ?, ?, ?, NOW())";
-                    
-                    $insert_stmt = $conn->prepare($insert_sql);
-                    
-                    if (!$insert_stmt) {
-                        $error_msg = "Failed to prepare DB insert: " . $conn->error;
-                        error_log("❌ " . $error_msg);
-                        $upload_errors[] = $error_msg;
-                        @unlink($server_file_path);
-                        error_log("🗑️ Deleted orphaned file: $server_file_path");
-                        continue;
+                    if ($requirement_id === 0) $requirement_id = null;
+                    $insert_stmt = $conn->prepare("INSERT INTO tbl_request_attachments (request_id, requirement_id, file_name, file_path, file_type, file_size, uploaded_at) VALUES (?, ?, ?, ?, ?, ?, NOW())");
+                    if ($insert_stmt) {
+                        $insert_stmt->bind_param("iisssi", $request_id, $requirement_id, $filename, $db_file_path, $file_type, $actual_size);
+                        if ($insert_stmt->execute()) $files_saved_to_db++;
+                        else { $upload_errors[] = "DB error: $filename"; @unlink($server_file_path); }
+                        $insert_stmt->close();
                     }
-                    
-                    // Handle requirement_id (can be NULL)
-                    if ($requirement_id === 0 || $requirement_id === null) {
-                        $requirement_id = null;
-                    }
-                    
-                    // Bind parameters
-                    $insert_stmt->bind_param("iisssi", 
-                        $request_id, 
-                        $requirement_id, 
-                        $filename, 
-                        $db_file_path, 
-                        $file_type, 
-                        $actual_size
-                    );
-                    
-                    error_log("Executing DB insert: request_id=$request_id, req_id=" . ($requirement_id ?? 'NULL') . ", file=$filename");
-                    
-                    if ($insert_stmt->execute()) {
-                        $attachment_id = $conn->insert_id;
-                        error_log("✅ Database record created: attachment_id=$attachment_id");
-                        $files_saved_to_db++;
-                    } else {
-                        $error_msg = "Failed to save to database for: $filename - " . $insert_stmt->error;
-                        error_log("❌ " . $error_msg);
-                        $upload_errors[] = $error_msg;
-                        @unlink($server_file_path);
-                        error_log("🗑️ Deleted orphaned file: $server_file_path");
-                    }
-                    
-                    $insert_stmt->close();
-                    
                 } else {
-                    $error_msg = "Failed to move uploaded file: $filename";
-                    error_log("❌ " . $error_msg);
-                    error_log("Source: $file_tmp (exists: " . (file_exists($file_tmp) ? 'YES' : 'NO') . ")");
-                    error_log("Destination: $server_file_path");
-                    error_log("Destination dir writable: " . (is_writable($request_upload_dir) ? 'YES' : 'NO'));
-                    $upload_errors[] = $error_msg;
+                    $upload_errors[] = "Move failed: $filename";
                 }
             }
+        }
+
+        if ($files_saved_to_db > 0 && empty($upload_errors)) {
+            $_SESSION['success_message'] = "Request submitted successfully with $files_saved_to_db attachment(s)!";
+        } elseif ($files_saved_to_db > 0) {
+            $_SESSION['success_message'] = "Request submitted! $files_saved_to_db file(s) uploaded. " . count($upload_errors) . " failed.";
         } else {
-            error_log("⚠️ No files array found in \$_FILES['requirements']");
+            $_SESSION['success_message'] = 'Request submitted successfully!';
         }
 
-        error_log("=== FILE UPLOAD END ===");
-        error_log("Files uploaded to server: $files_uploaded_count");
-        error_log("Files saved to database: $files_saved_to_db");
-        error_log("Total errors: " . count($upload_errors));
-
-        // CRITICAL CHECK
-        if ($files_uploaded_count > 0 && $files_saved_to_db === 0) {
-            error_log("⚠️ WARNING: Files uploaded but NONE saved to database!");
-        }
-
-        // Set success message
-        if ($files_saved_to_db > 0) {
-            if (!empty($upload_errors)) {
-                $_SESSION['success_message'] = "Request submitted! $files_saved_to_db file(s) uploaded successfully. " . count($upload_errors) . " file(s) failed.";
-            } else {
-                $_SESSION['success_message'] = "Request submitted successfully with $files_saved_to_db attachment(s)!";
-            }
-        } else {
-            if (!empty($upload_errors)) {
-                $_SESSION['success_message'] = "Request submitted but file uploads failed: " . implode(', ', $upload_errors);
-            } else {
-                $_SESSION['success_message'] = 'Request submitted successfully! (No files were uploaded)';
-            }
-        }
-
-        error_log("Request submission completed - Redirecting to my-requests.php");
-        
         if (ob_get_length()) ob_end_clean();
-        
         header('Location: my-requests.php', true, 303);
         exit();
         
     } catch (Exception $e) {
         $error = $e->getMessage();
         error_log("Request submission error: " . $e->getMessage());
-        error_log("Stack trace: " . $e->getTraceAsString());
     }
 }
 
 include '../../includes/header.php';
 ?>
 
+<link rel="stylesheet" href="/barangaylink1/assets/css/_db_shared.css">
 <style>
-/* Enhanced Modern Styles - EXACT MATCH from view-incidents.php */
+/* page-specific overrides only */
+
 :root {
-    --transition-speed: 0.3s;
-    --shadow-sm: 0 2px 8px rgba(0,0,0,0.08);
-    --shadow-md: 0 4px 16px rgba(0,0,0,0.12);
-    --shadow-lg: 0 8px 24px rgba(0,0,0,0.15);
-    --border-radius: 12px;
-    --border-radius-lg: 16px;
+    --db-navy:#0d1b36;
+    --db-navy-mid:#152849;
+    --db-navy-light:#1c3461;
+    --db-amber:#f59e0b;
+    --db-amber-light:#fef3c7;
+    --db-amber-dark:#b45309;
+    --db-teal:#0d9488;
+    --db-teal-light:#ccfbf1;
+    --db-rose:#e11d48;
+    --db-rose-light:#ffe4e6;
+    --db-sky:#0ea5e9;
+    --db-sky-light:#e0f2fe;
+    --db-indigo:#6366f1;
+    --db-indigo-light:#e0e7ff;
+    --db-success:#10b981;
+    --db-success-light:#d1fae5;
+    --db-warning:#f59e0b;
+    --db-warning-light:#fef3c7;
+    --db-danger:#ef4444;
+    --db-danger-light:#fee2e2;
+    --db-info:#3b82f6;
+    --db-info-light:#dbeafe;
+    --db-bg:#eef2f7;
+    --db-surf:#ffffff;
+    --db-surf2:#f8fafc;
+    --db-border:#e2e8f0;
+    --db-text:#0f172a;
+    --db-muted:#64748b;
+    --db-radius:14px;
+    --db-radius-sm:8px;
+    --db-radius-lg:20px;
+    --db-shadow:0 1px 3px rgba(13,27,54,.06),0 4px 16px rgba(13,27,54,.07);
+    --db-shadow-lg:0 8px 40px rgba(13,27,54,.14),0 2px 8px rgba(13,27,54,.06);
 }
 
-/* Card Enhancements - EXACT match */
-.card {
-    border: none;
-    border-radius: var(--border-radius);
-    box-shadow: var(--shadow-sm);
-    transition: all var(--transition-speed) ease;
-    overflow: hidden;
-}
+*, *::before, *::after { box-sizing: border-box; }
+body { font-family: 'Sora', sans-serif; background: var(--db-bg); color: var(--db-text); font-size: 13.5px; }
 
-.card:hover {
-    box-shadow: var(--shadow-md);
-    transform: translateY(-4px);
-}
+/* ── Hero ── */
+.rm-hero { background: linear-gradient(135deg, var(--db-navy) 0%, var(--db-navy-light) 65%, #1a4a2e 100%); padding: 28px 36px; margin-bottom: 24px; border-radius: 0 0 var(--db-radius-lg) var(--db-radius-lg); position: relative; overflow: hidden; }
+.rm-hero__ring { position: absolute; border-radius: 50%; border: 1px solid rgba(255,255,255,.06); pointer-events: none; }
+.rm-hero__ring--1 { width: 300px; height: 300px; top: -130px; right: -60px; }
+.rm-hero__ring--2 { width: 180px; height: 180px; top: -50px; right: 70px; border-color: rgba(245,158,11,.12); }
+.rm-hero__ring--3 { width: 100px; height: 100px; bottom: -40px; left: 40%; border-color: rgba(13,148,136,.14); }
+.rm-hero__inner { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.rm-hero__left { display: flex; align-items: center; gap: 16px; }
+.rm-hero__icon { width: 52px; height: 52px; border-radius: 14px; background: linear-gradient(135deg, #f59e0b, #d97706); display: flex; align-items: center; justify-content: center; font-size: 22px; color: #fff; box-shadow: 0 4px 16px rgba(245,158,11,.4); flex-shrink: 0; }
+.rm-hero__title { font-size: 22px; font-weight: 800; color: #fff; letter-spacing: -.4px; margin-bottom: 3px; }
+.rm-hero__sub { font-size: 13px; color: rgba(255,255,255,.55); }
 
-.card-header {
-    background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
-    border-bottom: 2px solid #e9ecef;
-    padding: 1.25rem 1.5rem;
-    border-radius: var(--border-radius) var(--border-radius) 0 0 !important;
-}
+/* ── Alerts ── */
+.db-alert { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-radius: var(--db-radius); margin-bottom: 16px; font-weight: 500; font-size: 13.5px; border-left: 4px solid; }
+.db-alert--success { background: var(--db-success-light); color: #065f46; border-color: var(--db-success); }
+.db-alert--error { background: var(--db-danger-light); color: #7f1d1d; border-color: var(--db-danger); }
+.db-alert--info { background: var(--db-info-light); color: #1e40af; border-color: var(--db-info); }
+.db-alert--warning { background: var(--db-warning-light); color: #92400e; border-color: var(--db-warning); }
+.db-alert__close { margin-left: auto; background: none; border: none; cursor: pointer; font-size: 18px; opacity: .6; }
 
-.card-header h5 {
-    font-weight: 700;
-    font-size: 1.1rem;
-    margin: 0;
-    display: flex;
-    align-items: center;
-}
+/* ── Panels ── */
+.db-panel { background: var(--db-surf); border-radius: var(--db-radius-lg); border: 1px solid var(--db-border); box-shadow: var(--db-shadow); margin-bottom: 18px; overflow: hidden; animation: dbFadeUp .35s ease both; }
+@keyframes dbFadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+.db-panel__header { display: flex; align-items: center; justify-content: space-between; padding: 16px 22px; border-bottom: 1px solid var(--db-border); gap: 10px; flex-wrap: wrap; background: linear-gradient(135deg, #f8fafc 0%, #fff 100%); }
+.db-panel__title { display: flex; align-items: center; gap: 10px; }
+.db-panel__title h2 { font-size: 14px; font-weight: 700; margin: 0; }
+.db-panel__icon { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+.db-panel__icon--amber { background: var(--db-amber-light); color: var(--db-amber-dark); }
+.db-panel__icon--sky   { background: var(--db-sky-light);   color: var(--db-sky); }
+.db-panel__icon--navy  { background: var(--db-indigo-light); color: var(--db-navy); }
+.db-panel__icon--success { background: var(--db-success-light); color: var(--db-success); }
+.db-panel__icon--rose  { background: var(--db-rose-light); color: var(--db-rose); }
+.db-panel__body { padding: 22px; }
 
-.card-body {
-    padding: 1.75rem;
-}
+/* ── Buttons ── */
+.db-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: var(--db-radius-sm); font-family: 'Sora', sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid transparent; text-decoration: none; transition: all .18s; white-space: nowrap; }
+.db-btn--sm { padding: 6px 12px; font-size: 12px; }
+.db-btn--primary { background: linear-gradient(135deg, var(--db-navy), var(--db-navy-light)); color: #fff; }
+.db-btn--primary:hover { background: linear-gradient(135deg, var(--db-navy-light), #2748a0); transform: translateY(-1px); box-shadow: 0 4px 14px rgba(13,27,54,.25); color: #fff; }
+.db-btn--ghost { background: var(--db-surf2); color: var(--db-text); border-color: var(--db-border); }
+.db-btn--ghost:hover { background: var(--db-border); color: var(--db-text); }
+.db-btn--danger { background: linear-gradient(135deg, #dc2626, var(--db-rose)); color: #fff; }
+.db-btn--danger:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(225,29,72,.25); color: #fff; }
+.db-btn--success { background: linear-gradient(135deg, #059669, var(--db-success)); color: #fff; }
+.db-btn--success:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(16,185,129,.25); color: #fff; }
 
-/* Alert Enhancements - EXACT match */
-.alert {
-    border: none;
-    border-radius: var(--border-radius);
-    padding: 1.25rem 1.5rem;
-    box-shadow: var(--shadow-sm);
-    border-left: 4px solid;
-}
+/* ── Badges ── */
+.db-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 20px; font-family: 'DM Mono', monospace; font-size: 10px; font-weight: 500; letter-spacing: .3px; white-space: nowrap; }
+.db-badge--rose    { background: var(--db-rose-light);    color: #9f1239; }
+.db-badge--amber   { background: var(--db-amber-light);   color: #92400e; }
+.db-badge--sky     { background: var(--db-sky-light);     color: #0369a1; }
+.db-badge--success { background: var(--db-success-light); color: #065f46; }
+.db-badge--muted   { background: var(--db-surf2); color: var(--db-muted); border: 1px solid var(--db-border); }
+.db-badge--navy    { background: #e8edf7; color: var(--db-navy); }
 
-.alert-success {
-    background: linear-gradient(135deg, #d1f4e0 0%, #e7f9ee 100%);
-    border-left-color: #198754;
-}
-
-.alert-danger {
-    background: linear-gradient(135deg, #ffd6d6 0%, #ffe5e5 100%);
-    border-left-color: #dc3545;
-}
-
-.alert-info {
-    background: linear-gradient(135deg, #cfe2ff 0%, #e7f1ff 100%);
-    border-left-color: #0d6efd;
-}
-
-.alert-warning {
-    background: linear-gradient(135deg, #fff3cd 0%, #fff8e1 100%);
-    border-left-color: #ffc107;
-}
-
-.alert i {
-    font-size: 1.1rem;
-}
-
-/* Enhanced Badges - EXACT match */
-.badge {
-    font-weight: 600;
-    padding: 0.5rem 1rem;
-    border-radius: 50px;
-    font-size: 0.85rem;
-    letter-spacing: 0.3px;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-}
-
-/* Enhanced Buttons - EXACT match */
-.btn {
-    border-radius: 8px;
-    padding: 0.625rem 1.5rem;
-    font-weight: 600;
-    transition: all var(--transition-speed) ease;
-    border: none;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-}
-
-.btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-}
-
-.btn:active {
-    transform: translateY(0);
-}
-
-.btn-sm {
-    padding: 0.5rem 1rem;
-    font-size: 0.875rem;
-}
-
-.requirement-item {
-    border: 1px solid #dee2e6;
-    border-radius: 8px;
-    padding: 15px;
-    margin-bottom: 15px;
-    background: #fff;
-    transition: all 0.3s ease;
-}
-
-.requirement-item:hover {
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-
-.requirement-item.mandatory {
-    border-left: 4px solid #dc3545;
-}
-
-.requirement-item.optional {
-    border-left: 4px solid #6c757d;
-}
-
-.file-upload-wrapper {
-    position: relative;
-    overflow: hidden;
-    display: inline-block;
+/* ── Form Controls ── */
+.db-form-label { display: block; font-size: 12px; font-weight: 600; color: var(--db-muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+.db-form-label .req { color: var(--db-rose); }
+.db-form-control, .db-form-select, .db-form-textarea {
     width: 100%;
+    padding: 10px 14px;
+    border: 1.5px solid var(--db-border);
+    border-radius: var(--db-radius-sm);
+    background: var(--db-surf2);
+    color: var(--db-text);
+    font-family: 'Sora', sans-serif;
+    font-size: 13px;
+    transition: border-color .2s, box-shadow .2s, background .2s;
+    outline: none;
 }
-
-.file-upload-wrapper input[type=file] {
-    position: absolute;
-    left: -9999px;
-}
-
-.file-upload-label {
-    display: block;
-    padding: 20px 15px;
-    background: #f8f9fa;
-    border: 2px dashed #dee2e6;
-    border-radius: 8px;
-    cursor: pointer;
-    text-align: center;
-    transition: all 0.3s;
-}
-
-.file-upload-label:hover {
-    border-color: #0d6efd;
-    background: #e7f1ff;
-}
-
-.file-upload-label.has-file {
-    border-color: #198754;
-    background: #d1e7dd;
-    border-style: solid;
-}
-
-.file-upload-label i.fa-cloud-upload-alt {
-    font-size: 2rem;
-    color: #6c757d;
-    margin-bottom: 8px;
-    display: block;
-}
-
-.file-upload-label:hover i.fa-cloud-upload-alt {
-    color: #0d6efd;
-}
-
-.file-upload-label.has-file i.fa-cloud-upload-alt {
-    color: #198754;
-}
-
-.preview-container {
-    margin-top: 15px;
-    padding: 10px;
-    background: #f8f9fa;
-    border-radius: 8px;
-    border: 1px solid #dee2e6;
-}
-
-.preview-image {
-    max-width: 100%;
-    max-height: 200px;
-    border-radius: 5px;
-    border: 1px solid #dee2e6;
-    display: block;
-    margin: 0 auto;
-}
-
-.file-info {
-    margin-top: 10px;
-    padding: 8px 12px;
+.db-form-control:focus, .db-form-select:focus, .db-form-textarea:focus {
+    border-color: var(--db-navy-light);
     background: #fff;
-    border-radius: 5px;
-    font-size: 0.875rem;
+    box-shadow: 0 0 0 3px rgba(28,52,97,.1);
 }
-
-.remove-file-btn {
-    margin-top: 10px;
+.db-form-control[readonly], .db-form-textarea[readonly] {
+    background: #f1f5f9;
+    color: var(--db-muted);
+    cursor: default;
 }
+.db-form-textarea { resize: vertical; min-height: 90px; }
+.db-form-select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%2364748b' d='M1 1l5 5 5-5'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 36px; }
+.db-form-group { margin-bottom: 16px; }
+.db-form-row { display: grid; gap: 16px; }
+.db-form-row--2 { grid-template-columns: 1fr 1fr; }
+.db-form-row--3 { grid-template-columns: 1fr 1fr 1fr; }
 
-.loading-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.5);
-    z-index: 9999;
-    display: none;
-    align-items: center;
-    justify-content: center;
-}
+/* ── Info box ── */
+.db-info-box { background: var(--db-info-light); border-left: 4px solid var(--db-info); border-radius: var(--db-radius-sm); padding: 12px 14px; font-size: 12.5px; color: #1e40af; display: flex; gap: 10px; align-items: flex-start; }
+.db-info-box--warning { background: var(--db-warning-light); border-left-color: var(--db-warning); color: #92400e; }
+.db-info-box--success { background: var(--db-success-light); border-left-color: var(--db-success); color: #065f46; }
 
-.loading-overlay.active {
-    display: flex;
-}
+/* ── Sidebar Cards ── */
+.db-side-card { background: var(--db-surf); border-radius: var(--db-radius); border: 1px solid var(--db-border); box-shadow: var(--db-shadow); margin-bottom: 14px; overflow: hidden; }
+.db-side-card__header { padding: 13px 16px; border-bottom: 1px solid var(--db-border); display: flex; align-items: center; gap: 8px; background: linear-gradient(135deg, #f8fafc, #fff); }
+.db-side-card__header span { font-size: 13px; font-weight: 700; }
+.db-side-card__body { padding: 14px 16px; }
+.db-checklist { list-style: none; margin: 0; padding: 0; }
+.db-checklist li { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 12.5px; border-bottom: 1px solid var(--db-border); }
+.db-checklist li:last-child { border-bottom: none; }
+.db-checklist li i { color: var(--db-success); font-size: 11px; flex-shrink: 0; }
 
-.loading-content {
-    background: white;
-    padding: 30px 40px;
-    border-radius: 10px;
-    text-align: center;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-}
+/* ── Processing Table ── */
+.db-proc-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.db-proc-table tr { border-bottom: 1px solid var(--db-border); }
+.db-proc-table tr:last-child { border-bottom: none; }
+.db-proc-table td { padding: 7px 4px; }
+.db-proc-table td:last-child { text-align: right; }
+.db-proc-days { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--db-navy); font-weight: 600; background: var(--db-amber-light); padding: 2px 7px; border-radius: 20px; }
 
-.loading-content .spinner-border {
-    width: 3rem;
-    height: 3rem;
-    margin-bottom: 15px;
-}
+/* ── File Upload ── */
+.db-upload-zone { border: 2px dashed var(--db-border); border-radius: var(--db-radius-sm); padding: 20px 14px; text-align: center; cursor: pointer; transition: all .2s; background: var(--db-surf2); }
+.db-upload-zone:hover { border-color: var(--db-navy-light); background: #f0f4ff; }
+.db-upload-zone.has-file { border-style: solid; border-color: var(--db-success); background: var(--db-success-light); }
+.db-upload-zone__icon { font-size: 28px; color: var(--db-muted); margin-bottom: 8px; }
+.db-upload-zone.has-file .db-upload-zone__icon { color: var(--db-success); }
+.db-upload-zone__text { font-size: 12.5px; color: var(--db-muted); font-weight: 500; }
+.db-upload-zone__hint { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+.db-req-item { border: 1px solid var(--db-border); border-radius: var(--db-radius-sm); padding: 14px; margin-bottom: 12px; background: var(--db-surf); }
+.db-req-item--mandatory { border-left: 3px solid var(--db-rose); }
+.db-req-item--optional  { border-left: 3px solid #94a3b8; }
+.db-req-item__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.db-req-item__name { font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.db-preview-container { margin-top: 12px; background: var(--db-surf2); border: 1px solid var(--db-border); border-radius: var(--db-radius-sm); padding: 10px; text-align: center; }
+.db-preview-image { max-width: 100%; max-height: 180px; border-radius: 6px; border: 1px solid var(--db-border); }
 
-.success-checkmark {
-    width: 80px;
-    height: 80px;
-    margin: 0 auto;
-}
+/* ── Fee badge ── */
+.db-fee-banner { display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: linear-gradient(135deg, var(--db-amber-light), #fffbeb); border: 1px solid #fde68a; border-radius: var(--db-radius-sm); font-size: 13px; }
+.db-fee-banner__amount { font-family: 'DM Mono', monospace; font-size: 15px; font-weight: 700; color: var(--db-amber-dark); }
+.db-fee-banner__free   { font-family: 'DM Mono', monospace; font-size: 13px; font-weight: 700; color: var(--db-success); }
 
-.success-checkmark .check-icon {
-    width: 80px;
-    height: 80px;
-    position: relative;
-    border-radius: 50%;
-    box-sizing: content-box;
-    border: 4px solid #198754;
-}
+/* ── Loading Overlay ── */
+.db-loading-overlay { position: fixed; inset: 0; background: rgba(13,27,54,.55); z-index: 9999; display: none; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+.db-loading-overlay.active { display: flex; }
+.db-loading-box { background: var(--db-surf); padding: 32px 40px; border-radius: var(--db-radius-lg); text-align: center; box-shadow: var(--db-shadow-lg); min-width: 280px; }
+.db-loading-box .spinner { width: 44px; height: 44px; border: 4px solid var(--db-border); border-top-color: var(--db-navy); border-radius: 50%; animation: dbSpin .7s linear infinite; margin: 0 auto 16px; }
+@keyframes dbSpin { to { transform: rotate(360deg); } }
+.db-loading-box h5 { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+.db-loading-box p  { font-size: 12.5px; color: var(--db-muted); }
 
-.success-checkmark .check-icon::before {
-    top: 3px;
-    left: -2px;
-    width: 30px;
-    transform-origin: 100% 50%;
-    border-radius: 100px 0 0 100px;
-}
+/* ── Success modal visuals ── */
+.db-success-icon { width: 72px; height: 72px; border-radius: 50%; background: linear-gradient(135deg, #d1fae5, #a7f3d0); border: 3px solid var(--db-success); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; font-size: 28px; color: var(--db-success); }
+.db-summary-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+.db-summary-item label { font-size: 11px; color: var(--db-muted); text-transform: uppercase; letter-spacing: .4px; display: block; margin-bottom: 3px; }
+.db-summary-item strong { font-size: 13px; }
 
-.success-checkmark .check-icon::after {
-    top: 0;
-    left: 30px;
-    width: 60px;
-    transform-origin: 0 50%;
-    border-radius: 0 100px 100px 0;
-    animation: rotate-circle 4.25s ease-in;
-}
+/* ── Modal ── */
+.db-modal-header { background: linear-gradient(135deg, var(--db-navy), var(--db-navy-light)); color: #fff; padding: 18px 22px; display: flex; align-items: center; justify-content: space-between; }
+.db-modal-header h5 { font-size: 15px; font-weight: 700; margin: 0; display: flex; align-items: center; gap: 8px; }
+.db-modal-header .btn-close { filter: invert(1); }
 
-.success-checkmark .check-icon::before, .success-checkmark .check-icon::after {
-    content: '';
-    height: 100px;
-    position: absolute;
-    background: #fff;
-    transform: rotate(-45deg);
-}
-
-.success-checkmark .icon-line {
-    height: 5px;
-    background-color: #198754;
-    display: block;
-    border-radius: 2px;
-    position: absolute;
-    z-index: 10;
-}
-
-.success-checkmark .icon-line.line-tip {
-    top: 46px;
-    left: 14px;
-    width: 25px;
-    transform: rotate(45deg);
-    animation: icon-line-tip 0.75s;
-}
-
-.success-checkmark .icon-line.line-long {
-    top: 38px;
-    right: 8px;
-    width: 47px;
-    transform: rotate(-45deg);
-    animation: icon-line-long 0.75s;
-}
-
-.success-checkmark .icon-circle {
-    top: -4px;
-    left: -4px;
-    z-index: 10;
-    width: 80px;
-    height: 80px;
-    border-radius: 50%;
-    position: absolute;
-    box-sizing: content-box;
-    border: 4px solid rgba(25, 135, 84, .5);
-}
-
-.success-checkmark .icon-fix {
-    top: 8px;
-    width: 5px;
-    left: 26px;
-    z-index: 1;
-    height: 85px;
-    position: absolute;
-    transform: rotate(-45deg);
-    background-color: #fff;
-}
-
-@keyframes rotate-circle {
-    0% { transform: rotate(-45deg); }
-    5% { transform: rotate(-45deg); }
-    12% { transform: rotate(-405deg); }
-    100% { transform: rotate(-405deg); }
-}
-
-@keyframes icon-line-tip {
-    0%  { width: 0; left: 1px; top: 19px; }
-    54% { width: 0; left: 1px; top: 19px; }
-    70% { width: 50px; left: -8px; top: 37px; }
-    84% { width: 17px; left: 21px; top: 48px; }
-    100%{ width: 25px; left: 14px; top: 45px; }
-}
-
-@keyframes icon-line-long {
-    0%  { width: 0; right: 46px; top: 54px; }
-    65% { width: 0; right: 46px; top: 54px; }
-    84% { width: 55px; right: 0px; top: 35px; }
-    100%{ width: 47px; right: 8px; top: 38px; }
-}
-
-.info-box {
-    border: 1px solid #dee2e6;
-}
-
-/* Responsive Adjustments - EXACT match */
 @media (max-width: 768px) {
-    .container-fluid {
-        padding-left: 1rem;
-        padding-right: 1rem;
-    }
-    
-    .card-body {
-        padding: 1.25rem;
-    }
-}
-
-/* Smooth Scrolling - EXACT match */
-html {
-    scroll-behavior: smooth;
+    .rm-hero { padding: 20px; border-radius: 0; }
+    .db-form-row--2, .db-form-row--3 { grid-template-columns: 1fr; }
+    .db-summary-row { grid-template-columns: 1fr; }
 }
 </style>
 
 <!-- Loading Overlay -->
-<div class="loading-overlay" id="loadingOverlay">
-    <div class="loading-content">
-        <div class="spinner-border text-primary" role="status">
-            <span class="visually-hidden">Loading...</span>
-        </div>
-        <h5 class="mt-3 mb-2">Submitting Your Request</h5>
-        <p class="text-muted mb-0">Please wait while we process your documents...</p>
-        <p class="text-muted mt-2"><strong id="uploadProgress">Preparing upload...</strong></p>
+<div class="db-loading-overlay" id="loadingOverlay">
+    <div class="db-loading-box">
+        <div class="spinner"></div>
+        <h5>Submitting Your Request</h5>
+        <p>Please wait while we process your documents...</p>
+        <p><strong id="uploadProgress">Preparing upload...</strong></p>
     </div>
 </div>
 
-<div class="container-fluid py-4">
-    <!-- Header -->
-    <div class="row mb-4">
-        <div class="col-md-12">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <h2 class="mb-0 fw-bold">
-                        <i class="fas fa-file-alt me-2"></i>
-                        New Document Request
-                    </h2>
-                    <p class="text-muted mb-0 mt-1">Submit a request for barangay documents</p>
-                </div>
-                <a href="my-requests.php" class="btn btn-danger">
-                    <i class="fas fa-arrow-left me-2"></i>Back to Requests
-                </a>
+<!-- Hero -->
+<div class="rm-hero">
+    <div class="rm-hero__ring rm-hero__ring--1"></div>
+    <div class="rm-hero__ring rm-hero__ring--2"></div>
+    <div class="rm-hero__ring rm-hero__ring--3"></div>
+    <div class="rm-hero__inner">
+        <div class="rm-hero__left">
+            <div class="rm-hero__icon"><i class="fas fa-file-alt"></i></div>
+            <div>
+                <div class="rm-hero__title">New Document Request</div>
+                <div class="rm-hero__sub">Submit a request for barangay documents</div>
             </div>
         </div>
+        <a href="my-requests.php" class="db-btn db-btn--danger"><i class="fas fa-arrow-left"></i> Back to Requests</a>
     </div>
+</div>
 
-    <?php if (isset($error)): ?>
-        <div class="alert alert-danger alert-dismissible fade show">
-            <i class="fas fa-exclamation-circle me-2"></i>
-            <?php echo htmlspecialchars($error); ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    <?php endif; ?>
+<div style="padding: 0 24px 32px;">
 
-    <div class="row">
-        <div class="col-lg-8">
-            <div class="card border-0 shadow-sm">
-                <div class="card-body">
-                    <form method="POST" action="" id="requestForm" enctype="multipart/form-data">
-                        <div class="mb-4">
-                            <h5 class="mb-3">
-                                <i class="fas fa-user me-2"></i>Personal Information
-                            </h5>
-                            <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label">Full Name</label>
-                                    <input type="text" class="form-control" 
-                                           value="<?php echo htmlspecialchars($resident['first_name'] . ' ' . ($resident['middle_name'] ?? '') . ' ' . $resident['last_name']); ?>" 
-                                           readonly>
-                                </div>
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label">Contact Number</label>
-                                    <input type="text" class="form-control" 
-                                           value="<?php echo htmlspecialchars($resident['contact_number'] ?? 'N/A'); ?>" 
-                                           readonly>
-                                </div>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Address</label>
-                                <textarea class="form-control" rows="2" readonly><?php echo htmlspecialchars($resident['address'] ?? 'N/A'); ?></textarea>
-                            </div>
-                        </div>
+<?php if (isset($error)): ?>
+<div class="db-alert db-alert--error">
+    <i class="fas fa-exclamation-circle"></i>
+    <?php echo htmlspecialchars($error); ?>
+    <button class="db-alert__close" onclick="this.parentElement.remove()">×</button>
+</div>
+<?php endif; ?>
 
-                        <div class="mb-4">
-                            <h5 class="mb-3">
-                                <i class="fas fa-file-invoice me-2"></i>Request Details
-                            </h5>
-                            <div class="mb-3">
-                                <label class="form-label">Document Type <span class="text-danger">*</span></label>
-                                <select name="request_type_id" id="request_type_id" class="form-select" required>
-                                    <option value="">Select Document Type</option>
-                                    <?php foreach ($request_types as $type): ?>
-                                        <option value="<?php echo $type['request_type_id']; ?>" 
-                                                data-typename="<?php echo htmlspecialchars($type['type_name']); ?>"
-                                                data-fee="<?php echo $type['fee']; ?>">
-                                            <?php echo htmlspecialchars($type['type_name']); ?>
-                                            <?php if ($type['fee'] > 0): ?>
-                                                - PHP <?php echo number_format($type['fee'], 2); ?>
-                                            <?php else: ?>
-                                                - Free
-                                            <?php endif; ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                                <div id="feeDisplay" class="mt-2" style="display: none;">
-                                    <div class="alert alert-info mb-0">
-                                        <i class="fas fa-money-bill-wave me-2"></i>
-                                        <strong>Fee:</strong> <span id="feeAmount">PHP 0.00</span>
-                                        <br><small class="text-muted">Payment will be confirmed by admin after processing</small>
-                                    </div>
-                                </div>
-                            </div>
+<form method="POST" action="" id="requestForm" enctype="multipart/form-data">
 
-                            <div class="mb-3">
-                                <label class="form-label">Purpose <span class="text-danger">*</span></label>
-                                <input type="text" name="purpose" class="form-control" 
-                                       placeholder="e.g., Employment, School Requirements, Bank Requirements" required>
-                            </div>
+<div style="display: grid; grid-template-columns: 1fr 320px; gap: 20px; align-items: start;">
 
-                            <!-- Business Permit Fields -->
-                            <div id="businessFields" style="display: none;">
-                                <div class="alert alert-info">
-                                    <i class="fas fa-info-circle me-2"></i>
-                                    Please provide business details
-                                </div>
-                                
-                                <div class="mb-3">
-                                    <label class="form-label">Business Name</label>
-                                    <input type="text" name="business_name" class="form-control" 
-                                           placeholder="Enter business name">
-                                </div>
-                                
-                                <div class="mb-3">
-                                    <label class="form-label">Business Address</label>
-                                    <input type="text" name="business_address" class="form-control" 
-                                           placeholder="Enter business address">
-                                </div>
-                                
-                                <div class="mb-3">
-                                    <label class="form-label">Business Type</label>
-                                    <select name="business_type" class="form-select">
-                                        <option value="">Select Business Type</option>
-                                        <option value="Retail">Retail</option>
-                                        <option value="Service">Service</option>
-                                        <option value="Food">Food</option>
-                                        <option value="Manufacturing">Manufacturing</option>
-                                        <option value="Other">Other</option>
-                                    </select>
-                                </div>
-                            </div>
+    <!-- ── Left Column ── -->
+    <div>
 
-                            <!-- Cedula Fields -->
-                            <div id="cedulaFields" style="display: none;">
-                                <div class="alert alert-info">
-                                    <i class="fas fa-info-circle me-2"></i>
-                                    Please provide cedula details (if applicable)
-                                </div>
-                                
-                                <div class="row">
-                                    <div class="col-md-12 mb-3">
-                                        <label class="form-label">Cedula Number (if renewal)</label>
-                                        <input type="text" name="cedula_number" class="form-control" 
-                                               placeholder="Enter previous cedula number (optional)">
-                                        <small class="text-muted">Leave blank if this is your first cedula</small>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="mb-3">
-                                <label class="form-label">Additional Details</label>
-                                <textarea name="additional_details" class="form-control" rows="4" 
-                                          placeholder="Provide any additional information or special requests..."></textarea>
-                            </div>
-                        </div>
-
-                        <!-- Requirements Upload Section -->
-                        <div id="requirementsSection" style="display: none;">
-                            <div class="mb-4">
-                                <h5 class="mb-3">
-                                    <i class="fas fa-paperclip me-2"></i>Attachments & Requirements
-                                </h5>
-                                <div class="alert alert-warning mb-3">
-                                    <i class="fas fa-exclamation-triangle me-2"></i>
-                                    <strong>Important:</strong> Please upload clear, readable images or PDF files.
-                                    <ul class="mb-0 mt-2">
-                                        <li>Maximum file size: <strong>5MB per file</strong></li>
-                                        <li>Accepted formats: <strong>JPG, PNG, GIF, PDF</strong></li>
-                                        <li>Required documents must be uploaded before submission</li>
-                                    </ul>
-                                </div>
-                                <div id="requirementsList"></div>
-                            </div>
-                        </div>
-
-                        <div class="alert alert-info border-0 shadow-sm">
-                            <i class="fas fa-info-circle me-2"></i>
-                            <strong>Processing Information:</strong> Processing time may vary depending on the document type. 
-                            You will be notified once your request is processed. Payment (if applicable) will be confirmed by the barangay admin.
-                        </div>
-
-                        <div class="d-flex gap-2">
-                            <button type="button" class="btn btn-primary" id="submitBtn">
-                                <i class="fas fa-paper-plane me-1"></i>Submit Request
-                            </button>
-                            <a href="my-requests.php" class="btn btn-secondary" id="cancelBtn">
-                                <i class="fas fa-times me-1"></i>Cancel
-                            </a>
-                        </div>
-                    </form>
+        <!-- Personal Information -->
+        <div class="db-panel" style="animation-delay:.05s">
+            <div class="db-panel__header">
+                <div class="db-panel__title">
+                    <div class="db-panel__icon db-panel__icon--navy"><i class="fas fa-user"></i></div>
+                    <h2>Personal Information</h2>
                 </div>
+                <span class="db-badge db-badge--muted"><i class="fas fa-lock"></i> Auto-filled</span>
             </div>
-        </div>
-
-        <div class="col-lg-4">
-            <div class="card border-0 shadow-sm mb-3">
-                <div class="card-body">
-                    <h6 class="card-title mb-3">
-                        <i class="fas fa-info-circle me-2"></i>General Requirements
-                    </h6>
-                    <ul class="list-unstyled mb-0">
-                        <li class="mb-2">
-                            <i class="fas fa-check text-success me-2"></i>
-                            Valid ID
-                        </li>
-                        <li class="mb-2">
-                            <i class="fas fa-check text-success me-2"></i>
-                            Proof of residency
-                        </li>
-                        <li class="mb-2">
-                            <i class="fas fa-check text-success me-2"></i>
-                            Complete application form
-                        </li>
-                        <li class="mb-2">
-                            <i class="fas fa-check text-success me-2"></i>
-                            Payment confirmation (if applicable)
-                        </li>
-                    </ul>
-                </div>
-            </div>
-
-            <div class="card border-0 shadow-sm">
-                <div class="card-body">
-                    <h6 class="card-title mb-3">
-                        <i class="fas fa-clock me-2"></i>Processing Time
-                    </h6>
-                    <div class="table-responsive">
-                        <table class="table table-sm mb-0">
-                            <tbody>
-                                <tr>
-                                    <td>Barangay Clearance</td>
-                                    <td class="text-end">1-3 days</td>
-                                </tr>
-                                <tr>
-                                    <td>Certificates</td>
-                                    <td class="text-end">1-2 days</td>
-                                </tr>
-                                <tr>
-                                    <td>Business Permit</td>
-                                    <td class="text-end">3-5 days</td>
-                                </tr>
-                                <tr>
-                                    <td>Barangay ID</td>
-                                    <td class="text-end">5-7 days</td>
-                                </tr>
-                                <tr>
-                                    <td>Cedula</td>
-                                    <td class="text-end">1 day</td>
-                                </tr>
-                            </tbody>
-                        </table>
+            <div class="db-panel__body">
+                <div class="db-form-row db-form-row--2">
+                    <div class="db-form-group">
+                        <label class="db-form-label">Full Name</label>
+                        <input type="text" class="db-form-control"
+                               value="<?php echo htmlspecialchars($resident['first_name'] . ' ' . ($resident['middle_name'] ?? '') . ' ' . $resident['last_name']); ?>"
+                               readonly>
+                    </div>
+                    <div class="db-form-group">
+                        <label class="db-form-label">Contact Number</label>
+                        <input type="text" class="db-form-control"
+                               value="<?php echo htmlspecialchars($resident['contact_number'] ?? 'N/A'); ?>"
+                               readonly>
                     </div>
                 </div>
+                <div class="db-form-group" style="margin-bottom:0">
+                    <label class="db-form-label">Address</label>
+                    <textarea class="db-form-textarea" rows="2" readonly><?php echo htmlspecialchars($resident['address'] ?? 'N/A'); ?></textarea>
+                </div>
             </div>
         </div>
-    </div>
-</div>
 
-<!-- Submit Confirmation Modal -->
+        <!-- Request Details -->
+        <div class="db-panel" style="animation-delay:.1s">
+            <div class="db-panel__header">
+                <div class="db-panel__title">
+                    <div class="db-panel__icon db-panel__icon--amber"><i class="fas fa-file-invoice"></i></div>
+                    <h2>Request Details</h2>
+                </div>
+            </div>
+            <div class="db-panel__body">
+
+                <div class="db-form-group">
+                    <label class="db-form-label">Document Type <span class="req">*</span></label>
+                    <select name="request_type_id" id="request_type_id" class="db-form-select" required>
+                        <option value="">Select Document Type</option>
+                        <?php foreach ($request_types as $type): ?>
+                            <option value="<?php echo $type['request_type_id']; ?>"
+                                    data-typename="<?php echo htmlspecialchars($type['type_name']); ?>"
+                                    data-fee="<?php echo $type['fee']; ?>">
+                                <?php echo htmlspecialchars($type['type_name']); ?>
+                                <?php if ($type['fee'] > 0): ?>
+                                    — PHP <?php echo number_format($type['fee'], 2); ?>
+                                <?php else: ?>
+                                    — Free
+                                <?php endif; ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <!-- Fee Banner -->
+                <div id="feeBanner" style="display:none; margin-bottom:16px;">
+                    <div class="db-fee-banner">
+                        <i class="fas fa-coins" style="color:var(--db-amber-dark); font-size:16px;"></i>
+                        <div>
+                            <div style="font-size:11px; color:var(--db-amber-dark); font-weight:600; text-transform:uppercase; letter-spacing:.4px;">Processing Fee</div>
+                            <span id="feeAmountDisplay" class="db-fee-banner__amount"></span>
+                        </div>
+                        <div style="margin-left:auto; font-size:11px; color:var(--db-muted);">Confirmed by admin after processing</div>
+                    </div>
+                </div>
+
+                <div class="db-form-group">
+                    <label class="db-form-label">Purpose <span class="req">*</span></label>
+                    <input type="text" name="purpose" class="db-form-control"
+                           placeholder="e.g., Employment, School Requirements, Bank Requirements" required>
+                </div>
+
+                <!-- Business Fields -->
+                <div id="businessFields" style="display:none;">
+                    <div class="db-alert db-alert--info" style="margin-bottom:14px;">
+                        <i class="fas fa-store"></i>
+                        <span>Please provide your business details below.</span>
+                    </div>
+                    <div class="db-form-group">
+                        <label class="db-form-label">Business Name</label>
+                        <input type="text" name="business_name" class="db-form-control" placeholder="Enter business name">
+                    </div>
+                    <div class="db-form-row db-form-row--2">
+                        <div class="db-form-group">
+                            <label class="db-form-label">Business Address</label>
+                            <input type="text" name="business_address" class="db-form-control" placeholder="Enter business address">
+                        </div>
+                        <div class="db-form-group">
+                            <label class="db-form-label">Business Type</label>
+                            <select name="business_type" class="db-form-select">
+                                <option value="">Select Type</option>
+                                <option value="Retail">Retail</option>
+                                <option value="Service">Service</option>
+                                <option value="Food">Food</option>
+                                <option value="Manufacturing">Manufacturing</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Cedula Fields -->
+                <div id="cedulaFields" style="display:none;">
+                    <div class="db-alert db-alert--info" style="margin-bottom:14px;">
+                        <i class="fas fa-id-card"></i>
+                        <span>Please provide your cedula details (if applicable).</span>
+                    </div>
+                    <div class="db-form-group">
+                        <label class="db-form-label">Cedula Number <span style="font-weight:400; text-transform:none; letter-spacing:0;">(if renewal)</span></label>
+                        <input type="text" name="cedula_number" class="db-form-control"
+                               placeholder="Enter previous cedula number (optional)">
+                        <div style="font-size:11px; color:var(--db-muted); margin-top:5px;"><i class="fas fa-info-circle me-1"></i>Leave blank if this is your first cedula</div>
+                    </div>
+                </div>
+
+                <div class="db-form-group" style="margin-bottom:0;">
+                    <label class="db-form-label">Additional Details</label>
+                    <textarea name="additional_details" class="db-form-textarea" rows="4"
+                              placeholder="Provide any additional information or special requests..."></textarea>
+                </div>
+            </div>
+        </div>
+
+        <!-- Requirements Upload Section -->
+        <div id="requirementsSection" style="display:none;">
+            <div class="db-panel" style="animation-delay:.15s">
+                <div class="db-panel__header">
+                    <div class="db-panel__title">
+                        <div class="db-panel__icon db-panel__icon--sky"><i class="fas fa-paperclip"></i></div>
+                        <h2>Attachments &amp; Requirements</h2>
+                    </div>
+                </div>
+                <div class="db-panel__body">
+                    <div class="db-alert db-alert--warning" style="margin-bottom:16px;">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <div>
+                            <strong>Important:</strong> Upload clear, readable images or PDF files.
+                            Max <strong>5MB per file</strong>. Accepted: <strong>JPG, PNG, GIF, PDF</strong>.
+                        </div>
+                    </div>
+                    <div id="requirementsList"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Processing Notice -->
+        <div class="db-info-box" style="margin-bottom:18px;">
+            <i class="fas fa-info-circle" style="flex-shrink:0; margin-top:1px;"></i>
+            <div>
+                <strong>Processing Notice:</strong> Processing time varies by document type.
+                You will be notified when your request status changes.
+                Payment (if applicable) will be confirmed by the barangay admin.
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button type="button" class="db-btn db-btn--primary" id="submitBtn">
+                <i class="fas fa-paper-plane"></i> Submit Request
+            </button>
+            <a href="my-requests.php" class="db-btn db-btn--ghost" id="cancelBtn">
+                <i class="fas fa-times"></i> Cancel
+            </a>
+        </div>
+
+    </div><!-- /left -->
+
+    <!-- ── Right Column ── -->
+    <div>
+
+        <!-- General Requirements -->
+        <div class="db-side-card">
+            <div class="db-side-card__header">
+                <div class="db-panel__icon db-panel__icon--success" style="width:28px;height:28px;font-size:12px;"><i class="fas fa-clipboard-list"></i></div>
+                <span>General Requirements</span>
+            </div>
+            <div class="db-side-card__body">
+                <ul class="db-checklist">
+                    <li><i class="fas fa-check-circle"></i> Valid ID</li>
+                    <li><i class="fas fa-check-circle"></i> Proof of residency</li>
+                    <li><i class="fas fa-check-circle"></i> Complete application form</li>
+                    <li><i class="fas fa-check-circle"></i> Payment confirmation (if applicable)</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Processing Time -->
+        <div class="db-side-card">
+            <div class="db-side-card__header">
+                <div class="db-panel__icon db-panel__icon--amber" style="width:28px;height:28px;font-size:12px;"><i class="fas fa-clock"></i></div>
+                <span>Processing Time</span>
+            </div>
+            <div class="db-side-card__body">
+                <table class="db-proc-table">
+                    <tr><td>Barangay Clearance</td><td><span class="db-proc-days">1–3 days</span></td></tr>
+                    <tr><td>Certificates</td><td><span class="db-proc-days">1–2 days</span></td></tr>
+                    <tr><td>Business Permit</td><td><span class="db-proc-days">3–5 days</span></td></tr>
+                    <tr><td>Barangay ID</td><td><span class="db-proc-days">5–7 days</span></td></tr>
+                    <tr><td>Cedula</td><td><span class="db-proc-days">1 day</span></td></tr>
+                </table>
+            </div>
+        </div>
+
+        <!-- Tips -->
+        <div class="db-side-card">
+            <div class="db-side-card__header">
+                <div class="db-panel__icon db-panel__icon--sky" style="width:28px;height:28px;font-size:12px;"><i class="fas fa-lightbulb"></i></div>
+                <span>Tips for Faster Processing</span>
+            </div>
+            <div class="db-side-card__body" style="font-size:12px; color:var(--db-muted); line-height:1.6;">
+                <p style="margin:0 0 8px;">• Upload high-quality, legible document scans</p>
+                <p style="margin:0 0 8px;">• Ensure your purpose is clearly stated</p>
+                <p style="margin:0 0 8px;">• Double-check all required attachments are uploaded</p>
+                <p style="margin:0;">• Monitor your notifications for status updates</p>
+            </div>
+        </div>
+
+    </div><!-- /right -->
+
+</div><!-- /grid -->
+</form>
+
+</div><!-- /padding wrapper -->
+
+
+<!-- ── Confirm Modal ── -->
 <div class="modal fade" id="submitConfirmModal" tabindex="-1" aria-labelledby="submitConfirmModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content">
-            <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title" id="submitConfirmModalLabel">
-                    <i class="fas fa-check-circle me-2"></i>Confirm Request Submission
-                </h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        <div class="modal-content" style="border:none; border-radius:var(--db-radius-lg); overflow:hidden;">
+            <div class="db-modal-header">
+                <h5><i class="fas fa-check-circle"></i> Confirm Request Submission</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body">
-                <div class="alert alert-info mb-3">
-                    <i class="fas fa-info-circle me-2"></i>
-                    <strong>Please review your request details before submitting.</strong>
+            <div class="modal-body" style="padding:22px;">
+                <div class="db-info-box" style="margin-bottom:18px;">
+                    <i class="fas fa-info-circle" style="flex-shrink:0;"></i>
+                    <span>Please review your request details before submitting.</span>
                 </div>
-                
-                <h6 class="fw-bold mb-3">Request Summary:</h6>
-                
-                <div class="row mb-3">
-                    <div class="col-md-6">
-                        <label class="text-muted small">Full Name:</label>
-                        <div class="fw-bold" id="modal_fullname">-</div>
-                    </div>
-                    <div class="col-md-6">
-                        <label class="text-muted small">Contact Number:</label>
-                        <div class="fw-bold" id="modal_contact">-</div>
-                    </div>
+
+                <div style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--db-muted); margin-bottom:12px;">Request Summary</div>
+
+                <div class="db-summary-row">
+                    <div class="db-summary-item"><label>Full Name</label><strong id="modal_fullname">—</strong></div>
+                    <div class="db-summary-item"><label>Contact Number</label><strong id="modal_contact">—</strong></div>
                 </div>
-                
-                <div class="mb-3">
-                    <label class="text-muted small">Document Type:</label>
-                    <div class="fw-bold" id="modal_document_type">-</div>
+                <div class="db-summary-row">
+                    <div class="db-summary-item"><label>Document Type</label><strong id="modal_document_type">—</strong></div>
+                    <div class="db-summary-item"><label>Fee</label><strong id="modal_fee" style="color:var(--db-success)">—</strong></div>
                 </div>
-                
-                <div class="mb-3">
-                    <label class="text-muted small">Purpose:</label>
-                    <div class="fw-bold" id="modal_purpose">-</div>
+                <div style="margin-bottom:14px;">
+                    <label style="font-size:11px; color:var(--db-muted); text-transform:uppercase; letter-spacing:.4px; display:block; margin-bottom:3px;">Purpose</label>
+                    <strong id="modal_purpose">—</strong>
                 </div>
-                
-                <div class="mb-3">
-                    <label class="text-muted small">Fee:</label>
-                    <div class="fw-bold text-success" id="modal_fee">-</div>
+
+                <div id="modal_business_info" style="display:none; margin-bottom:14px;">
+                    <label style="font-size:11px; color:var(--db-muted); text-transform:uppercase; letter-spacing:.4px; display:block; margin-bottom:3px;">Business Name</label>
+                    <strong id="modal_business_name">—</strong>
                 </div>
-                
-                <div id="modal_business_info" style="display: none;">
-                    <div class="mb-3">
-                        <label class="text-muted small">Business Name:</label>
-                        <div class="fw-bold" id="modal_business_name">-</div>
-                    </div>
+
+                <div id="modal_requirements_info" style="display:none; margin-bottom:14px;">
+                    <label style="font-size:11px; color:var(--db-muted); text-transform:uppercase; letter-spacing:.4px; display:block; margin-bottom:6px;">Uploaded Documents</label>
+                    <div id="modal_requirements_list"></div>
                 </div>
-                
-                <div id="modal_requirements_info" style="display: none;">
-                    <div class="mb-3">
-                        <label class="text-muted small">Uploaded Documents:</label>
-                        <div id="modal_requirements_list"></div>
-                    </div>
-                </div>
-                
-                <div class="alert alert-warning mb-0">
-                    <small>
-                        <i class="fas fa-exclamation-triangle me-1"></i>
-                        By submitting this request, you confirm that all information provided is accurate and complete. 
-                        Processing time may vary depending on the document type.
-                    </small>
+
+                <div class="db-alert db-alert--warning" style="margin-bottom:0;">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <small>By submitting, you confirm all information provided is accurate and complete. Processing time varies by document type.</small>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                    <i class="fas fa-times me-2"></i>Cancel
-                </button>
-                <button type="button" class="btn btn-primary" id="confirmSubmitBtn">
-                    <i class="fas fa-paper-plane me-2"></i>Confirm & Submit
-                </button>
+            <div class="modal-footer" style="padding:14px 22px; border-top:1px solid var(--db-border);">
+                <button type="button" class="db-btn db-btn--ghost" data-bs-dismiss="modal"><i class="fas fa-times"></i> Cancel</button>
+                <button type="button" class="db-btn db-btn--success" id="confirmSubmitBtn"><i class="fas fa-paper-plane"></i> Confirm &amp; Submit</button>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Success Modal -->
-<div class="modal fade" id="successModal" tabindex="-1" aria-labelledby="successModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+<!-- ── Success Modal ── -->
+<div class="modal fade" id="successModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-body text-center py-5">
-                <div class="success-checkmark mb-4">
-                    <div class="check-icon">
-                        <span class="icon-line line-tip"></span>
-                        <span class="icon-line line-long"></span>
-                        <div class="icon-circle"></div>
-                        <div class="icon-fix"></div>
+        <div class="modal-content" style="border:none; border-radius:var(--db-radius-lg); overflow:hidden;">
+            <div class="modal-body" style="padding:36px 28px; text-align:center;">
+                <div class="db-success-icon"><i class="fas fa-check"></i></div>
+
+                <h3 style="font-size:18px; font-weight:800; color:var(--db-success); margin-bottom:8px;">Request Submitted Successfully!</h3>
+                <p style="color:var(--db-muted); font-size:13px; margin-bottom:20px;">Your request has been received and is now pending review.</p>
+
+                <div style="background:var(--db-surf2); border:1px solid var(--db-border); border-radius:var(--db-radius-sm); padding:16px; margin-bottom:22px; text-align:left;">
+                    <div class="db-summary-row">
+                        <div class="db-summary-item"><label>Request Date</label><strong id="success_date"></strong></div>
+                        <div class="db-summary-item"><label>Status</label><span class="db-badge db-badge--amber"><i class="fas fa-clock"></i> Pending</span></div>
                     </div>
+                    <div class="db-summary-item"><label>Document Type</label><strong id="success_document"></strong></div>
                 </div>
-                
-                <h3 class="text-success mb-3">
-                    <i class="fas fa-check-circle me-2"></i>Request Submitted Successfully!
-                </h3>
-                
-                <div class="alert alert-success mb-4">
-                    <p class="mb-2"><strong>Your request has been received and is now being processed.</strong></p>
-                    <p class="mb-0 small">You will be notified once your request status changes.</p>
-                </div>
-                
-                <div class="info-box bg-light p-3 rounded mb-4">
-                    <div class="row text-start">
-                        <div class="col-6 mb-2">
-                            <small class="text-muted d-block">Request Date:</small>
-                            <strong id="success_date"></strong>
-                        </div>
-                        <div class="col-6 mb-2">
-                            <small class="text-muted d-block">Status:</small>
-                            <span class="badge bg-warning">Pending</span>
-                        </div>
-                        <div class="col-12">
-                            <small class="text-muted d-block">Document Type:</small>
-                            <strong id="success_document"></strong>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="d-grid gap-2">
-                    <button type="button" class="btn btn-primary btn-lg" id="viewRequestsBtn">
-                        <i class="fas fa-list me-2"></i>View My Requests
+
+                <div style="display:flex; flex-direction:column; gap:8px;">
+                    <button type="button" class="db-btn db-btn--primary" style="justify-content:center;" id="viewRequestsBtn">
+                        <i class="fas fa-list"></i> View My Requests
                     </button>
-                    <button type="button" class="btn btn-outline-secondary" id="newRequestBtn">
-                        <i class="fas fa-plus me-2"></i>Submit Another Request
+                    <button type="button" class="db-btn db-btn--ghost" style="justify-content:center;" id="newRequestBtn">
+                        <i class="fas fa-plus"></i> Submit Another Request
                     </button>
                 </div>
             </div>
         </div>
     </div>
 </div>
+
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const requestTypeSelect = document.getElementById('request_type_id');
-    const businessFields = document.getElementById('businessFields');
-    const cedulaFields = document.getElementById('cedulaFields');
-    const feeDisplay = document.getElementById('feeDisplay');
-    const feeAmount = document.getElementById('feeAmount');
+document.addEventListener('DOMContentLoaded', function () {
+    const requestTypeSelect   = document.getElementById('request_type_id');
+    const businessFields      = document.getElementById('businessFields');
+    const cedulaFields        = document.getElementById('cedulaFields');
+    const feeBanner           = document.getElementById('feeBanner');
+    const feeAmountDisplay    = document.getElementById('feeAmountDisplay');
     const requirementsSection = document.getElementById('requirementsSection');
-    const requirementsList = document.getElementById('requirementsList');
-    
-    requestTypeSelect.addEventListener('change', function() {
+    const requirementsList    = document.getElementById('requirementsList');
+
+    requestTypeSelect.addEventListener('change', function () {
         const requestTypeId = this.value;
-        
-        businessFields.style.display = 'none';
-        cedulaFields.style.display = 'none';
-        feeDisplay.style.display = 'none';
+        businessFields.style.display      = 'none';
+        cedulaFields.style.display        = 'none';
+        feeBanner.style.display           = 'none';
         requirementsSection.style.display = 'none';
-        requirementsList.innerHTML = '';
-        
+        requirementsList.innerHTML        = '';
+
         if (!requestTypeId) return;
-        
+
         const selectedOption = this.options[this.selectedIndex];
         const typeName = selectedOption.getAttribute('data-typename') || selectedOption.text;
-        const fee = parseFloat(selectedOption.getAttribute('data-fee')) || 0;
-        
-        feeAmount.textContent = fee > 0 ? 'PHP ' + fee.toFixed(2) : 'Free';
-        feeDisplay.style.display = 'block';
-        
-        if (typeName.toLowerCase().includes('business')) {
-            businessFields.style.display = 'block';
-        } else if (typeName.toLowerCase().includes('cedula')) {
-            cedulaFields.style.display = 'block';
+        const fee      = parseFloat(selectedOption.getAttribute('data-fee')) || 0;
+
+        if (fee > 0) {
+            feeAmountDisplay.textContent     = 'PHP ' + fee.toFixed(2);
+            feeAmountDisplay.className       = 'db-fee-banner__amount';
+        } else {
+            feeAmountDisplay.textContent     = 'Free';
+            feeAmountDisplay.className       = 'db-fee-banner__free';
         }
-        
+        feeBanner.style.display = 'block';
+
+        if (typeName.toLowerCase().includes('business')) businessFields.style.display = 'block';
+        else if (typeName.toLowerCase().includes('cedula')) cedulaFields.style.display = 'block';
+
         fetch('get_requirements.php?request_type_id=' + requestTypeId)
-            .then(response => response.json())
+            .then(r => r.json())
             .then(data => {
                 requirementsList.innerHTML = '';
                 if (data.success && data.requirements.length > 0) {
@@ -1242,102 +838,95 @@ document.addEventListener('DOMContentLoaded', function() {
                     requirementsSection.style.display = 'none';
                 }
             })
-            .catch(error => {
-                console.error('Error fetching requirements:', error);
-                requirementsList.innerHTML = '';
-                requirementsSection.style.display = 'none';
-            });
+            .catch(() => { requirementsSection.style.display = 'none'; });
     });
 });
 
 function createRequirementItem(requirement, index) {
     const div = document.createElement('div');
-    div.className = 'requirement-item ' + (requirement.is_mandatory ? 'mandatory' : 'optional');
-    
-    const uniqueId = 'req_' + requirement.requirement_id;
-    const labelId  = 'label_' + requirement.requirement_id;
-    const previewId= 'preview_' + requirement.requirement_id;
-    
+    div.className = 'db-req-item ' + (requirement.is_mandatory ? 'db-req-item--mandatory' : 'db-req-item--optional');
+
+    const uid     = 'req_' + requirement.requirement_id;
+    const labelId = 'label_' + requirement.requirement_id;
+    const prevId  = 'preview_' + requirement.requirement_id;
+
     div.innerHTML = `
-        <div class="d-flex justify-content-between align-items-start mb-3">
-            <div>
-                <strong><i class="fas fa-file-alt me-2"></i>${requirement.requirement_name}</strong>
-                ${requirement.is_mandatory ? '<span class="badge bg-danger ms-2">Required</span>' : '<span class="badge bg-secondary ms-2">Optional</span>'}
+        <div class="db-req-item__header">
+            <div class="db-req-item__name">
+                <i class="fas fa-file-alt" style="color:var(--db-muted);"></i>
+                ${requirement.requirement_name}
+                ${requirement.is_mandatory
+                    ? '<span class="db-badge db-badge--rose"><i class="fas fa-asterisk"></i> Required</span>'
+                    : '<span class="db-badge db-badge--muted">Optional</span>'}
             </div>
         </div>
-        ${requirement.description ? `<p class="text-muted small mb-3"><i class="fas fa-info-circle me-1"></i>${requirement.description}</p>` : ''}
-        <div class="file-upload-wrapper">
-            <input type="file" name="requirements[]" id="${uniqueId}" accept="image/*,.pdf"
-                   ${requirement.is_mandatory ? 'required' : ''}
-                   onchange="handleFileSelect(this, ${requirement.requirement_id})">
-            <input type="hidden" name="requirement_ids[]" value="${requirement.requirement_id}">
-            <label for="${uniqueId}" class="file-upload-label" id="${labelId}">
-                <i class="fas fa-cloud-upload-alt"></i>
-                <div class="file-name mt-2">Click to upload or drag file here</div>
-                <small class="text-muted d-block mt-1">Supported: JPG, PNG, GIF, PDF (Max: 5MB)</small>
-            </label>
-        </div>
-        <div id="${previewId}"></div>
+        ${requirement.description ? `<p style="font-size:12px; color:var(--db-muted); margin-bottom:10px;"><i class="fas fa-info-circle me-1"></i>${requirement.description}</p>` : ''}
+        <input type="file" name="requirements[]" id="${uid}" accept="image/*,.pdf" style="display:none;"
+               ${requirement.is_mandatory ? 'required' : ''}
+               onchange="handleFileSelect(this, ${requirement.requirement_id})">
+        <input type="hidden" name="requirement_ids[]" value="${requirement.requirement_id}">
+        <label for="${uid}" class="db-upload-zone" id="${labelId}">
+            <div class="db-upload-zone__icon"><i class="fas fa-cloud-upload-alt"></i></div>
+            <div class="db-upload-zone__text file-name">Click to upload or drag file here</div>
+            <div class="db-upload-zone__hint">JPG, PNG, GIF, PDF — Max 5MB</div>
+        </label>
+        <div id="${prevId}"></div>
     `;
     return div;
 }
 
 function handleFileSelect(input, requirementId) {
-    const label = document.getElementById('label_' + requirementId);
-    const preview = document.getElementById('preview_' + requirementId);
+    const label       = document.getElementById('label_' + requirementId);
+    const preview     = document.getElementById('preview_' + requirementId);
     const fileNameDiv = label.querySelector('.file-name');
-    
+
     if (input.files && input.files[0]) {
-        const file = input.files[0];
+        const file     = input.files[0];
         const fileSize = file.size / 1024 / 1024;
-        
+
         if (fileSize > 5) {
             alert('File size must be less than 5MB');
             input.value = '';
             return;
         }
-        
+
         label.classList.add('has-file');
-        fileNameDiv.innerHTML = `<i class="fas fa-check-circle text-success me-2"></i>${file.name}`;
-        
-        const previewContainer = document.createElement('div');
-        previewContainer.className = 'preview-container';
-        
+        fileNameDiv.innerHTML = `<i class="fas fa-check-circle" style="color:var(--db-success);"></i> ${file.name}`;
+
+        const container = document.createElement('div');
+        container.className = 'db-preview-container';
+
         if (file.type.startsWith('image/')) {
             const reader = new FileReader();
-            reader.onload = function(e) {
-                previewContainer.innerHTML = `
-                    <div class="text-center">
-                        <img src="${e.target.result}" class="preview-image" alt="Preview">
-                        <div class="file-info mt-2">
-                            <i class="fas fa-image me-2"></i><strong>File:</strong> ${file.name}<br>
-                            <i class="fas fa-weight me-2"></i><strong>Size:</strong> ${fileSize.toFixed(2)} MB
-                        </div>
-                        <button type="button" class="btn btn-sm btn-danger remove-file-btn" onclick="removeFile(${requirementId})">
-                            <i class="fas fa-trash me-1"></i>Remove File
-                        </button>
+            reader.onload = function (e) {
+                container.innerHTML = `
+                    <img src="${e.target.result}" class="db-preview-image" alt="Preview">
+                    <div style="font-size:11.5px; color:var(--db-muted); margin-top:8px;">
+                        <i class="fas fa-image me-1"></i>${file.name} &nbsp;·&nbsp; ${fileSize.toFixed(2)} MB
                     </div>
+                    <button type="button" class="db-btn db-btn--danger db-btn--sm" style="margin-top:8px;" onclick="removeFile(${requirementId})">
+                        <i class="fas fa-trash"></i> Remove
+                    </button>
                 `;
                 preview.innerHTML = '';
-                preview.appendChild(previewContainer);
+                preview.appendChild(container);
             };
             reader.readAsDataURL(file);
         } else {
-            previewContainer.innerHTML = `
-                <div class="text-center">
-                    <div class="alert alert-success mb-0">
-                        <i class="fas fa-file-pdf fa-2x mb-2"></i><br>
-                        <strong>PDF Document</strong><br>
-                        <small>${file.name}</small><br>
-                        <small class="text-muted">Size: ${fileSize.toFixed(2)} MB</small>
+            container.innerHTML = `
+                <div style="padding:12px; display:flex; align-items:center; gap:12px;">
+                    <i class="fas fa-file-pdf" style="font-size:28px; color:var(--db-rose);"></i>
+                    <div>
+                        <div style="font-weight:600; font-size:13px;">${file.name}</div>
+                        <div style="font-size:11.5px; color:var(--db-muted);">${fileSize.toFixed(2)} MB · PDF Document</div>
                     </div>
-                    <button type="button" class="btn btn-sm btn-danger remove-file-btn" onclick="removeFile(${requirementId})">
-                        <i class="fas fa-trash me-1"></i>Remove File
+                    <button type="button" class="db-btn db-btn--danger db-btn--sm" style="margin-left:auto;" onclick="removeFile(${requirementId})">
+                        <i class="fas fa-trash"></i> Remove
                     </button>
                 </div>
             `;
             preview.innerHTML = '';
-            preview.appendChild(previewContainer);
+            preview.appendChild(container);
         }
     } else {
         resetFileInput(requirementId);
@@ -1357,34 +946,32 @@ function resetFileInput(requirementId) {
     preview.innerHTML = '';
 }
 
-// Show confirmation modal
-document.getElementById('submitBtn').addEventListener('click', function(e) {
-    e.preventDefault();
-    
-    const form = document.getElementById('requestForm');
+// Submit button → show confirm modal
+document.getElementById('submitBtn').addEventListener('click', function () {
+    const form        = document.getElementById('requestForm');
     const requestType = document.getElementById('request_type_id');
-    const purpose = document.querySelector('input[name="purpose"]');
-    
-    if (!form.checkValidity()) { form.reportValidity(); return false; }
-    if (!requestType.value)    { alert('Please select a document type'); return false; }
-    if (!purpose.value.trim()) { alert('Please enter the purpose of your request'); return false; }
-    
+    const purpose     = document.querySelector('input[name="purpose"]');
+
+    if (!form.checkValidity()) { form.reportValidity(); return; }
+    if (!requestType.value)    { alert('Please select a document type.'); return; }
+    if (!purpose.value.trim()) { alert('Please enter the purpose of your request.'); return; }
+
     const requiredInputs = document.querySelectorAll('input[type="file"][required]');
     let missingFiles = false;
-    requiredInputs.forEach(input => { if (!input.files || input.files.length === 0) missingFiles = true; });
-    if (missingFiles) { alert('Please upload all required documents before submitting'); return false; }
-    
+    requiredInputs.forEach(i => { if (!i.files || i.files.length === 0) missingFiles = true; });
+    if (missingFiles) { alert('Please upload all required documents before submitting.'); return; }
+
     const selectedOption = requestType.options[requestType.selectedIndex];
-    const fee = selectedOption.getAttribute('data-fee');
-    const fullName = document.querySelector('input[type="text"][readonly]').value;
-    const contact  = document.querySelectorAll('input[type="text"][readonly]')[1].value;
-    
+    const fee     = parseFloat(selectedOption.getAttribute('data-fee')) || 0;
+    const fullName = document.querySelector('.db-form-control[readonly]').value;
+    const contact  = document.querySelectorAll('.db-form-control[readonly]')[1].value;
+
     document.getElementById('modal_fullname').textContent      = fullName;
     document.getElementById('modal_contact').textContent       = contact;
     document.getElementById('modal_document_type').textContent = selectedOption.text;
     document.getElementById('modal_purpose').textContent       = purpose.value;
-    document.getElementById('modal_fee').textContent           = fee > 0 ? 'PHP ' + parseFloat(fee).toFixed(2) : 'Free';
-    
+    document.getElementById('modal_fee').textContent           = fee > 0 ? 'PHP ' + fee.toFixed(2) : 'Free';
+
     const businessName = document.querySelector('input[name="business_name"]');
     if (businessName && businessName.value.trim()) {
         document.getElementById('modal_business_info').style.display = 'block';
@@ -1392,103 +979,87 @@ document.getElementById('submitBtn').addEventListener('click', function(e) {
     } else {
         document.getElementById('modal_business_info').style.display = 'none';
     }
-    
+
     const uploadedFiles = document.querySelectorAll('input[type="file"]');
     let hasFiles = false;
-    let filesList = '<ul class="list-unstyled mb-0">';
+    let filesList = '<ul style="list-style:none;margin:0;padding:0;">';
     uploadedFiles.forEach(input => {
         if (input.files && input.files.length > 0) {
             hasFiles = true;
-            filesList += `<li><i class="fas fa-check-circle text-success me-2"></i>${input.files[0].name}</li>`;
+            filesList += `<li style="padding:4px 0; font-size:12.5px;"><i class="fas fa-check-circle" style="color:var(--db-success);margin-right:6px;"></i>${input.files[0].name}</li>`;
         }
     });
     filesList += '</ul>';
-    
+
     document.getElementById('modal_requirements_info').style.display = hasFiles ? 'block' : 'none';
     if (hasFiles) document.getElementById('modal_requirements_list').innerHTML = filesList;
-    
+
     new bootstrap.Modal(document.getElementById('submitConfirmModal')).show();
 });
 
-document.getElementById('confirmSubmitBtn').addEventListener('click', function() {
+// Confirm submit
+document.getElementById('confirmSubmitBtn').addEventListener('click', function () {
     bootstrap.Modal.getInstance(document.getElementById('submitConfirmModal')).hide();
-    
-    const form          = document.getElementById('requestForm');
-    const submitBtn     = document.getElementById('submitBtn');
-    const cancelBtn     = document.getElementById('cancelBtn');
-    const loadingOverlay= document.getElementById('loadingOverlay');
-    const uploadProgress= document.getElementById('uploadProgress');
-    
-    submitBtn.disabled = true;
-    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Submitting...';
+
+    const form           = document.getElementById('requestForm');
+    const submitBtn      = document.getElementById('submitBtn');
+    const cancelBtn      = document.getElementById('cancelBtn');
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    const uploadProgress = document.getElementById('uploadProgress');
+
+    submitBtn.disabled  = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
     cancelBtn.style.pointerEvents = 'none';
-    cancelBtn.style.opacity = '0.5';
+    cancelBtn.style.opacity       = '0.5';
     loadingOverlay.classList.add('active');
-    
+
     const formData = new FormData(form);
     formData.append('submit_request', '1');
-    
+
     const requestType  = document.getElementById('request_type_id');
     const documentType = requestType.options[requestType.selectedIndex].text;
-    
+
     const xhr = new XMLHttpRequest();
-    
-    xhr.upload.addEventListener('progress', function(e) {
+    xhr.upload.addEventListener('progress', function (e) {
         if (e.lengthComputable) {
             uploadProgress.textContent = `Uploading... ${Math.round((e.loaded / e.total) * 100)}%`;
         }
     });
-    
-    xhr.addEventListener('load', function() {
+    xhr.addEventListener('load', function () {
         if (xhr.status === 200) {
             uploadProgress.textContent = 'Upload complete!';
-            submitBtn.innerHTML = '<i class="fas fa-check me-1"></i>Success!';
-            setTimeout(function() {
+            submitBtn.innerHTML = '<i class="fas fa-check"></i> Success!';
+            setTimeout(function () {
                 loadingOverlay.classList.remove('active');
                 const now = new Date();
-                document.getElementById('success_date').textContent = now.toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
+                document.getElementById('success_date').textContent     = now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
                 document.getElementById('success_document').textContent = documentType;
                 new bootstrap.Modal(document.getElementById('successModal')).show();
             }, 500);
         } else {
             loadingOverlay.classList.remove('active');
             submitBtn.disabled = false;
-            submitBtn.innerHTML = '<i class="fas fa-paper-plane me-1"></i>Submit Request';
+            submitBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Submit Request';
             cancelBtn.style.pointerEvents = '';
             cancelBtn.style.opacity = '';
             alert('An error occurred during submission. Please try again.');
         }
     });
-    
-    xhr.addEventListener('error', function() {
+    xhr.addEventListener('error', function () {
         loadingOverlay.classList.remove('active');
         submitBtn.disabled = false;
-        submitBtn.innerHTML = '<i class="fas fa-paper-plane me-1"></i>Submit Request';
+        submitBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Submit Request';
         cancelBtn.style.pointerEvents = '';
         cancelBtn.style.opacity = '';
         alert('Upload failed. Please check your connection and try again.');
     });
-    
-    xhr.addEventListener('timeout', function() {
-        loadingOverlay.classList.remove('active');
-        submitBtn.disabled = false;
-        submitBtn.innerHTML = '<i class="fas fa-paper-plane me-1"></i>Submit Request';
-        cancelBtn.style.pointerEvents = '';
-        cancelBtn.style.opacity = '';
-        alert('Upload timed out. Please try again.');
-    });
-    
     xhr.open('POST', window.location.href, true);
     xhr.timeout = 300000;
     xhr.send(formData);
 });
 
-document.getElementById('viewRequestsBtn').addEventListener('click', function() {
-    window.location.href = 'my-requests.php';
-});
-
-document.getElementById('newRequestBtn').addEventListener('click', function() {
-    window.location.reload();
-});
+document.getElementById('viewRequestsBtn').addEventListener('click', () => { window.location.href = 'my-requests.php'; });
+document.getElementById('newRequestBtn').addEventListener('click', () => { window.location.reload(); });
 </script>
+
 <?php include '../../includes/footer.php'; ?>
