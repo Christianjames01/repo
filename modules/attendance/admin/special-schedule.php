@@ -121,6 +121,22 @@ include '../../../includes/header.php';
 
 /* Today row highlight */
 .ss-today-row { background:#eff6ff !important; }
+
+/* ── View modal staff list ── */
+.vs-staff-list { display:flex; flex-direction:column; gap:6px; margin-top:8px; max-height:220px; overflow-y:auto; }
+.vs-staff-item {
+    display:flex; align-items:center; gap:10px;
+    padding:8px 10px; border-radius:8px;
+    background:#f8fafc; border:1px solid #e2e8f0;
+}
+.vs-staff-avatar {
+    width:34px; height:34px; border-radius:9px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:13px; font-weight:800; color:#fff; flex-shrink:0; overflow:hidden;
+}
+.vs-staff-avatar img { width:100%; height:100%; object-fit:cover; }
+.vs-staff-name { font-size:13px; font-weight:700; color:#0f172a; }
+.vs-staff-role { font-size:10.5px; color:#94a3b8; font-family:'DM Mono',monospace; }
 </style>
 
 <div class="ss-page">
@@ -238,7 +254,7 @@ include '../../../includes/header.php';
                                 <div title="<?php echo htmlspecialchars($am['full_name']??''); ?>"
                                      style="width:28px;height:28px;border-radius:7px;background:<?php echo $ab; ?>;border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#fff;overflow:hidden;margin-left:<?php echo $idx>0?'-8px':'0'; ?>;position:relative;z-index:<?php echo $show_max-$idx; ?>">
                                     <?php if (!empty($am['profile_photo'])): ?>
-                                        <img src="/barangaylink/uploads/profiles/<?php echo htmlspecialchars($am['profile_photo']); ?>" style="width:100%;height:100%;object-fit:cover" onerror="this.parentNode.innerHTML='<?php echo $ai; ?>'">
+                                        <img src="/barangaylink1/uploads/profiles/<?php echo htmlspecialchars($am['profile_photo']); ?>" style="width:100%;height:100%;object-fit:cover" onerror="this.parentNode.innerHTML='<?php echo $ai; ?>'">
                                     <?php else: echo $ai; endif; ?>
                                 </div>
                                 <?php endforeach; ?>
@@ -257,7 +273,9 @@ include '../../../includes/header.php';
                     <td><span class="db-text-sm"><?php echo htmlspecialchars($desc_short); ?></span></td>
                     <td>
                         <div class="db-btn-group">
-                            <button class="db-icon-btn db-icon-btn--info" onclick='viewSchedule(<?php echo json_encode($s); ?>)' title="View"><i class="fas fa-eye"></i></button>
+                            <button class="db-icon-btn db-icon-btn--info"
+                                    onclick='viewSchedule(<?php echo json_encode($s); ?>, <?php echo json_encode($assigned_staff_map[$s['schedule_id']] ?? []); ?>)'
+                                    title="View"><i class="fas fa-eye"></i></button>
                             <button class="db-icon-btn" onclick="assignStaff(<?php echo $s['schedule_id']; ?>,'<?php echo htmlspecialchars($s['schedule_name']); ?>')" title="Assign Staff" style="color:var(--db-success)"><i class="fas fa-user-plus"></i></button>
                             <?php if (!$is_past): ?>
                             <button class="db-icon-btn db-icon-btn--danger" onclick="confirmDelete(<?php echo $s['schedule_id']; ?>,'<?php echo htmlspecialchars($s['schedule_name']); ?>')" title="Delete"><i class="fas fa-trash"></i></button>
@@ -382,7 +400,7 @@ include '../../../includes/header.php';
                 <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--db-radius-sm);cursor:pointer;transition:background .12s" onmouseover="this.style.background='var(--db-surf2)'" onmouseout="this.style.background='transparent'">
                     <input type="checkbox" name="selected_users[]" value="<?php echo $m['user_id']; ?>" class="staff-assign-cb" style="accent-color:var(--db-navy-light);width:15px;height:15px;flex-shrink:0">
                     <div class="ss-avatar" style="background:<?php echo $sb; ?>">
-                        <?php if (!empty($m['profile_photo'])): ?><img src="/barangaylink/uploads/profiles/<?php echo $m['profile_photo']; ?>" alt=""><?php else: echo $si; endif; ?>
+                        <?php if (!empty($m['profile_photo'])): ?><img src="/barangaylink1/uploads/profiles/<?php echo htmlspecialchars($m['profile_photo']); ?>" alt=""><?php else: echo $si; endif; ?>
                     </div>
                     <div>
                         <div style="font-size:13px;font-weight:600"><?php echo htmlspecialchars($m['full_name']??$m['username']); ?></div>
@@ -457,13 +475,40 @@ function selectAllStaff(v) { document.querySelectorAll('.staff-assign-cb').forEa
 
 function fmtTime(t){ if(!t)return'—'; const[h,m]=t.split(':'); const ap=h>=12?'PM':'AM'; return`${h%12||12}:${m} ${ap}`; }
 
-function viewSchedule(s) {
+const avatarColors = ['#0d1b36','#1e40af','#065f46','#9f1239','#713f12','#075985','#7c3aed'];
+
+function viewSchedule(s, staffList) {
     const workHtml = s.is_working_day
         ? '<span class="db-badge db-badge--success"><i class="fas fa-briefcase"></i> Working Day</span>'
         : '<span class="db-badge db-badge--muted"><i class="fas fa-moon"></i> Non-Working</span>';
     const timeHtml = (s.custom_time_in||s.custom_time_out)
         ? `${s.custom_time_in?'<i class="fas fa-sign-in-alt" style="color:var(--db-success)"></i> '+fmtTime(s.custom_time_in):''}${s.custom_time_out?' &nbsp; <i class="fas fa-sign-out-alt" style="color:var(--db-danger)"></i> '+fmtTime(s.custom_time_out):''}`
         : '<span class="db-text-muted">Regular hours</span>';
+
+    // Build staff profile list
+    let staffHtml = '';
+    if (staffList && staffList.length > 0) {
+        staffHtml = '<div class="vs-staff-list">';
+        staffList.forEach(m => {
+            const initial = (m.full_name||'?').charAt(0).toUpperCase();
+            const color   = avatarColors[initial.charCodeAt(0) % avatarColors.length];
+            const avatar  = m.profile_photo
+                ? `<img src="/barangaylink1/uploads/profiles/${m.profile_photo}" alt="" onerror="this.parentNode.innerHTML='${initial}'">`
+                : initial;
+            staffHtml += `
+                <div class="vs-staff-item">
+                    <div class="vs-staff-avatar" style="background:${color}">${avatar}</div>
+                    <div>
+                        <div class="vs-staff-name">${m.full_name||'—'}</div>
+                        <div class="vs-staff-role">${m.role||''}</div>
+                    </div>
+                </div>`;
+        });
+        staffHtml += '</div>';
+    } else {
+        staffHtml = '<span class="db-badge db-badge--muted">No staff assigned</span>';
+    }
+
     document.getElementById('view_schedule_content').innerHTML = `
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
             <div><div class="db-text-sm">Schedule Name</div><strong>${s.schedule_name}</strong></div>
@@ -472,7 +517,13 @@ function viewSchedule(s) {
             <div><div class="db-text-sm">Status</div>${workHtml}</div>
             <div style="grid-column:span 2"><div class="db-text-sm">Custom Duty Hours</div><strong>${timeHtml}</strong></div>
             <div style="grid-column:span 2"><div class="db-text-sm">Description</div><span>${s.description||'No description'}</span></div>
-            <div><div class="db-text-sm">Assigned Staff</div><span class="db-badge db-badge--info">${s.assigned_count} staff</span></div>
+            <div style="grid-column:span 2">
+                <div class="db-text-sm" style="margin-bottom:6px">
+                    Assigned Staff
+                    <span class="db-badge db-badge--info" style="margin-left:6px">${staffList ? staffList.length : 0}</span>
+                </div>
+                ${staffHtml}
+            </div>
             <div><div class="db-text-sm">Created By</div><span>${s.created_by_name||'—'}</span></div>
         </div>
         <div style="margin-top:18px">
