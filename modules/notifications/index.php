@@ -1,6 +1,7 @@
 <?php
 /**
  * Notifications Dashboard - modules/notifications/index.php
+ * FIXED: email_reply / email_inbox routing, icon, filter pill, view_url
  */
 require_once '../../config/config.php';
 require_once '../../config/session.php';
@@ -13,7 +14,6 @@ $page_title = 'Notifications';
 $user_id    = $_SESSION['user_id'];
 $user_role  = getCurrentUserRole();
 
-// ── Normalise role so "Super Administrator" === "Super Admin" everywhere ──────
 $is_super_admin = ($user_role === 'Super Admin' || $user_role === 'Super Administrator');
 
 // ── Notification filter ───────────────────────────────────────────────────────
@@ -28,7 +28,8 @@ if ($user_role === 'Resident') {
         type LIKE '%blotter%' OR
         type IN ('general','announcement','alert','status_update','email_reply') OR
         reference_type IN ('incident','request','document','complaint',
-                           'appointment','medical_assistance','blotter','announcement','notification')
+                           'appointment','medical_assistance','blotter','announcement',
+                           'notification','email_inbox')
     )";
 } else {
     $notification_filter = "(
@@ -41,7 +42,8 @@ if ($user_role === 'Resident') {
         type LIKE '%medical_assistance%' OR
         type IN ('general','announcement','alert','status_update','email_reply') OR
         reference_type IN ('incident','blotter','request','document','complaint',
-                           'appointment','medical_assistance','announcement','notification')
+                           'appointment','medical_assistance','announcement',
+                           'notification','email_inbox')
     )";
 }
 
@@ -126,7 +128,9 @@ elseif ($filter === 'today')   { $where .= " AND DATE(created_at) = CURDATE()"; 
 elseif ($filter === 'week')    { $where .= " AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"; }
 
 if ($type_filter) {
-    if (stripos($type_filter, 'announcement') !== false || stripos($type_filter, 'general') !== false) {
+    if (stripos($type_filter, 'email') !== false) {
+        $where .= " AND (type = 'email_reply' OR reference_type = 'email_inbox')";
+    } elseif (stripos($type_filter, 'announcement') !== false || stripos($type_filter, 'general') !== false) {
         $where .= " AND (type IN ('general','announcement','alert','status_update') OR reference_type = 'announcement')";
     } elseif (stripos($type_filter, 'blotter') !== false) {
         $where .= " AND (type LIKE '%blotter%' OR reference_type = 'blotter')";
@@ -172,13 +176,17 @@ $request_total             = 0;
 $appointment_total         = 0;
 $medical_assistance_total  = 0;
 $announcement_total        = 0;
+$email_reply_total         = 0; // ← NEW
 
 foreach ($all_type_stats as $ts) {
     $t  = strtolower(trim($ts['type']          ?? ''));
     $rt = strtolower(trim($ts['reference_type'] ?? ''));
     $c  = intval($ts['count']);
 
-    if ($rt === 'incident' || stripos($t, 'incident') !== false) {
+    // ── email_reply / email_inbox — check FIRST so it doesn't fall into announcement
+    if ($rt === 'email_inbox' || $t === 'email_reply') {
+        $email_reply_total += $c;
+    } elseif ($rt === 'incident' || stripos($t, 'incident') !== false) {
         $incident_total += $c;
     } elseif ($rt === 'blotter' || stripos($t, 'blotter') !== false) {
         $blotter_total += $c;
@@ -204,6 +212,7 @@ $is_complaint_active          = (stripos($type_filter, 'complaint')    !== false
 $is_request_active            = (stripos($type_filter, 'request')      !== false || stripos($type_filter, 'document') !== false);
 $is_appointment_active        = (stripos($type_filter, 'appointment')  !== false);
 $is_medical_assistance_active = (stripos($type_filter, 'medical_assistance') !== false);
+$is_email_reply_active        = (stripos($type_filter, 'email') !== false); // ← NEW
 
 include '../../includes/header.php';
 ?>
@@ -280,12 +289,11 @@ body { font-family: 'Sora', sans-serif; background: var(--db-bg); color: var(--d
     display: flex; align-items: center; gap: 12px;
     padding: 14px 18px; border-radius: var(--db-radius);
     margin-bottom: 16px; font-weight: 500; font-size: 13.5px;
-    border-left: 4px solid; transition: opacity .3s ease, transform .3s ease;
+    border-left: 4px solid;
 }
 .db-alert--success { background: var(--db-success-light); color: #065f46; border-color: var(--db-success); }
 .db-alert--error   { background: var(--db-danger-light);  color: #7f1d1d;  border-color: var(--db-danger); }
 .db-alert__close { margin-left: auto; background: none; border: none; cursor: pointer; font-size: 18px; opacity: .6; }
-.db-alert__close:hover { opacity: 1; }
 
 /* ── Stats Row ── */
 .db-stats-row { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 24px; }
@@ -419,6 +427,9 @@ body { font-family: 'Sora', sans-serif; background: var(--db-bg); color: var(--d
 .db-pill--success.db-pill--active       { background: var(--db-success); border-color: var(--db-success); }
 .db-pill--indigo:not(.db-pill--active)  { border-color: rgba(99,102,241,.3);  color: var(--db-indigo); }
 .db-pill--indigo.db-pill--active        { background: var(--db-indigo); border-color: var(--db-indigo); }
+/* Email pill - teal color */
+.db-pill--teal:not(.db-pill--active)    { border-color: rgba(13,148,136,.3);  color: var(--db-teal); }
+.db-pill--teal.db-pill--active          { background: var(--db-teal); border-color: var(--db-teal); }
 
 /* ── Table ── */
 .db-table-wrap { overflow-x: auto; }
@@ -433,6 +444,8 @@ body { font-family: 'Sora', sans-serif; background: var(--db-bg); color: var(--d
 .db-notif-row { cursor: pointer; }
 .db-notif-row--unread { background: linear-gradient(to right, rgba(99,102,241,.04), rgba(99,102,241,.01)); border-left: 3px solid var(--db-indigo) !important; }
 .db-notif-row--unread td:first-child { padding-left: 13px; }
+/* Email reply unread gets sky/teal accent */
+.db-notif-row--email-unread { background: linear-gradient(to right, rgba(14,165,233,.05), rgba(14,165,233,.01)); border-left: 3px solid var(--db-sky) !important; }
 .db-notif-row:hover { background: #f5f8ff !important; }
 .db-notif-icon-wrap { position: relative; display: inline-block; }
 .db-notif-icon { width: 44px; height: 44px; border-radius: 11px; display: flex; align-items: center; justify-content: center; font-size: 17px; transition: transform .2s; }
@@ -446,9 +459,13 @@ body { font-family: 'Sora', sans-serif; background: var(--db-bg); color: var(--d
 .db-notif-icon--sky      { background: var(--db-sky-light);     color: var(--db-sky); }
 .db-notif-icon--teal     { background: var(--db-teal-light);    color: var(--db-teal); }
 .db-unread-dot { position: absolute; top: -3px; right: -3px; width: 11px; height: 11px; background: var(--db-indigo); border-radius: 50%; border: 2px solid #fff; animation: pulseDot 2s infinite; }
+.db-unread-dot--sky { background: var(--db-sky); } /* for email replies */
 @keyframes pulseDot { 0%,100%{opacity:1} 50%{opacity:.45} }
 .db-notif-title   { font-size: 13px; font-weight: 700; color: var(--db-text); margin-bottom: 4px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .db-notif-preview { font-size: 12px; color: var(--db-muted); line-height: 1.55; margin-bottom: 6px; }
+/* Show sender email inline for email replies */
+.db-notif-sender  { font-size: 11.5px; color: var(--db-sky); font-weight: 500; margin-bottom: 5px; }
+.db-notif-sender i { margin-right: 4px; }
 .db-notif-meta    { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .db-notif-time    { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--db-muted); white-space: nowrap; }
 
@@ -529,6 +546,7 @@ body { font-family: 'Sora', sans-serif; background: var(--db-bg); color: var(--d
 .db-preview-card__title { font-size: .88rem; font-weight: 700; color: var(--db-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .db-preview-card__body  { padding: 11px 15px 13px; }
 .db-preview-card__msg   { font-size: .8rem; color: var(--db-muted); line-height: 1.6; margin-bottom: 9px; }
+.db-preview-card__sender { font-size: .76rem; color: var(--db-sky); font-weight: 600; margin-bottom: 6px; }
 .db-preview-card__time  { font-family: 'DM Mono', monospace; font-size: .72rem; color: #adb5bd; display: flex; align-items: center; gap: 4px; }
 
 @media(max-width:768px){
@@ -557,7 +575,7 @@ body { font-family: 'Sora', sans-serif; background: var(--db-bg); color: var(--d
                         <?php if ($user_role === 'Resident'): ?>
                             Incidents, Complaints, Document Requests &amp; Announcements
                         <?php else: ?>
-                            Incidents, Blotter, Complaints, Requests &amp; Announcements
+                            Incidents, Blotter, Complaints, Requests, Emails &amp; Announcements
                         <?php endif; ?>
                     </small>
                 </div>
@@ -636,42 +654,56 @@ body { font-family: 'Sora', sans-serif; background: var(--db-bg); color: var(--d
         <i class="fas fa-th" style="font-size:10px"></i> All
         <span class="db-pill__count"><?= $stats['total'] ?></span>
     </a>
+
+    <?php if ($email_reply_total > 0): ?>
+    <a href="?filter=<?= $filter ?>&type=email_reply" class="db-pill db-pill--teal <?= $is_email_reply_active ? 'db-pill--active' : '' ?>">
+        <i class="fas fa-envelope" style="font-size:10px"></i> Email Replies
+        <span class="db-pill__count"><?= $email_reply_total ?></span>
+    </a>
+    <?php endif; ?>
+
     <?php if ($announcement_total > 0): ?>
     <a href="?filter=<?= $filter ?>&type=announcement" class="db-pill db-pill--dark <?= $is_announcement_active ? 'db-pill--active' : '' ?>">
         <i class="fas fa-bullhorn" style="font-size:10px"></i> Announcements
         <span class="db-pill__count"><?= $announcement_total ?></span>
     </a>
     <?php endif; ?>
+
     <?php if ($incident_total > 0): ?>
     <a href="?filter=<?= $filter ?>&type=incident_reported" class="db-pill db-pill--primary <?= $is_incident_active ? 'db-pill--active' : '' ?>">
         <i class="fas fa-exclamation-triangle" style="font-size:10px"></i> Incident
         <span class="db-pill__count"><?= $incident_total ?></span>
     </a>
     <?php endif; ?>
+
     <?php if ($blotter_total > 0): ?>
     <a href="?filter=<?= $filter ?>&type=blotter_filed" class="db-pill db-pill--danger <?= $is_blotter_active ? 'db-pill--active' : '' ?>">
         <i class="fas fa-gavel" style="font-size:10px"></i> Blotter
         <span class="db-pill__count"><?= $blotter_total ?></span>
     </a>
     <?php endif; ?>
+
     <?php if ($complaint_total > 0): ?>
     <a href="?filter=<?= $filter ?>&type=complaint_filed" class="db-pill db-pill--warning <?= $is_complaint_active ? 'db-pill--active' : '' ?>">
         <i class="fas fa-comments" style="font-size:10px"></i> Complaints
         <span class="db-pill__count"><?= $complaint_total ?></span>
     </a>
     <?php endif; ?>
+
     <?php if ($request_total > 0): ?>
     <a href="?filter=<?= $filter ?>&type=document_request" class="db-pill db-pill--info <?= $is_request_active ? 'db-pill--active' : '' ?>">
         <i class="fas fa-file-alt" style="font-size:10px"></i> Documents
         <span class="db-pill__count"><?= $request_total ?></span>
     </a>
     <?php endif; ?>
+
     <?php if ($appointment_total > 0): ?>
     <a href="?filter=<?= $filter ?>&type=appointment_booked" class="db-pill db-pill--success <?= $is_appointment_active ? 'db-pill--active' : '' ?>">
         <i class="fas fa-calendar-check" style="font-size:10px"></i> Appointments
         <span class="db-pill__count"><?= $appointment_total ?></span>
     </a>
     <?php endif; ?>
+
     <?php if ($medical_assistance_total > 0): ?>
     <a href="?filter=<?= $filter ?>&type=medical_assistance_request" class="db-pill db-pill--indigo <?= $is_medical_assistance_active ? 'db-pill--active' : '' ?>">
         <i class="fas fa-hand-holding-medical" style="font-size:10px"></i> Medical
@@ -721,7 +753,8 @@ body { font-family: 'Sora', sans-serif; background: var(--db-bg); color: var(--d
                     <i class="fas fa-tag"></i>
                     Type: <?php
                     if ($type_filter) {
-                        if ($is_announcement_active)           echo 'Announcements';
+                        if ($is_email_reply_active)            echo 'Email Replies';
+                        elseif ($is_announcement_active)       echo 'Announcements';
                         elseif ($is_incident_active)           echo 'Incident';
                         elseif ($is_blotter_active)            echo 'Blotter';
                         elseif ($is_complaint_active)          echo 'Complaints';
@@ -737,6 +770,11 @@ body { font-family: 'Sora', sans-serif; background: var(--db-bg); color: var(--d
                     <div class="db-dropdown-header">Filter by Type</div>
                     <a class="db-dropdown-item <?= !$type_filter?'active':'' ?>" href="?filter=<?= $filter ?>"><i class="fas fa-th"></i> All Types</a>
                     <div class="db-dropdown-divider"></div>
+                    <?php if ($email_reply_total > 0): ?>
+                    <a class="db-dropdown-item <?= $is_email_reply_active?'active':'' ?>" href="?filter=<?= $filter ?>&type=email_reply" style="color:var(--db-teal)">
+                        <i class="fas fa-envelope" style="color:var(--db-teal)"></i> Email Replies <span class="db-badge db-badge--teal" style="margin-left:auto"><?= $email_reply_total ?></span>
+                    </a>
+                    <?php endif; ?>
                     <?php if ($announcement_total > 0): ?>
                     <a class="db-dropdown-item <?= $is_announcement_active?'active':'' ?>" href="?filter=<?= $filter ?>&type=announcement">
                         <i class="fas fa-bullhorn"></i> Announcements <span class="db-badge db-badge--dark" style="margin-left:auto"><?= $announcement_total ?></span>
@@ -801,9 +839,10 @@ body { font-family: 'Sora', sans-serif; background: var(--db-bg); color: var(--d
         <i class="fas fa-bell-slash"></i>
         <p>
         <?php
-        if ($filter === 'unread')    echo "You're all caught up! No unread notifications.";
-        elseif ($filter === 'today') echo "No notifications received today.";
-        else                         echo "You don't have any notifications yet.";
+        if ($filter === 'unread')          echo "You're all caught up! No unread notifications.";
+        elseif ($filter === 'today')       echo "No notifications received today.";
+        elseif ($is_email_reply_active)    echo "No email reply notifications yet.";
+        else                               echo "You don't have any notifications yet.";
         ?>
         </p>
         <?php if ($filter !== 'all' || $type_filter): ?>
@@ -831,12 +870,20 @@ body { font-family: 'Sora', sans-serif; background: var(--db-bg); color: var(--d
                     $t  = $notif['type'];
                     $rt = $notif['reference_type'] ?? '';
 
+                    // ── FIX: detect email_reply FIRST before any other type check ──
+                    $is_email_row = ($t === 'email_reply' || $rt === 'email_inbox');
+
                     // ── icon / color logic ──
                     $icon       = 'fa-bell';
                     $icon_class = 'db-notif-icon--primary';
                     $badge_var  = 'indigo';
 
-                    if ($rt === 'announcement' || in_array($t, ['general','announcement','alert','status_update'])) {
+                    if ($is_email_row) {
+                        // ── EMAIL REPLY — teal/sky envelope icon ──
+                        $icon       = 'fa-envelope';
+                        $icon_class = 'db-notif-icon--sky';
+                        $badge_var  = 'sky';
+                    } elseif ($rt === 'announcement' || in_array($t, ['general','announcement','alert','status_update'])) {
                         $icon = 'fa-bullhorn'; $icon_class = 'db-notif-icon--dark'; $badge_var = 'dark';
                         if ($t === 'alert')            { $icon = 'fa-exclamation-circle'; $icon_class = 'db-notif-icon--danger';  $badge_var = 'danger';  }
                         elseif ($t === 'announcement') { $icon = 'fa-bullhorn';           $icon_class = 'db-notif-icon--dark';    $badge_var = 'dark';    }
@@ -859,9 +906,13 @@ body { font-family: 'Sora', sans-serif; background: var(--db-bg); color: var(--d
                         $icon = 'fa-hand-holding-medical'; $icon_class = 'db-notif-icon--teal'; $badge_var = 'teal';
                     }
 
-                    // ── view URL ──
+                    // ── FIX: view URL — email_reply always goes to notification-detail.php ──
                     $is_ann_type = ($rt === 'announcement' || in_array($t, ['general','announcement','alert','status_update']));
-                    if ($is_ann_type) {
+
+                    if ($is_email_row) {
+                        // ← THE KEY FIX: email replies open the detail page which shows full thread
+                        $view_url = 'notification-detail.php?id=' . intval($notif['notification_id']);
+                    } elseif ($is_ann_type) {
                         $view_url = 'notification-detail.php?id=' . intval($notif['notification_id']);
                     } elseif (!empty($notif['reference_id'])) {
                         if      ($rt === 'incident')             $view_url = '../incidents/incident-details.php?id='   . intval($notif['reference_id']);
@@ -875,14 +926,33 @@ body { font-family: 'Sora', sans-serif; background: var(--db-bg); color: var(--d
                         $view_url = 'notification-detail.php?id=' . intval($notif['notification_id']);
                     }
 
+                    // ── extract sender info for email rows ──
+                    $sender_display = '';
+                    if ($is_email_row) {
+                        // Parse "From: Name <email> content" from message
+                        $msg = $notif['message'];
+                        if (preg_match('/From:\s*(.+?)(?:\s*<(.+?)>)?(?:\s|$)/i', $msg, $m)) {
+                            $sender_display = trim($m[1]) . (!empty($m[2]) ? ' <' . trim($m[2]) . '>' : '');
+                        } else {
+                            // Fallback: show first 60 chars of message
+                            $sender_display = mb_strimwidth(strip_tags($msg), 0, 60, '...');
+                        }
+                    }
+
                     $preview_msg = htmlspecialchars(mb_strimwidth($notif['message'], 0, 120, '...'));
                     $full_msg    = htmlspecialchars($notif['message']);
                     $full_title  = htmlspecialchars($notif['title']);
-                    $type_label  = htmlspecialchars(ucwords(str_replace('_', ' ', $notif['type'])));
+                    $type_label  = $is_email_row ? 'Email Reply' : htmlspecialchars(ucwords(str_replace('_', ' ', $notif['type'])));
                     $ref_label   = !empty($rt) ? htmlspecialchars(ucwords($rt)) : '';
                     $time_text   = timeAgo($notif['created_at']);
+
+                    // Row class — email replies get sky accent instead of indigo
+                    $row_unread_class = '';
+                    if (!$notif['is_read']) {
+                        $row_unread_class = $is_email_row ? 'db-notif-row--email-unread' : 'db-notif-row--unread';
+                    }
                 ?>
-                <tr class="db-notif-row <?= !$notif['is_read'] ? 'db-notif-row--unread' : '' ?>"
+                <tr class="db-notif-row <?= $row_unread_class ?>"
                     data-preview-title="<?= $full_title ?>"
                     data-preview-message="<?= $preview_msg ?>"
                     data-full-message="<?= $full_msg ?>"
@@ -891,6 +961,7 @@ body { font-family: 'Sora', sans-serif; background: var(--db-bg); color: var(--d
                     data-preview-type="<?= $type_label ?>"
                     data-ref-label="<?= $ref_label ?>"
                     data-preview-time="<?= htmlspecialchars(date('M j, Y g:i A', strtotime($notif['created_at']))) ?>"
+                    data-preview-sender="<?= htmlspecialchars($sender_display) ?>"
                     data-url="<?= htmlspecialchars($view_url) ?>"
                     data-notif-id="<?= $notif['notification_id'] ?>"
                     data-is-read="<?= $notif['is_read'] ? '1' : '0' ?>">
@@ -905,7 +976,7 @@ body { font-family: 'Sora', sans-serif; background: var(--db-bg); color: var(--d
                                 <i class="fas <?= $icon ?>"></i>
                             </div>
                             <?php if (!$notif['is_read']): ?>
-                                <span class="db-unread-dot"></span>
+                                <span class="db-unread-dot <?= $is_email_row ? 'db-unread-dot--sky' : '' ?>"></span>
                             <?php endif; ?>
                         </div>
                     </td>
@@ -913,14 +984,20 @@ body { font-family: 'Sora', sans-serif; background: var(--db-bg); color: var(--d
                         <div class="db-notif-title">
                             <?= $full_title ?>
                             <?php if (!$notif['is_read']): ?>
-                                <span class="db-badge db-badge--indigo db-badge--new">NEW</span>
+                                <span class="db-badge db-badge--<?= $is_email_row ? 'sky' : 'indigo' ?> db-badge--new"><?= $is_email_row ? 'NEW EMAIL' : 'NEW' ?></span>
                             <?php endif; ?>
                         </div>
+                        <?php if ($is_email_row && $sender_display): ?>
+                        <div class="db-notif-sender"><i class="fas fa-user-circle"></i><?= htmlspecialchars($sender_display) ?></div>
+                        <?php endif; ?>
                         <div class="db-notif-preview"><?= $preview_msg ?></div>
                         <div class="db-notif-meta">
                             <span class="db-badge db-badge--<?= $badge_var ?>"><i class="fas fa-tag"></i> <?= $type_label ?></span>
-                            <?php if (!empty($rt)): ?>
+                            <?php if (!empty($rt) && !$is_email_row): ?>
                             <span class="db-badge db-badge--muted"><i class="fas fa-link"></i> <?= ucwords($rt) ?></span>
+                            <?php endif; ?>
+                            <?php if ($is_email_row): ?>
+                            <span class="db-badge db-badge--muted"><i class="fas fa-reply"></i> Click to reply</span>
                             <?php endif; ?>
                         </div>
                     </td>
@@ -966,6 +1043,7 @@ body { font-family: 'Sora', sans-serif; background: var(--db-bg); color: var(--d
         </div>
     </div>
     <div class="db-preview-card__body">
+        <p class="db-preview-card__sender" id="previewSender" style="display:none"></p>
         <p class="db-preview-card__msg" id="previewMessage"></p>
         <div class="db-preview-card__time"><i class="far fa-clock"></i><span id="previewTime"></span></div>
     </div>
@@ -1054,117 +1132,127 @@ var hoverCard=document.getElementById('notifPreviewCard'),
     previewIconBox=document.getElementById('previewIconBox'),
     previewTitle=document.getElementById('previewTitle'),
     previewMessage=document.getElementById('previewMessage'),
+    previewSender=document.getElementById('previewSender'),
     previewType=document.getElementById('previewTypeLabel'),
     previewTime=document.getElementById('previewTime'),
     hideTimer=null;
 
-function showHoverCard(row,e){
-    if(!hoverCard)return;
+function showHoverCard(row, e) {
+    if (!hoverCard) return;
     clearTimeout(hideTimer);
-    previewTitle.textContent   = row.dataset.previewTitle   ||'';
-    previewMessage.textContent = row.dataset.previewMessage ||'';
-    previewType.textContent    = row.dataset.previewType    ||'';
-    previewTime.textContent    = row.dataset.previewTime    ||'';
-    previewIcon.className      = 'fas '+(row.dataset.previewIcon||'fa-bell');
-    previewIconBox.className   = 'db-preview-card__icon '+(row.dataset.previewIconClass||'db-notif-icon--primary');
+    previewTitle.textContent   = row.dataset.previewTitle   || '';
+    previewMessage.textContent = row.dataset.previewMessage || '';
+    previewType.textContent    = row.dataset.previewType    || '';
+    previewTime.textContent    = row.dataset.previewTime    || '';
+    previewIcon.className      = 'fas ' + (row.dataset.previewIcon || 'fa-bell');
+    previewIconBox.className   = 'db-preview-card__icon ' + (row.dataset.previewIconClass || 'db-notif-icon--primary');
+    // Show sender for email rows
+    var sender = row.dataset.previewSender || '';
+    if (sender && previewSender) {
+        previewSender.textContent = '✉ ' + sender;
+        previewSender.style.display = '';
+    } else if (previewSender) {
+        previewSender.style.display = 'none';
+    }
     positionHoverCard(e);
-    hoverCard.style.display='block';
+    hoverCard.style.display = 'block';
 }
-function positionHoverCard(e){
-    if(!hoverCard)return;
-    var margin=16,cw=hoverCard.offsetWidth||310,ch=hoverCard.offsetHeight||180;
-    var vw=window.innerWidth,vh=window.innerHeight;
-    var x=e.clientX+margin,y=e.clientY+margin;
-    if(x+cw>vw-margin) x=e.clientX-cw-margin;
-    if(y+ch>vh-margin) y=e.clientY-ch-margin;
-    hoverCard.style.left=x+'px'; hoverCard.style.top=y+'px';
+function positionHoverCard(e) {
+    if (!hoverCard) return;
+    var margin=16, cw=hoverCard.offsetWidth||310, ch=hoverCard.offsetHeight||180;
+    var vw=window.innerWidth, vh=window.innerHeight;
+    var x=e.clientX+margin, y=e.clientY+margin;
+    if (x+cw > vw-margin) x = e.clientX-cw-margin;
+    if (y+ch > vh-margin) y = e.clientY-ch-margin;
+    hoverCard.style.left = x+'px'; hoverCard.style.top = y+'px';
 }
-function hideHoverCard(){ if(hoverCard) hoverCard.style.display='none'; }
+function hideHoverCard() { if (hoverCard) hoverCard.style.display='none'; }
 
-/* ── Row click ── */
-document.querySelectorAll('.db-notif-row').forEach(function(row){
-    row.addEventListener('mouseenter',function(e){ showHoverCard(this,e); });
-    row.addEventListener('mousemove', function(e){ positionHoverCard(e); });
-    row.addEventListener('mouseleave',function(){
-        hideTimer=setTimeout(function(){ if(hoverCard&&!hoverCard.matches(':hover')) hideHoverCard(); },150);
+/* ── Row click — always navigates to view_url ── */
+document.querySelectorAll('.db-notif-row').forEach(function(row) {
+    row.addEventListener('mouseenter', function(e) { showHoverCard(this, e); });
+    row.addEventListener('mousemove',  function(e) { positionHoverCard(e); });
+    row.addEventListener('mouseleave', function() {
+        hideTimer = setTimeout(function() { if (hoverCard && !hoverCard.matches(':hover')) hideHoverCard(); }, 150);
     });
-    row.addEventListener('click',function(e){
-        if(e.target.closest('input[type="checkbox"]')) return;
-        var notifId=this.getAttribute('data-notif-id');
-        var url=this.getAttribute('data-url');
-        var isRead=this.getAttribute('data-is-read');
-        if(!notifId) return;
-        var dest=(url&&url!=='')?url:('notification-detail.php?id='+notifId);
-        if(isRead==='0'){
-            var fd=new FormData();
-            fd.append('action','mark_read');
-            fd.append('notification_id',notifId);
-            fetch('mark-as-read.php',{method:'POST',body:fd})
+    row.addEventListener('click', function(e) {
+        if (e.target.closest('input[type="checkbox"]')) return;
+        var notifId = this.getAttribute('data-notif-id');
+        var url     = this.getAttribute('data-url');
+        var isRead  = this.getAttribute('data-is-read');
+        if (!notifId) return;
+        // url is already correctly set — email rows go to notification-detail.php
+        var dest = (url && url !== '') ? url : ('notification-detail.php?id=' + notifId);
+        if (isRead === '0') {
+            var fd = new FormData();
+            fd.append('action', 'mark_read');
+            fd.append('notification_id', notifId);
+            fetch('mark-as-read.php', { method: 'POST', body: fd })
                 .catch(function(){})
-                .finally(function(){ window.location.href=dest; });
+                .finally(function() { window.location.href = dest; });
         } else {
-            window.location.href=dest;
+            window.location.href = dest;
         }
     });
 });
 
 /* ── Bulk helpers ── */
-function toggleSelectAll(cb){
-    document.querySelectorAll('.notification-checkbox').forEach(function(c){ c.checked=cb.checked; });
+function toggleSelectAll(cb) {
+    document.querySelectorAll('.notification-checkbox').forEach(function(c) { c.checked = cb.checked; });
 }
-function selectAll(){
-    document.querySelectorAll('.notification-checkbox').forEach(function(c){ c.checked=true; });
-    var sa=document.getElementById('selectAllCheckbox'); if(sa) sa.checked=true;
+function selectAll() {
+    document.querySelectorAll('.notification-checkbox').forEach(function(c) { c.checked = true; });
+    var sa = document.getElementById('selectAllCheckbox'); if (sa) sa.checked = true;
 }
-function deselectAll(){
-    document.querySelectorAll('.notification-checkbox').forEach(function(c){ c.checked=false; });
-    var sa=document.getElementById('selectAllCheckbox'); if(sa) sa.checked=false;
+function deselectAll() {
+    document.querySelectorAll('.notification-checkbox').forEach(function(c) { c.checked = false; });
+    var sa = document.getElementById('selectAllCheckbox'); if (sa) sa.checked = false;
 }
-function showBulkValidation(msg,title){
-    document.getElementById('bulkValidationTitle').textContent   = title||'Action Required';
+function showBulkValidation(msg, title) {
+    document.getElementById('bulkValidationTitle').textContent   = title || 'Action Required';
     document.getElementById('bulkValidationMessage').textContent = msg;
     openDbModal('bulkValidationModal');
 }
-function showBulkConfirm(msg,title,iconClass,isDelete,onConfirm){
-    var header=document.getElementById('bulkConfirmHeader');
-    header.className='db-modal__header '+(isDelete?'db-modal__header--danger':'db-modal__header--success');
-    document.getElementById('bulkConfirmHeaderTitle').innerHTML='<i class="fas '+iconClass+'"></i> '+title;
-    document.getElementById('bulkConfirmTitle').textContent=title;
-    document.getElementById('bulkConfirmMessage').textContent=msg;
-    var wrap=document.getElementById('bulkConfirmIconWrap');
-    wrap.className='db-modal__confirm-icon '+(isDelete?'db-modal__confirm-icon--danger':'db-modal__confirm-icon--success');
-    document.getElementById('bulkConfirmIcon').className='fas '+iconClass;
-    var btn=document.getElementById('bulkConfirmBtn');
-    btn.className='db-btn '+(isDelete?'db-btn--danger':'db-btn--success');
-    var fresh=btn.cloneNode(true);
-    btn.parentNode.replaceChild(fresh,btn);
-    fresh.addEventListener('click',function(){ closeDbModal('bulkConfirmModal'); onConfirm(); });
+function showBulkConfirm(msg, title, iconClass, isDelete, onConfirm) {
+    var header = document.getElementById('bulkConfirmHeader');
+    header.className = 'db-modal__header ' + (isDelete ? 'db-modal__header--danger' : 'db-modal__header--success');
+    document.getElementById('bulkConfirmHeaderTitle').innerHTML = '<i class="fas '+iconClass+'"></i> ' + title;
+    document.getElementById('bulkConfirmTitle').textContent   = title;
+    document.getElementById('bulkConfirmMessage').textContent = msg;
+    var wrap = document.getElementById('bulkConfirmIconWrap');
+    wrap.className = 'db-modal__confirm-icon ' + (isDelete ? 'db-modal__confirm-icon--danger' : 'db-modal__confirm-icon--success');
+    document.getElementById('bulkConfirmIcon').className = 'fas ' + iconClass;
+    var btn   = document.getElementById('bulkConfirmBtn');
+    btn.className = 'db-btn ' + (isDelete ? 'db-btn--danger' : 'db-btn--success');
+    var fresh = btn.cloneNode(true);
+    btn.parentNode.replaceChild(fresh, btn);
+    fresh.addEventListener('click', function() { closeDbModal('bulkConfirmModal'); onConfirm(); });
     openDbModal('bulkConfirmModal');
 }
-function bulkMarkRead(){
-    var checked=document.querySelectorAll('.notification-checkbox:checked');
-    if(!checked.length){ showBulkValidation('Please select at least one notification.','Nothing Selected'); return; }
-    showBulkConfirm('Mark '+checked.length+' notification(s) as read?','Mark as Read','fa-check-circle',false,function(){
-        document.getElementById('bulkAction').value='bulk_read';
+function bulkMarkRead() {
+    var checked = document.querySelectorAll('.notification-checkbox:checked');
+    if (!checked.length) { showBulkValidation('Please select at least one notification.', 'Nothing Selected'); return; }
+    showBulkConfirm('Mark '+checked.length+' notification(s) as read?', 'Mark as Read', 'fa-check-circle', false, function() {
+        document.getElementById('bulkAction').value = 'bulk_read';
         document.getElementById('bulkForm').submit();
     });
 }
-function bulkDelete(){
-    var checked=document.querySelectorAll('.notification-checkbox:checked');
-    if(!checked.length){ showBulkValidation('Please select at least one notification.','Nothing Selected'); return; }
-    showBulkConfirm('Delete '+checked.length+' notification(s)? Cannot be undone.','Delete Notifications','fa-trash',true,function(){
-        document.getElementById('bulkAction').value='bulk_delete';
+function bulkDelete() {
+    var checked = document.querySelectorAll('.notification-checkbox:checked');
+    if (!checked.length) { showBulkValidation('Please select at least one notification.', 'Nothing Selected'); return; }
+    showBulkConfirm('Delete '+checked.length+' notification(s)? Cannot be undone.', 'Delete Notifications', 'fa-trash', true, function() {
+        document.getElementById('bulkAction').value = 'bulk_delete';
         document.getElementById('bulkForm').submit();
     });
 }
 
 /* ── Auto-dismiss alerts ── */
-setTimeout(function(){
-    document.querySelectorAll('.db-alert').forEach(function(a){
-        a.style.opacity='0'; a.style.transform='translateY(-8px)';
-        setTimeout(function(){ a.remove(); },400);
+setTimeout(function() {
+    document.querySelectorAll('.db-alert').forEach(function(a) {
+        a.style.opacity = '0'; a.style.transform = 'translateY(-8px)';
+        setTimeout(function() { a.remove(); }, 400);
     });
-},5000);
+}, 5000);
 </script>
 
 <?php include '../../includes/footer.php'; ?>

@@ -10,7 +10,7 @@ require_once '../../includes/functions.php';
 
 // Check if user is logged in
 if (!isLoggedIn()) {
-    redirect('/barangaylink/modules/auth/login.php', 'Please login to continue', 'error');
+    redirect('/barangaylink1/modules/auth/login.php', 'Please login to continue', 'error');
 }
 
 $page_title = 'Attendance Time Log';

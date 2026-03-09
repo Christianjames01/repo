@@ -50,9 +50,9 @@ if (isset($_GET['export']) && $_GET['export']==='excel') {
     echo "<tr><th colspan='4'>Period: ".($start_date&&$end_date?date('F d, Y',strtotime($start_date))." to ".date('F d, Y',strtotime($end_date)):'All Records')."</th></tr>";
     if ($status_filter) echo "<tr><th colspan='4'>Status: ".htmlspecialchars($status_filter)."</th></tr>";
     echo "<tr><th colspan='4'>&nbsp;</th></tr><tr><th>Metric</th><th>Count</th><th></th><th></th></tr>";
-    $sc=['Pending'=>0,'Under Investigation'=>0,'Resolved'=>0,'Archived'=>0,'Closed'=>0];
-    foreach($status_data as $s) $sc[$s['status']]=$s['count'];
-    foreach(['Total Records'=>$total_count,'Pending'=>$sc['Pending'],'Under Investigation'=>$sc['Under Investigation'],'Resolved'=>$sc['Resolved'],'Closed'=>max($sc['Closed'],$sc['Archived'])] as $k=>$v) echo "<tr><td>$k</td><td>$v</td><td></td><td></td></tr>";
+    $sc_map=['Pending'=>0,'Under Investigation'=>0,'Resolved'=>0,'Archived'=>0,'Closed'=>0];
+    foreach($status_data as $s) $sc_map[$s['status']]=$s['count'];
+    foreach(['Total Records'=>$total_count,'Pending'=>$sc_map['Pending'],'Under Investigation'=>$sc_map['Under Investigation'],'Resolved'=>$sc_map['Resolved'],'Closed'=>max($sc_map['Closed'],$sc_map['Archived'])] as $k=>$v) echo "<tr><td>$k</td><td>$v</td><td></td><td></td></tr>";
     echo "<tr><td colspan='4'>&nbsp;</td></tr><tr><th>Incident Type</th><th>Count</th><th>%</th><th></th></tr>";
     foreach($type_data as $t) echo "<tr><td>".htmlspecialchars($t['incident_type'])."</td><td>".$t['count']."</td><td>".($total_count?number_format($t['count']/$total_count*100,1):0)."%</td><td></td></tr>";
     echo "<tr><td colspan='4'>&nbsp;</td></tr><tr><th>Month</th><th>Cases</th><th></th><th></th></tr>";
@@ -62,8 +62,8 @@ if (isset($_GET['export']) && $_GET['export']==='excel') {
 
 // PDF export
 if (isset($_GET['export']) && $_GET['export']==='pdf') {
-    $sc=['Pending'=>0,'Under Investigation'=>0,'Resolved'=>0,'Archived'=>0,'Closed'=>0];
-    foreach($status_data as $s) $sc[$s['status']]=$s['count'];
+    $sc_pdf=['Pending'=>0,'Under Investigation'=>0,'Resolved'=>0,'Archived'=>0,'Closed'=>0];
+    foreach($status_data as $s) $sc_pdf[$s['status']]=$s['count'];
     ?><!DOCTYPE html><html><head><title>Blotter Report</title>
     <style>@page{margin:20px;}body{font-family:Arial,sans-serif;font-size:11px;}.hdr{text-align:center;border-bottom:2px solid #0d1b36;margin-bottom:12px;padding-bottom:8px;}table{width:100%;border-collapse:collapse;margin-bottom:10px;}th,td{border:1px solid #ddd;padding:4px 6px;text-align:left;}th{background:#f2f2f2;font-weight:700;}</style>
     </head><body><div class="hdr"><h2 style="margin:4px 0;">BARANGAY BLOTTER REPORT</h2>
@@ -71,7 +71,7 @@ if (isset($_GET['export']) && $_GET['export']==='pdf') {
     <p style="margin:2px 0;">Generated: <?php echo date('F d, Y h:i A'); ?></p></div>
     <h3 style="font-size:12px;">Summary</h3>
     <table><tr><th>Metric</th><th>Count</th></tr>
-    <?php foreach(['Total Records'=>$total_count,'Pending'=>$sc['Pending'],'Under Investigation'=>$sc['Under Investigation'],'Resolved'=>$sc['Resolved'],'Closed'=>max($sc['Closed'],$sc['Archived'])] as $k=>$v): ?>
+    <?php foreach(['Total Records'=>$total_count,'Pending'=>$sc_pdf['Pending'],'Under Investigation'=>$sc_pdf['Under Investigation'],'Resolved'=>$sc_pdf['Resolved'],'Closed'=>max($sc_pdf['Closed'],$sc_pdf['Archived'])] as $k=>$v): ?>
     <tr><td><?php echo $k; ?></td><td><strong><?php echo $v; ?></strong></td></tr><?php endforeach; ?>
     </table>
     <h3 style="font-size:12px;">Top Incident Types</h3>
@@ -97,7 +97,77 @@ $closed_count = max($sc['Closed'],$sc['Archived']);
 include '../../includes/header.php';
 ?>
 <style>
-<?php include '/home/claude/_db_shared.css'; ?>
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=DM+Mono:wght@300;400;500&display=swap');
+:root{--db-navy:#0d1b36;--db-navy-mid:#152849;--db-navy-light:#1c3461;--db-amber:#f59e0b;--db-amber-light:#fef3c7;--db-amber-dark:#b45309;--db-teal:#0d9488;--db-teal-light:#ccfbf1;--db-rose:#e11d48;--db-rose-light:#ffe4e6;--db-sky:#0ea5e9;--db-sky-light:#e0f2fe;--db-indigo:#6366f1;--db-indigo-light:#e0e7ff;--db-success:#10b981;--db-success-light:#d1fae5;--db-danger:#ef4444;--db-danger-light:#fee2e2;--db-bg:#eef2f7;--db-surf:#ffffff;--db-surf2:#f8fafc;--db-border:#e2e8f0;--db-text:#0f172a;--db-muted:#64748b;--db-radius:14px;--db-radius-sm:8px;--db-radius-lg:20px;--db-shadow:0 1px 3px rgba(13,27,54,.06),0 4px 16px rgba(13,27,54,.07);--db-shadow-lg:0 8px 40px rgba(13,27,54,.14),0 2px 8px rgba(13,27,54,.06);}
+*,*::before,*::after{box-sizing:border-box;}
+body{font-family:'Sora',sans-serif;background:var(--db-bg);color:var(--db-text);font-size:13.5px;}
+.rm-hero{background:linear-gradient(135deg,var(--db-navy) 0%,var(--db-navy-light) 65%,#224090 100%);padding:28px 36px;margin-bottom:24px;border-radius:0 0 var(--db-radius-lg) var(--db-radius-lg);position:relative;overflow:hidden;}
+.rm-hero__ring{position:absolute;border-radius:50%;border:1px solid rgba(255,255,255,.06);pointer-events:none;}
+.rm-hero__ring--1{width:300px;height:300px;top:-130px;right:-60px;}
+.rm-hero__ring--2{width:180px;height:180px;top:-50px;right:70px;border-color:rgba(245,158,11,.12);}
+.rm-hero__ring--3{width:100px;height:100px;bottom:-40px;left:40%;border-color:rgba(13,148,136,.14);}
+.rm-hero__inner{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+.rm-hero__left{display:flex;align-items:center;gap:16px;}
+.rm-hero__icon{width:52px;height:52px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff;flex-shrink:0;}
+.rm-hero__icon--amber{background:linear-gradient(135deg,var(--db-amber),var(--db-amber-dark));box-shadow:0 4px 16px rgba(245,158,11,.4);}
+.rm-hero__title{font-size:22px;font-weight:800;color:#fff;letter-spacing:-.4px;margin-bottom:3px;}
+.rm-hero__sub{font-size:13px;color:rgba(255,255,255,.55);}
+.rm-hero__badges{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.db-panel{background:var(--db-surf);border-radius:var(--db-radius-lg);border:1px solid var(--db-border);box-shadow:var(--db-shadow);margin-bottom:18px;overflow:hidden;animation:dbFadeUp .35s ease both;}
+@keyframes dbFadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.db-panel__header{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid var(--db-border);gap:10px;flex-wrap:wrap;}
+.db-panel__title{display:flex;align-items:center;gap:10px;}
+.db-panel__title h2{font-size:15px;font-weight:700;margin:0;}
+.db-panel__icon{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;}
+.db-panel__icon--navy{background:var(--db-indigo-light);color:var(--db-navy);}
+.db-panel__icon--amber{background:var(--db-amber-light);color:var(--db-amber-dark);}
+.db-panel__icon--sky{background:var(--db-sky-light);color:var(--db-sky);}
+.db-panel__icon--success{background:var(--db-success-light);color:var(--db-success);}
+.db-panel__icon--teal{background:var(--db-teal-light);color:var(--db-teal);}
+.db-panel__icon--rose{background:var(--db-rose-light);color:var(--db-rose);}
+.db-panel__icon--muted{background:var(--db-surf2);color:var(--db-muted);}
+.db-panel__body{padding:20px 22px;}
+.db-stats-row{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:24px;}
+.db-stat-card{flex:1 1 140px;background:var(--db-surf);border-radius:var(--db-radius);padding:18px 16px 14px;display:flex;flex-direction:column;gap:10px;box-shadow:var(--db-shadow);border:1px solid var(--db-border);transition:transform .2s,box-shadow .2s;}
+.db-stat-card:hover{transform:translateY(-3px);box-shadow:var(--db-shadow-lg);}
+.db-stat-card__num{font-size:28px;font-weight:800;line-height:1;letter-spacing:-1px;}
+.db-stat-card__label{font-size:10px;color:var(--db-muted);font-weight:500;text-transform:uppercase;letter-spacing:.5px;margin-top:2px;}
+.db-form-label{display:block;font-size:12px;font-weight:600;color:var(--db-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;}
+.db-form-control{width:100%;padding:10px 13px;border:1.5px solid var(--db-border);border-radius:var(--db-radius-sm);font-family:'Sora',sans-serif;font-size:13px;color:var(--db-text);background:var(--db-surf);outline:none;transition:border-color .18s,box-shadow .18s;appearance:none;}
+.db-form-control:focus{border-color:var(--db-navy-light);box-shadow:0 0 0 3px rgba(28,52,97,.1);}
+select.db-form-control{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2364748b' d='M6 8L1 3h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px;}
+.db-btn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;border-radius:var(--db-radius-sm);font-family:'Sora',sans-serif;font-size:13px;font-weight:600;cursor:pointer;border:1px solid transparent;text-decoration:none;transition:all .18s;white-space:nowrap;}
+.db-btn--sm{padding:6px 13px;font-size:12px;}
+.db-btn--primary{background:linear-gradient(135deg,var(--db-navy),var(--db-navy-light));color:#fff;}
+.db-btn--primary:hover{background:linear-gradient(135deg,var(--db-navy-light),#2748a0);transform:translateY(-1px);box-shadow:0 4px 14px rgba(13,27,54,.25);color:#fff;}
+.db-btn--ghost{background:var(--db-surf2);color:var(--db-text);border-color:var(--db-border);}
+.db-btn--ghost:hover{background:var(--db-border);color:var(--db-text);}
+.db-btn--glass{background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.25);}
+.db-btn--glass:hover{background:rgba(255,255,255,.22);color:#fff;}
+.db-btn--success{background:linear-gradient(135deg,#065f46,var(--db-success));color:#fff;}
+.db-btn--success:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(16,185,129,.3);color:#fff;}
+.db-btn--danger{background:linear-gradient(135deg,#9f1239,var(--db-rose));color:#fff;}
+.db-btn--danger:hover{transform:translateY(-1px);color:#fff;}
+.db-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:20px;font-family:'DM Mono',monospace;font-size:10px;font-weight:500;letter-spacing:.3px;white-space:nowrap;}
+.db-badge--sky{background:var(--db-sky-light);color:#0369a1;}
+.db-badge--amber{background:var(--db-amber-light);color:#92400e;}
+.db-badge--success{background:var(--db-success-light);color:#065f46;}
+.db-badge--rose{background:var(--db-rose-light);color:#9f1239;}
+.db-badge--muted{background:var(--db-surf2);color:var(--db-muted);border:1px solid var(--db-border);}
+.db-badge--indigo{background:var(--db-indigo-light);color:#4338ca;}
+.db-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:48px 24px;text-align:center;gap:12px;}
+.db-empty i{font-size:40px;color:var(--db-border);}
+.db-empty p{font-size:14px;color:var(--db-muted);}
+/* Shared dark-header table styles */
+.db-tbl{width:100%;border-collapse:collapse;font-size:12.5px;}
+.db-tbl thead tr{background:linear-gradient(135deg,var(--db-navy),var(--db-navy-light));}
+.db-tbl thead th{color:rgba(255,255,255,.8);font-family:'DM Mono',monospace;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.8px;padding:11px 16px;white-space:nowrap;border:none;}
+.db-tbl tbody tr{border-bottom:1px solid var(--db-border);transition:background .12s;}
+.db-tbl tbody tr:last-child{border-bottom:none;}
+.db-tbl tbody tr:hover{background:var(--db-surf2);}
+.db-tbl tbody td{padding:11px 16px;vertical-align:middle;}
+@media print{.no-print{display:none !important}}
+@media(max-width:768px){.rm-hero{padding:20px;border-radius:0;}}
 </style>
 
 <!-- Hero -->
@@ -109,7 +179,7 @@ include '../../includes/header.php';
         <div class="rm-hero__left">
             <div class="rm-hero__icon rm-hero__icon--amber"><i class="fas fa-chart-bar"></i></div>
             <div>
-                <div class="rm-hero__title">Blotter Reports & Statistics</div>
+                <div class="rm-hero__title">Blotter Reports &amp; Statistics</div>
                 <div class="rm-hero__sub">Analyze blotter records and trends</div>
             </div>
         </div>
@@ -127,8 +197,8 @@ include '../../includes/header.php';
 
 <div style="padding:0 24px 32px;">
 
-<!-- Filter bar -->
-<div class="db-panel" style="margin-bottom:18px;">
+<!-- Filter Panel -->
+<div class="db-panel no-print">
     <div class="db-panel__header">
         <div class="db-panel__title">
             <div class="db-panel__icon db-panel__icon--navy"><i class="fas fa-filter"></i></div>
@@ -152,43 +222,46 @@ include '../../includes/header.php';
                 <label class="db-form-label">Status</label>
                 <select name="status" class="db-form-control">
                     <option value="">All Statuses</option>
-                    <?php foreach (['Pending','Under Investigation','Resolved','Archived'] as $s): ?>
-                    <option value="<?php echo $s; ?>" <?php echo ($status_filter===$s)?'selected':''; ?>><?php echo $s; ?></option>
+                    <?php foreach(['Pending','Under Investigation','Resolved','Archived'] as $s): ?>
+                    <option value="<?php echo $s; ?>" <?php echo($status_filter===$s)?'selected':''; ?>><?php echo $s; ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
             <div class="col-md-3">
-                <button type="submit" class="db-btn db-btn--primary" style="width:100%;justify-content:center;"><i class="fas fa-search"></i> Apply Filter</button>
+                <button type="submit" class="db-btn db-btn--primary" style="width:100%;justify-content:center;">
+                    <i class="fas fa-search"></i> Apply Filter
+                </button>
             </div>
         </form>
     </div>
 </div>
 
-<!-- Stat cards -->
-<div style="display:flex;flex-wrap:wrap;gap:14px;margin-bottom:24px;">
+<!-- Stat Cards -->
+<div class="db-stats-row">
     <?php
-    $stat_cards=[
-        ['icon'=>'fa-clipboard-list','label'=>'Total Records','value'=>$total_count,'color'=>'navy','num_color'=>'var(--db-navy)'],
-        ['icon'=>'fa-clock','label'=>'Pending','value'=>$sc['Pending'],'color'=>'amber','num_color'=>'var(--db-amber-dark)'],
-        ['icon'=>'fa-search','label'=>'Investigating','value'=>$sc['Under Investigation'],'color'=>'sky','num_color'=>'var(--db-sky)'],
-        ['icon'=>'fa-check-circle','label'=>'Resolved','value'=>$sc['Resolved'],'color'=>'success','num_color'=>'var(--db-success)'],
-        ['icon'=>'fa-archive','label'=>'Closed','value'=>$closed_count,'color'=>'muted','num_color'=>'var(--db-muted)'],
+    $stat_cards = [
+        ['icon'=>'fa-clipboard-list', 'label'=>'Total Records',   'value'=>$total_count,              'color'=>'navy',    'num_color'=>'var(--db-navy)'],
+        ['icon'=>'fa-clock',          'label'=>'Pending',         'value'=>$sc['Pending'],             'color'=>'amber',   'num_color'=>'var(--db-amber-dark)'],
+        ['icon'=>'fa-search',         'label'=>'Investigating',   'value'=>$sc['Under Investigation'], 'color'=>'sky',     'num_color'=>'var(--db-sky)'],
+        ['icon'=>'fa-check-circle',   'label'=>'Resolved',        'value'=>$sc['Resolved'],            'color'=>'success', 'num_color'=>'var(--db-success)'],
+        ['icon'=>'fa-archive',        'label'=>'Closed',          'value'=>$closed_count,              'color'=>'muted',   'num_color'=>'var(--db-muted)'],
     ];
-    foreach($stat_cards as $sc_item): ?>
-    <div style="flex:1 1 160px;background:var(--db-surf);border-radius:var(--db-radius);padding:18px 16px 14px;display:flex;flex-direction:column;gap:10px;box-shadow:var(--db-shadow);border:1px solid var(--db-border);">
-        <div class="db-panel__icon db-panel__icon--<?php echo $sc_item['color']; ?>" style="width:40px;height:40px;border-radius:10px;">
-            <i class="fas <?php echo $sc_item['icon']; ?>"></i>
+    foreach($stat_cards as $c): ?>
+    <div class="db-stat-card">
+        <div class="db-panel__icon db-panel__icon--<?php echo $c['color']; ?>" style="width:40px;height:40px;border-radius:10px;">
+            <i class="fas <?php echo $c['icon']; ?>"></i>
         </div>
         <div>
-            <div style="font-size:28px;font-weight:800;line-height:1;letter-spacing:-1px;color:<?php echo $sc_item['num_color']; ?>;"><?php echo $sc_item['value']; ?></div>
-            <div style="font-size:11px;color:var(--db-muted);font-weight:500;text-transform:uppercase;letter-spacing:.5px;margin-top:4px;"><?php echo $sc_item['label']; ?></div>
+            <div class="db-stat-card__num" style="color:<?php echo $c['num_color']; ?>;"><?php echo $c['value']; ?></div>
+            <div class="db-stat-card__label"><?php echo $c['label']; ?></div>
         </div>
     </div>
     <?php endforeach; ?>
 </div>
 
-<!-- Charts row -->
+<!-- Charts Row -->
 <div class="row g-3 mb-3">
+    <!-- Top Incident Types -->
     <div class="col-lg-6">
         <div class="db-panel">
             <div class="db-panel__header">
@@ -202,21 +275,21 @@ include '../../includes/header.php';
             <div class="db-empty"><i class="fas fa-inbox"></i><p>No data available</p></div>
             <?php else: ?>
             <div style="overflow-x:auto;">
-                <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
-                    <thead><tr style="background:linear-gradient(135deg,var(--db-navy),var(--db-navy-light));">
-                        <th style="color:rgba(255,255,255,.8);font-family:'DM Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.8px;padding:10px 16px;">Incident Type</th>
-                        <th style="color:rgba(255,255,255,.8);font-family:'DM Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.8px;padding:10px 16px;text-align:right;">Count</th>
-                        <th style="color:rgba(255,255,255,.8);font-family:'DM Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.8px;padding:10px 16px;text-align:right;">%</th>
+                <table class="db-tbl">
+                    <thead><tr>
+                        <th>Incident Type</th>
+                        <th style="text-align:right;">Count</th>
+                        <th style="text-align:right;">%</th>
                     </tr></thead>
                     <tbody>
                     <?php foreach($type_data as $t): $pct=$total_count?number_format($t['count']/$total_count*100,1):0; ?>
-                    <tr style="border-bottom:1px solid var(--db-border);">
-                        <td style="padding:11px 16px;vertical-align:middle;">
-                            <i class="fas fa-circle" style="color:var(--db-amber);font-size:7px;margin-right:8px;"></i>
+                    <tr>
+                        <td>
+                            <i class="fas fa-circle" style="color:var(--db-amber);font-size:7px;margin-right:8px;vertical-align:middle;"></i>
                             <?php echo htmlspecialchars($t['incident_type']); ?>
                         </td>
-                        <td style="padding:11px 16px;text-align:right;font-weight:700;"><?php echo $t['count']; ?></td>
-                        <td style="padding:11px 16px;text-align:right;"><span class="db-badge db-badge--amber"><?php echo $pct; ?>%</span></td>
+                        <td style="text-align:right;font-weight:700;font-family:'DM Mono',monospace;"><?php echo $t['count']; ?></td>
+                        <td style="text-align:right;"><span class="db-badge db-badge--amber"><?php echo $pct; ?>%</span></td>
                     </tr>
                     <?php endforeach; ?>
                     </tbody>
@@ -226,6 +299,7 @@ include '../../includes/header.php';
         </div>
     </div>
 
+    <!-- Status Distribution -->
     <div class="col-lg-6">
         <div class="db-panel">
             <div class="db-panel__header">
@@ -238,24 +312,26 @@ include '../../includes/header.php';
             <div class="db-empty"><i class="fas fa-inbox"></i><p>No data available</p></div>
             <?php else: ?>
             <div style="overflow-x:auto;">
-                <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
-                    <thead><tr style="background:linear-gradient(135deg,var(--db-navy),var(--db-navy-light));">
-                        <th style="color:rgba(255,255,255,.8);font-family:'DM Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.8px;padding:10px 16px;">Status</th>
-                        <th style="color:rgba(255,255,255,.8);font-family:'DM Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.8px;padding:10px 16px;text-align:right;">Count</th>
-                        <th style="color:rgba(255,255,255,.8);font-family:'DM Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.8px;padding:10px 16px;text-align:right;">%</th>
+                <table class="db-tbl">
+                    <thead><tr>
+                        <th>Status</th>
+                        <th style="text-align:right;">Count</th>
+                        <th style="text-align:right;">%</th>
                     </tr></thead>
                     <tbody>
-                    <?php foreach($status_data as $s):
-                        $pct=$total_count?number_format($s['count']/$total_count*100,1):0;
-                        $bc=['Pending'=>'amber','Under Investigation'=>'sky','Resolved'=>'success'][$s['status']]??'muted';
+                    <?php
+                    $badge_map = ['Pending'=>'amber','Under Investigation'=>'sky','Resolved'=>'success','Archived'=>'muted','Closed'=>'muted'];
+                    foreach($status_data as $s):
+                        $pct = $total_count ? number_format($s['count']/$total_count*100,1) : 0;
+                        $bc  = $badge_map[$s['status']] ?? 'muted';
                     ?>
-                    <tr style="border-bottom:1px solid var(--db-border);">
-                        <td style="padding:11px 16px;vertical-align:middle;">
-                            <i class="fas fa-circle" style="color:var(--db-<?php echo $bc; ?>);font-size:7px;margin-right:8px;"></i>
-                            <?php echo htmlspecialchars($s['status']); ?>
+                    <tr>
+                        <td>
+                            <i class="fas fa-circle" style="color:var(--db-<?php echo $bc === 'muted' ? 'muted' : $bc; ?>);font-size:7px;margin-right:8px;vertical-align:middle;"></i>
+                            <span class="db-badge db-badge--<?php echo $bc; ?>"><?php echo htmlspecialchars($s['status']); ?></span>
                         </td>
-                        <td style="padding:11px 16px;text-align:right;font-weight:700;"><?php echo $s['count']; ?></td>
-                        <td style="padding:11px 16px;text-align:right;"><span class="db-badge db-badge--<?php echo $bc; ?>"><?php echo $pct; ?>%</span></td>
+                        <td style="text-align:right;font-weight:700;font-family:'DM Mono',monospace;"><?php echo $s['count']; ?></td>
+                        <td style="text-align:right;"><span class="db-badge db-badge--<?php echo $bc; ?>"><?php echo $pct; ?>%</span></td>
                     </tr>
                     <?php endforeach; ?>
                     </tbody>
@@ -278,19 +354,19 @@ include '../../includes/header.php';
     <div class="db-empty"><i class="fas fa-inbox"></i><p>No data available</p></div>
     <?php else: ?>
     <div style="overflow-x:auto;">
-        <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
-            <thead><tr style="background:linear-gradient(135deg,var(--db-navy),var(--db-navy-light));">
-                <th style="color:rgba(255,255,255,.8);font-family:'DM Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.8px;padding:10px 16px;">Month</th>
-                <th style="color:rgba(255,255,255,.8);font-family:'DM Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.8px;padding:10px 16px;text-align:right;">Cases</th>
+        <table class="db-tbl">
+            <thead><tr>
+                <th>Month</th>
+                <th style="text-align:right;">Cases</th>
             </tr></thead>
             <tbody>
             <?php foreach($trend_data as $t): ?>
-            <tr style="border-bottom:1px solid var(--db-border);">
-                <td style="padding:11px 16px;">
+            <tr>
+                <td>
                     <i class="far fa-calendar-alt" style="color:var(--db-sky);margin-right:8px;font-size:11px;"></i>
                     <?php echo date('F Y',strtotime($t['month'].'-01')); ?>
                 </td>
-                <td style="padding:11px 16px;text-align:right;"><span class="db-badge db-badge--sky"><?php echo $t['count']; ?> cases</span></td>
+                <td style="text-align:right;"><span class="db-badge db-badge--sky"><?php echo $t['count']; ?> cases</span></td>
             </tr>
             <?php endforeach; ?>
             </tbody>
@@ -299,8 +375,8 @@ include '../../includes/header.php';
     <?php endif; ?>
 </div>
 
-<!-- Export -->
-<div class="db-panel">
+<!-- Export Panel -->
+<div class="db-panel no-print">
     <div class="db-panel__header">
         <div class="db-panel__title">
             <div class="db-panel__icon db-panel__icon--navy"><i class="fas fa-download"></i></div>
@@ -308,11 +384,19 @@ include '../../includes/header.php';
         </div>
     </div>
     <div class="db-panel__body" style="text-align:center;">
-        <p style="color:var(--db-muted);margin-bottom:16px;font-size:13px;">Download blotter reports in different formats</p>
+        <p style="color:var(--db-muted);margin-bottom:18px;font-size:13px;">Download blotter reports in your preferred format</p>
         <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
-            <button type="button" class="db-btn db-btn--ghost" onclick="window.print()"><i class="fas fa-print"></i> Print Report</button>
-            <a href="?start_date=<?php echo $start_date; ?>&end_date=<?php echo $end_date; ?>&status=<?php echo $status_filter; ?>&export=pdf" target="_blank" class="db-btn db-btn--primary"><i class="fas fa-file-pdf"></i> Export PDF</a>
-            <a href="?start_date=<?php echo $start_date; ?>&end_date=<?php echo $end_date; ?>&status=<?php echo $status_filter; ?>&export=excel" class="db-btn db-btn--success"><i class="fas fa-file-excel"></i> Export Excel</a>
+            <button type="button" class="db-btn db-btn--ghost" onclick="window.print()">
+                <i class="fas fa-print"></i> Print Report
+            </button>
+            <a href="?start_date=<?php echo urlencode($start_date); ?>&end_date=<?php echo urlencode($end_date); ?>&status=<?php echo urlencode($status_filter); ?>&export=pdf"
+               target="_blank" class="db-btn db-btn--primary">
+                <i class="fas fa-file-pdf"></i> Export PDF
+            </a>
+            <a href="?start_date=<?php echo urlencode($start_date); ?>&end_date=<?php echo urlencode($end_date); ?>&status=<?php echo urlencode($status_filter); ?>&export=excel"
+               class="db-btn db-btn--success">
+                <i class="fas fa-file-excel"></i> Export Excel
+            </a>
         </div>
     </div>
 </div>

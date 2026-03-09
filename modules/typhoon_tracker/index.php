@@ -1598,14 +1598,24 @@ function openForecastModal(idx) {
     document.getElementById('detailPressureSub').textContent=!d.pressure?'—':d.pressure<1005?'Critical low':d.pressure<1009?'Low pressure':'Normal range';
     const rainPct=d.precipProb;
     const tempPct=Math.min(100,Math.round(((d.maxTemp-20)/20)*100));
-    const comfort=Math.max(1,Math.min(10,Math.round(10-(d.precipProb/20)-(d.windSpeed/30)-(((d.humidity||APP.weatherData?.humidity||70)-50)/15))));
-    document.getElementById('statRainProb').textContent=rainPct;
+const _hum   = d.humidity ?? APP.weatherData?.humidity ?? 70;
+const _wind  = d.windSpeed ?? 0;
+const _temp  = d.maxTemp ?? 30;
+const _rain  = d.precipProb ?? 0;
+
+const _rainPenalty  = Math.min(4,  _rain  / 25);
+const _windPenalty  = Math.min(3,  _wind  / 40);
+const _humPenalty   = Math.max(0, (_hum  - 75) / 25);
+const _heatPenalty  = Math.max(0, (_temp - 34) / 4);
+
+const comfort = Math.max(1, Math.min(10,
+    Math.round(10 - _rainPenalty - _windPenalty - _humPenalty - _heatPenalty)
+));    document.getElementById('statRainProb').textContent=rainPct;
     document.getElementById('statRainDesc').textContent=rainPct>=80?'High — expect showers':rainPct>=50?'Moderate — bring umbrella':'Low — likely dry';
     document.getElementById('statTempHigh').textContent=d.maxTemp;
     document.getElementById('statTempDesc').textContent=d.maxTemp>=36?'Danger — avoid outdoors':d.maxTemp>=33?'Caution — limit activity':'Comfortable range';
     document.getElementById('statComfort').textContent=comfort;
-    document.getElementById('statComfortDesc').textContent=comfort>=8?'Excellent — great day!':comfort>=6?'Moderate comfort':comfort>=4?'Uncomfortable':'Poor — stay indoors';
-    const adv=document.getElementById('weatherAdvice');
+document.getElementById('statComfortDesc').textContent=comfort>=8?'Excellent — great day outdoors!':comfort>=6?'Good — minor discomfort':comfort>=4?'Moderate — take it easy':comfort>=2?'Poor — limit outdoor time':'Very poor — stay indoors';    const adv=document.getElementById('weatherAdvice');
     adv.className='tt-modal__advice ';
     if(d.precipProb>=80||d.windSpeed>=62){adv.className+='tt-modal__advice--danger';document.getElementById('adviceTitle').textContent='⚠️ Weather Warning';document.getElementById('adviceText').textContent=d.windSpeed>=62?`Strong winds (${d.windSpeed} km/h) forecast. Secure loose objects and monitor PAGASA.`:`Heavy rain (${d.precip}mm) likely. Flood risk — keep NDRRMC (911) ready.`;}
     else if(d.precipProb>=40){adv.className+='tt-modal__advice--caution';document.getElementById('adviceTitle').textContent='☔ Weather Advisory';document.getElementById('adviceText').textContent=`Moderate rain (${d.precipProb}%). Carry an umbrella and avoid flood-prone areas.`;}
@@ -1620,10 +1630,27 @@ function closeForecastModal() {
 }
 
 function askAIAboutDay() {
-    const dayName=document.getElementById('modalDayName')?.textContent||'this day';
+    const dayName = document.getElementById('modalDayName')?.textContent || 'this day';
+    const dayDate = document.getElementById('modalDayDate')?.textContent || '';
+    const tempHigh = document.getElementById('statTempHigh')?.textContent || '—';
+    const rainProb = document.getElementById('statRainProb')?.textContent || '—';
+    const rainfall = document.getElementById('detailRainfall')?.textContent || '—';
+    const windSpeed = document.getElementById('detailWindSpeed')?.textContent || '—';
+    const humidity = document.getElementById('detailHumidity')?.textContent || '—';
+    const pressure = document.getElementById('detailPressure')?.textContent || '—';
+    const condition = document.getElementById('modalConditionText')?.textContent || '—';
+    const comfort = document.getElementById('statComfort')?.textContent || '—';
+    const advice = document.getElementById('adviceText')?.textContent || '—';
+
+    const message = `What should I prepare for the weather on ${dayName} (${dayDate})? `
+        + `Here is the actual forecast data: Condition: ${condition}, High: ${tempHigh}°C, `
+        + `Rain probability: ${rainProb}%, Expected rainfall: ${rainfall}, Wind: ${windSpeed}, `
+        + `Humidity: ${humidity}, Pressure: ${pressure}, Comfort score: ${comfort}/10. `
+        + `Advisory: ${advice}. Give me specific and practical advice based on these exact conditions.`;
+
     closeForecastModal();
     document.getElementById('chatBubbleWindow').classList.add('tt-chat-window--open');
-    setTimeout(()=>askQuestion(`What should I prepare for the weather on ${dayName}?`),300);
+    setTimeout(() => askQuestion(message), 300);
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -1672,6 +1699,8 @@ document.addEventListener('keydown',e=>{
 });
 
 document.addEventListener('DOMContentLoaded', boot);
+
 </script>
+<script src="typhoon_live_patch.js"></script>
 </body>
 </html>

@@ -1,838 +1,633 @@
 <?php
 /**
- * Admin Duty Schedule Management - COMPLETELY FIXED VERSION
- * Path: barangaylink/modules/attendance/admin/duty-schedule.php
+ * Admin Duty Schedule Management — Restyled to match Dashboard UI
+ * modules/attendance/admin/duty-schedule.php
  */
 
 require_once __DIR__ . '/../../../config/config.php';
+if (session_status() === PHP_SESSION_NONE) session_start();
 
-// Session is already started in config.php, so check status before starting
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
-// Check if user is logged in and has permission
-if (!isLoggedIn()) {
-    redirect('/barangaylink/modules/auth/login.php', 'Please login to continue', 'error');
-}
-
+if (!isLoggedIn()) redirect('/barangaylink/modules/auth/login.php', 'Please login to continue', 'error');
 $user_role = getCurrentUserRole();
-if (!in_array($user_role, ['Admin', 'Super Admin', 'Staff'])) {
-    redirect('/barangaylink/modules/dashboard/index.php', 'Access denied', 'error');
-}
+if (!in_array($user_role, ['Admin', 'Super Admin', 'Staff'])) redirect('/barangaylink/modules/dashboard/index.php', 'Access denied', 'error');
 
-$page_title = 'Duty Schedule Management';
+$page_title      = 'Duty Schedule Management';
 $current_user_id = getCurrentUserId();
 
-// Handle schedule assignment - COMPLETELY FIXED
+// ── POST handlers (unchanged logic) ──────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['assign_schedule'])) {
     $user_id = intval($_POST['user_id']);
-    $days = $_POST['days'] ?? [];
-    
-    // Delete existing schedules for the user
+    $days    = $_POST['days'] ?? [];
     executeQuery($conn, "DELETE FROM tbl_duty_schedules WHERE user_id = ?", [$user_id], 'i');
-    
-    $success_count = 0;
+    $success_count   = 0;
+    $attempted_count = 0;
     foreach ($days as $day => $times) {
         if (!empty($times['time_in']) && !empty($times['time_out'])) {
-            // FIXED: Use executeInsert instead of executeQuery for INSERT statements
-            $sql = "INSERT INTO tbl_duty_schedules (user_id, day_of_week, time_in, time_out, is_active, created_by) 
-                    VALUES (?, ?, ?, ?, 1, ?)";
-            
-            // This returns the new schedule_id or false
-            $new_schedule_id = executeInsert($conn, $sql, [$user_id, $day, $times['time_in'], $times['time_out'], $current_user_id], 'isssi');
-            
-            if ($new_schedule_id) {
-                $success_count++;
-            }
+            $attempted_count++;
+            $ok = executeQuery($conn,
+                "INSERT INTO tbl_duty_schedules (user_id,day_of_week,time_in,time_out,is_active,created_by) VALUES (?,?,?,?,1,?)",
+                [$user_id, $day, $times['time_in'], $times['time_out'], $current_user_id],
+                'isssi'
+            );
+            if ($ok) $success_count++;
         }
     }
-    
-    if ($success_count > 0) {
-        // FIXED: Pass user_id as record_id (valid positive integer)
+    if ($attempted_count === 0) {
+        logActivity($conn, $current_user_id, "Cleared duty schedule for user ID: $user_id", 'tbl_duty_schedules', $user_id);
+        $_SESSION['success_message'] = "Schedule cleared successfully";
+    } elseif ($success_count > 0) {
         logActivity($conn, $current_user_id, "Assigned duty schedule to user ID: $user_id", 'tbl_duty_schedules', $user_id);
         $_SESSION['success_message'] = "Successfully assigned schedule for $success_count day(s)";
     } else {
-        $_SESSION['error_message'] = "Failed to assign schedule";
+        $_SESSION['error_message'] = "Failed to save schedule. Please try again.";
     }
-    
-    header("Location: duty-schedule.php");
-    exit();
+    header("Location: duty-schedule.php?user_id=".$user_id); exit();
 }
 
-// Handle template application - COMPLETELY FIXED
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['apply_template'])) {
-    $user_ids = $_POST['selected_users'] ?? [];
+    $user_ids    = $_POST['selected_users'] ?? [];
     $template_id = intval($_POST['template_id']);
-    
-    // Get template
-    $template = fetchOne($conn, "SELECT * FROM tbl_schedule_templates WHERE template_id = ?", [$template_id], 'i');
-    
+    $template    = fetchOne($conn,"SELECT * FROM tbl_schedule_templates WHERE template_id = ?",[$template_id],'i');
     if ($template && !empty($user_ids)) {
-        $days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+        $days = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
         $success_count = 0;
-        
         foreach ($user_ids as $user_id) {
             $user_id = intval($user_id);
-            
-            // Delete existing schedules
-            executeQuery($conn, "DELETE FROM tbl_duty_schedules WHERE user_id = ?", [$user_id], 'i');
-            
-            // Insert new schedules
+            executeQuery($conn,"DELETE FROM tbl_duty_schedules WHERE user_id = ?",[$user_id],'i');
             foreach ($days as $day) {
-                $day_lower = strtolower($day);
-                $time_in = $template[$day_lower . '_in'];
-                $time_out = $template[$day_lower . '_out'];
-                
-                if ($time_in && $time_out) {
-                    // FIXED: Use executeInsert instead of executeQuery
-                    $sql = "INSERT INTO tbl_duty_schedules (user_id, day_of_week, time_in, time_out, is_active, created_by) 
-                            VALUES (?, ?, ?, ?, 1, ?)";
-                    executeInsert($conn, $sql, [$user_id, $day, $time_in, $time_out, $current_user_id], 'isssi');
-                }
+                $dl = strtolower($day);
+                $ti = $template[$dl.'_in']; $to = $template[$dl.'_out'];
+                if ($ti && $to) executeQuery($conn,
+                    "INSERT INTO tbl_duty_schedules (user_id,day_of_week,time_in,time_out,is_active,created_by) VALUES (?,?,?,?,1,?)",
+                    [$user_id,$day,$ti,$to,$current_user_id],'isssi');
             }
             $success_count++;
         }
-        
-        // FIXED: Don't pass record_id for bulk operations (pass null)
-        logActivity($conn, $current_user_id, "Applied schedule template to $success_count user(s)", 'tbl_duty_schedules', null);
-        $_SESSION['success_message'] = "Successfully applied template to $success_count user(s)";
+        logActivity($conn,$current_user_id,"Applied schedule template to $success_count user(s)",'tbl_duty_schedules',null);
+        $_SESSION['success_message']="Successfully applied template to $success_count user(s)";
     } else {
-        $_SESSION['error_message'] = "Failed to apply template";
+        $_SESSION['error_message']="Failed to apply template";
     }
-    
-    header("Location: duty-schedule.php");
-    exit();
+    header("Location: duty-schedule.php"); exit();
 }
 
-// Handle special schedule - COMPLETELY FIXED
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_special_schedule'])) {
-    $user_id = intval($_POST['user_id']);
+    $user_id       = intval($_POST['user_id']);
     $schedule_date = sanitizeInput($_POST['schedule_date']);
-    $time_in = sanitizeInput($_POST['time_in']);
-    $time_out = sanitizeInput($_POST['time_out']);
+    $time_in       = sanitizeInput($_POST['time_in']);
+    $time_out      = sanitizeInput($_POST['time_out']);
     $schedule_type = sanitizeInput($_POST['schedule_type']);
-    $notes = sanitizeInput($_POST['notes']);
-    
-    // FIXED: Check if exists, then INSERT or UPDATE accordingly
-    $existing = fetchOne($conn, 
-        "SELECT special_schedule_id FROM tbl_special_duty_schedules WHERE user_id = ? AND schedule_date = ?",
-        [$user_id, $schedule_date], 'is'
-    );
-    
-    $special_schedule_id = null;
-    
+    $notes         = sanitizeInput($_POST['notes']);
+    $existing      = fetchOne($conn,"SELECT special_schedule_id FROM tbl_special_duty_schedules WHERE user_id=? AND schedule_date=?",[$user_id,$schedule_date],'is');
     if ($existing) {
-        // Update existing
-        $sql = "UPDATE tbl_special_duty_schedules 
-                SET time_in = ?, time_out = ?, schedule_type = ?, notes = ? 
-                WHERE user_id = ? AND schedule_date = ?";
-        $success = executeQuery($conn, $sql, [$time_in, $time_out, $schedule_type, $notes, $user_id, $schedule_date], 'ssssis');
-        $special_schedule_id = $existing['special_schedule_id'];
+        $success = executeQuery($conn,"UPDATE tbl_special_duty_schedules SET time_in=?,time_out=?,schedule_type=?,notes=? WHERE user_id=? AND schedule_date=?",[$time_in,$time_out,$schedule_type,$notes,$user_id,$schedule_date],'ssssis');
+        $ssid = $existing['special_schedule_id'];
     } else {
-        // Insert new - FIXED: Use executeInsert
-        $sql = "INSERT INTO tbl_special_duty_schedules (user_id, schedule_date, time_in, time_out, schedule_type, notes, created_by) 
-                VALUES (?, ?, ?, ?, ?, ?, ?)";
-        $special_schedule_id = executeInsert($conn, $sql, [$user_id, $schedule_date, $time_in, $time_out, $schedule_type, $notes, $current_user_id], 'isssssi');
-        $success = ($special_schedule_id !== false);
+        $success = executeQuery($conn,"INSERT INTO tbl_special_duty_schedules (user_id,schedule_date,time_in,time_out,schedule_type,notes,created_by) VALUES (?,?,?,?,?,?,?)",[$user_id,$schedule_date,$time_in,$time_out,$schedule_type,$notes,$current_user_id],'isssssi');
+        $ssid = $success ? $conn->insert_id : false;
     }
-    
-    if ($success && $special_schedule_id) {
-        // FIXED: Pass valid special_schedule_id
-        logActivity($conn, $current_user_id, "Added special schedule for user ID: $user_id on $schedule_date", 'tbl_special_duty_schedules', $special_schedule_id);
-        $_SESSION['success_message'] = "Special schedule added successfully";
-    } else {
-        $_SESSION['error_message'] = "Failed to add special schedule";
-    }
-    
-    header("Location: duty-schedule.php?user_id=" . $user_id);
-    exit();
+    if ($success && $ssid) { logActivity($conn,$current_user_id,"Added special schedule for user ID: $user_id on $schedule_date",'tbl_special_duty_schedules',$ssid); $_SESSION['success_message']="Special schedule added successfully"; }
+    else $_SESSION['error_message']="Failed to add special schedule";
+    header("Location: duty-schedule.php?user_id=".$user_id); exit();
 }
 
-// Handle delete special schedule
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_special_schedule'])) {
-    $special_schedule_id = intval($_POST['special_schedule_id']);
-    
-    if (executeQuery($conn, "DELETE FROM tbl_special_duty_schedules WHERE special_schedule_id = ?", [$special_schedule_id], 'i')) {
-        // FIXED: Pass valid special_schedule_id
-        logActivity($conn, $current_user_id, "Deleted special schedule ID: $special_schedule_id", 'tbl_special_duty_schedules', $special_schedule_id);
-        $_SESSION['success_message'] = "Special schedule deleted successfully";
-    } else {
-        $_SESSION['error_message'] = "Failed to delete special schedule";
-    }
-    
-    header("Location: duty-schedule.php?user_id=" . ($_POST['user_id'] ?? ''));
-    exit();
+    $ssid = intval($_POST['special_schedule_id']);
+    if (executeQuery($conn,"DELETE FROM tbl_special_duty_schedules WHERE special_schedule_id=?",[$ssid],'i')) { logActivity($conn,$current_user_id,"Deleted special schedule ID: $ssid",'tbl_special_duty_schedules',$ssid); $_SESSION['success_message']="Special schedule deleted successfully"; }
+    else $_SESSION['error_message']="Failed to delete special schedule";
+    header("Location: duty-schedule.php?user_id=".($_POST['user_id']??'')); exit();
 }
+// ─────────────────────────────────────────────────────────────────────────────
 
-// Get all active staff — ALL roles except Admin and Super Admin
-$users = fetchAll($conn, 
-    "SELECT u.user_id, u.username, u.role, 
-            CONCAT(r.first_name, ' ', r.last_name) as full_name,
-            r.profile_photo
-    FROM tbl_users u
-    LEFT JOIN tbl_residents r ON u.resident_id = r.resident_id
-    WHERE u.is_active = 1 
-      AND u.role IN ('Staff', 'Tanod', 'Barangay Tanod', 'Driver', 'Barangay Captain', 'Secretary', 'Treasurer')
-    ORDER BY u.role, r.last_name"
-);
+$users = fetchAll($conn,
+    "SELECT u.user_id,u.username,u.role,CONCAT(r.first_name,' ',r.last_name) as full_name,r.profile_photo
+     FROM tbl_users u LEFT JOIN tbl_residents r ON u.resident_id=r.resident_id
+     WHERE u.is_active=1 AND u.role IN ('Staff','Tanod','Barangay Tanod','Driver','Barangay Captain','Secretary','Treasurer')
+     ORDER BY u.role,r.last_name");
 
-// Get all templates
-$templates = fetchAll($conn, 
-    "SELECT * FROM tbl_schedule_templates WHERE is_active = 1 ORDER BY template_name"
-);
+$templates = fetchAll($conn,"SELECT * FROM tbl_schedule_templates WHERE is_active=1 ORDER BY template_name");
 
-// Get filter
-$selected_user = isset($_GET['user_id']) ? intval($_GET['user_id']) : null;
-
-// Get schedules for selected user
-$user_schedules = [];
-$special_schedules = [];
+$selected_user  = isset($_GET['user_id']) ? intval($_GET['user_id']) : null;
+$user_schedules = []; $special_schedules = [];
 if ($selected_user) {
     $user_schedules = fetchAll($conn,
-        "SELECT * FROM tbl_duty_schedules WHERE user_id = ? ORDER BY FIELD(day_of_week, 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')",
-        [$selected_user], 'i'
-    );
-    
+        "SELECT * FROM tbl_duty_schedules WHERE user_id=? ORDER BY FIELD(day_of_week,'Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday')",
+        [$selected_user],'i');
     $special_schedules = fetchAll($conn,
-        "SELECT ss.*, CONCAT(r.first_name, ' ', r.last_name) as created_by_name
-        FROM tbl_special_duty_schedules ss
-        LEFT JOIN tbl_users u ON ss.created_by = u.user_id
-        LEFT JOIN tbl_residents r ON u.resident_id = r.resident_id
-        WHERE ss.user_id = ? AND ss.schedule_date >= CURDATE()
-        ORDER BY ss.schedule_date",
-        [$selected_user], 'i'
-    );
+        "SELECT ss.*,CONCAT(r.first_name,' ',r.last_name) as created_by_name
+         FROM tbl_special_duty_schedules ss
+         LEFT JOIN tbl_users u ON ss.created_by=u.user_id
+         LEFT JOIN tbl_residents r ON u.resident_id=r.resident_id
+         WHERE ss.user_id=? AND ss.schedule_date>=CURDATE() ORDER BY ss.schedule_date",
+        [$selected_user],'i');
 }
 
+$extra_css = '<link rel="stylesheet" href="../../../assets/css/dashboard-index.css?v=' . time() . '">';
 include '../../../includes/header.php';
+
+// Selected user info
+$selected_user_data = null;
+if ($selected_user) foreach ($users as $u) if ($u['user_id']==$selected_user) { $selected_user_data=$u; break; }
+
+$avatarColors = ['#0d1b36','#1e40af','#065f46','#9f1239','#713f12','#075985','#7c3aed'];
+$roleColors   = [
+    'Barangay Captain'=>['bg'=>'#fce7f3','color'=>'#9f1239'],
+    'Secretary'       =>['bg'=>'#fef9c3','color'=>'#713f12'],
+    'Treasurer'       =>['bg'=>'#e0f2fe','color'=>'#075985'],
+    'Staff'           =>['bg'=>'#fef3c7','color'=>'#92400e'],
+    'Tanod'           =>['bg'=>'#dbeafe','color'=>'#1e40af'],
+    'Barangay Tanod'  =>['bg'=>'#dbeafe','color'=>'#1e40af'],
+    'Driver'          =>['bg'=>'#d1fae5','color'=>'#065f46'],
+];
 ?>
 
-<div class="container-fluid py-4">
-    <!-- Page Header -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
+<style>
+/* ── Duty Schedule page (dashboard-matched) ── */
+.ds-page { padding:0 0 40px; }
+
+.ds-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:22px; flex-wrap:wrap; gap:12px; padding-top:6px; }
+.ds-header__title { font-size:22px; font-weight:800; letter-spacing:-0.4px; display:flex; align-items:center; gap:10px; }
+.ds-header__title i { color:var(--db-sky); }
+.ds-header__sub   { font-size:13px; color:var(--db-muted); margin-top:3px; }
+
+/* Filter bar */
+.ds-filter { background:var(--db-surf); border-radius:var(--db-radius-lg); border:1px solid var(--db-border); box-shadow:var(--db-shadow); padding:18px 24px; margin-bottom:22px; }
+.ds-filter__row { display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap; }
+.ds-filter__field { flex:1 1 260px; }
+.ds-filter__field label { display:block; font-size:11px; font-weight:700; color:var(--db-muted); text-transform:uppercase; letter-spacing:.7px; margin-bottom:6px; font-family:'DM Mono',monospace; }
+.ds-filter__field select { width:100%; padding:9px 32px 9px 13px; border:1.5px solid var(--db-border); border-radius:var(--db-radius-sm); font-family:'Sora',sans-serif; font-size:13px; color:var(--db-text); background:var(--db-surf); outline:none; transition:all .18s; appearance:none; -webkit-appearance:none; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2364748b'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 12px center; }
+.ds-filter__field select:focus { border-color:var(--db-navy-light); box-shadow:0 0 0 3px rgba(28,52,97,.1); }
+
+/* Staff hero */
+.ds-staff-hero { background:linear-gradient(135deg,var(--db-navy) 0%,var(--db-navy-light) 60%,#224090 100%); border-radius:var(--db-radius-lg); padding:22px 28px; margin-bottom:20px; display:flex; align-items:center; gap:18px; position:relative; overflow:hidden; box-shadow:var(--db-shadow-lg); }
+.ds-staff-hero::before { content:''; position:absolute; width:240px; height:240px; border-radius:50%; border:1px solid rgba(255,255,255,.06); top:-100px; right:-60px; pointer-events:none; }
+.ds-staff-hero__avatar { width:52px; height:52px; border-radius:13px; display:flex; align-items:center; justify-content:center; font-size:22px; font-weight:800; color:#fff; flex-shrink:0; overflow:hidden; box-shadow:0 4px 16px rgba(0,0,0,.25); position:relative; z-index:1; }
+.ds-staff-hero__avatar img { width:100%; height:100%; object-fit:cover; }
+.ds-staff-hero__info { position:relative; z-index:1; }
+.ds-staff-hero__name { font-size:18px; font-weight:800; color:#fff; letter-spacing:-0.3px; margin-bottom:6px; }
+
+/* Schedule grid */
+.ds-sched-grid { padding:20px 22px; display:flex; flex-direction:column; gap:0; }
+.ds-sched-row { display:grid; grid-template-columns:140px 1fr 1fr 80px 50px; gap:10px; align-items:center; padding:12px 0; border-bottom:1px solid var(--db-border); }
+.ds-sched-row:last-child { border-bottom:none; }
+.ds-sched-row--head { padding:8px 0; }
+.ds-sched-head-label { font-size:10px; font-weight:700; color:var(--db-muted); text-transform:uppercase; letter-spacing:.7px; font-family:'DM Mono',monospace; }
+.ds-day-label { font-weight:700; font-size:13px; color:var(--db-text); }
+.ds-day-label--weekend { color:var(--db-rose); }
+.ds-time-input { width:100%; padding:8px 11px; border:1.5px solid var(--db-border); border-radius:var(--db-radius-sm); font-family:'Sora',sans-serif; font-size:13px; color:var(--db-text); background:var(--db-surf); outline:none; transition:all .18s; }
+.ds-time-input:focus { border-color:var(--db-navy-light); box-shadow:0 0 0 3px rgba(28,52,97,.1); }
+.ds-hours-badge { font-family:'DM Mono',monospace; font-size:11px; font-weight:600; text-align:center; }
+
+/* Presets bar */
+.ds-presets { display:flex; gap:8px; flex-wrap:wrap; padding:14px 22px; border-top:1px solid var(--db-border); background:var(--db-surf2); }
+
+/* Special schedule table */
+.ds-special-empty { padding:24px; text-align:center; color:var(--db-muted); font-size:13px; }
+
+/* Checkbox styled */
+.ds-check { width:18px; height:18px; accent-color:var(--db-navy-light); cursor:not-allowed; }
+
+@media(max-width:760px){
+    .ds-sched-row { grid-template-columns:100px 1fr 1fr 70px 40px; gap:6px; }
+}
+</style>
+
+<div class="ds-page">
+
+    <!-- Header -->
+    <div class="ds-header">
         <div>
-            <h1 class="h3 mb-2">
-                <i class="fas fa-calendar-week text-primary me-2"></i>
-                Duty Schedule Management
-            </h1>
-            <p class="text-muted mb-0">Assign and manage staff duty schedules</p>
+            <div class="ds-header__title"><i class="fas fa-calendar-week"></i> Duty Schedule Management</div>
+            <div class="ds-header__sub">Assign and manage staff duty schedules</div>
         </div>
-        <div class="d-flex gap-2">
-            <a href="index.php" class="btn btn-outline-secondary">
-                <i class="fas fa-arrow-left me-1"></i> Back to Attendance
-            </a>
-            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#templateModal">
-                <i class="fas fa-clone me-1"></i> Apply Template
-            </button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <a href="index.php" class="db-btn db-btn--ghost db-btn--sm"><i class="fas fa-arrow-left"></i> Back</a>
+            <button class="db-btn db-btn--primary db-btn--sm" onclick="openModal('templateModal')"><i class="fas fa-clone"></i> Apply Template</button>
             <?php if ($selected_user): ?>
-            <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#specialScheduleModal">
-                <i class="fas fa-calendar-plus me-1"></i> Special Schedule
-            </button>
+            <button class="db-btn db-btn--primary db-btn--sm" style="background:linear-gradient(135deg,var(--db-teal),#0f766e)" onclick="openModal('specialScheduleModal')"><i class="fas fa-calendar-plus"></i> Special Schedule</button>
             <?php endif; ?>
         </div>
     </div>
 
-    <?php echo displayMessage(); ?>
-
-    <!-- Staff Selection -->
-    <div class="card border-0 shadow-sm mb-4">
-        <div class="card-body">
-            <form method="GET">
-                <div class="row g-3 align-items-end">
-                    <div class="col-md-10">
-                        <label for="user_id" class="form-label fw-bold">Select Staff Member</label>
-                        <select class="form-select form-select-lg" id="user_id" name="user_id" onchange="this.form.submit()">
-                            <option value="">-- Select a staff member --</option>
-                            <?php 
-                            $current_role_group = '';
-                            foreach ($users as $user): 
-                                // Group by role for better readability
-                                if ($user['role'] !== $current_role_group) {
-                                    if ($current_role_group !== '') echo '</optgroup>';
-                                    echo '<optgroup label="' . htmlspecialchars($user['role']) . '">';
-                                    $current_role_group = $user['role'];
-                                }
-                            ?>
-                                <option value="<?php echo $user['user_id']; ?>" <?php echo $selected_user == $user['user_id'] ? 'selected' : ''; ?>>
-                                    <?php echo htmlspecialchars($user['full_name'] ?? $user['username']); ?>
-                                </option>
-                            <?php endforeach; ?>
-                            <?php if ($current_role_group !== '') echo '</optgroup>'; ?>
-                        </select>
-                    </div>
-                    <div class="col-md-2">
-                        <a href="duty-schedule.php" class="btn btn-outline-secondary w-100">
-                            <i class="fas fa-redo me-1"></i> Reset
-                        </a>
-                    </div>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <?php if ($selected_user): ?>
-        <?php 
-        $selected_user_data = null;
-        foreach ($users as $user) {
-            if ($user['user_id'] == $selected_user) {
-                $selected_user_data = $user;
-                break;
-            }
-        }
-        ?>
-        
-        <!-- Staff Info Card -->
-        <?php
-        $su_name    = trim($selected_user_data['full_name'] ?? '') ?: ($selected_user_data['username'] ?? '?');
-        $su_initial = strtoupper(substr($su_name, 0, 1));
-        $su_role    = $selected_user_data['role'] ?? '';
-        $su_photo   = !empty($selected_user_data['profile_photo'])
-                        ? '/barangaylink/uploads/profiles/' . $selected_user_data['profile_photo']
-                        : '';
-
-        // Role → colour map (matches index.php palette)
-        $roleColors = [
-            'Barangay Captain' => ['bg' => '#fce7f3', 'color' => '#9f1239'],
-            'Secretary'        => ['bg' => '#fef9c3', 'color' => '#713f12'],
-            'Treasurer'        => ['bg' => '#e0f2fe', 'color' => '#075985'],
-            'Staff'            => ['bg' => '#fef3c7', 'color' => '#92400e'],
-            'Tanod'            => ['bg' => '#dbeafe', 'color' => '#1e40af'],
-            'Barangay Tanod'   => ['bg' => '#dbeafe', 'color' => '#1e40af'],
-            'Driver'           => ['bg' => '#d1fae5', 'color' => '#065f46'],
-        ];
-        $rc = $roleColors[$su_role] ?? ['bg' => '#f1f5f9', 'color' => '#475569'];
-
-        // Avatar background colours cycle through a small palette based on initial
-        $avatarPalette = ['#0d1b36','#1e40af','#065f46','#9f1239','#713f12','#075985','#7c3aed'];
-        $avatarBg = $avatarPalette[ord($su_initial) % count($avatarPalette)];
-        ?>
-        <div class="card border-0 shadow-sm mb-4">
-            <div class="card-body py-3">
-                <div class="d-flex align-items-center gap-3">
-
-                    <!-- Avatar -->
-                    <div style="position:relative;flex-shrink:0;">
-                        <?php if ($su_photo): ?>
-                            <img id="suPhoto"
-                                 src="<?php echo htmlspecialchars($su_photo); ?>"
-                                 alt="<?php echo htmlspecialchars($su_name); ?>"
-                                 width="64" height="64"
-                                 style="width:64px;height:64px;border-radius:14px;object-fit:cover;display:block;"
-                                 onerror="this.style.display='none';document.getElementById('suInitial').style.display='flex';">
-                        <?php endif; ?>
-                        <div id="suInitial"
-                             style="width:64px;height:64px;border-radius:14px;background:<?php echo $avatarBg; ?>;
-                                    color:#fff;font-size:26px;font-weight:800;font-family:'Sora',sans-serif;
-                                    display:<?php echo $su_photo ? 'none' : 'flex'; ?>;
-                                    align-items:center;justify-content:center;">
-                            <?php echo $su_initial; ?>
-                        </div>
-                    </div>
-
-                    <!-- Info -->
-                    <div>
-                        <div style="font-size:17px;font-weight:800;color:#0f172a;line-height:1.2;">
-                            <?php echo htmlspecialchars($su_name); ?>
-                        </div>
-                        <div style="margin-top:5px;">
-                            <span style="display:inline-block;padding:3px 10px;border-radius:20px;
-                                         background:<?php echo $rc['bg']; ?>;color:<?php echo $rc['color']; ?>;
-                                         font-size:11px;font-weight:700;letter-spacing:.4px;font-family:'DM Mono',monospace;">
-                                <?php echo htmlspecialchars($su_role); ?>
-                            </span>
-                        </div>
-                    </div>
-
-                </div>
-            </div>
-        </div>
-
-        <!-- Weekly Schedule -->
-        <div class="card border-0 shadow-sm mb-4">
-            <div class="card-header bg-white py-3">
-                <h5 class="mb-0">
-                    <i class="fas fa-calendar-week text-primary me-2"></i>
-                    Weekly Duty Schedule
-                </h5>
-            </div>
-            <div class="card-body">
-                <form method="POST">
-                    <input type="hidden" name="assign_schedule" value="1">
-                    <input type="hidden" name="user_id" value="<?php echo $selected_user; ?>">
-                    
-                    <?php 
-                    $days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-                    $schedule_map = [];
-                    foreach ($user_schedules as $sched) {
-                        $schedule_map[$sched['day_of_week']] = $sched;
-                    }
-                    ?>
-                    
-                    <div class="table-responsive">
-                        <table class="table table-bordered align-middle">
-                            <thead class="table-light">
-                                <tr>
-                                    <th width="150">Day</th>
-                                    <th>Time In</th>
-                                    <th>Time Out</th>
-                                    <th width="120">Total Hours</th>
-                                    <th width="80">Active</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php foreach ($days as $day): ?>
-                                    <?php 
-                                    $existing = $schedule_map[$day] ?? null;
-                                    $time_in = $existing ? substr($existing['time_in'], 0, 5) : '';
-                                    $time_out = $existing ? substr($existing['time_out'], 0, 5) : '';
-                                    ?>
-                                    <tr>
-                                        <td>
-                                            <strong><?php echo $day; ?></strong>
-                                        </td>
-                                        <td>
-                                            <input type="time" class="form-control" 
-                                                   name="days[<?php echo $day; ?>][time_in]" 
-                                                   value="<?php echo $time_in; ?>"
-                                                   onchange="calculateDayHours('<?php echo $day; ?>')">
-                                        </td>
-                                        <td>
-                                            <input type="time" class="form-control" 
-                                                   name="days[<?php echo $day; ?>][time_out]" 
-                                                   value="<?php echo $time_out; ?>"
-                                                   onchange="calculateDayHours('<?php echo $day; ?>')">
-                                        </td>
-                                        <td>
-                                            <span class="badge bg-info" id="hours_<?php echo $day; ?>">
-                                                <?php 
-                                                if ($time_in && $time_out) {
-                                                    $in = strtotime($time_in);
-                                                    $out = strtotime($time_out);
-                                                    $diff = ($out - $in) / 3600;
-                                                    if ($diff < 0) $diff += 24;
-                                                    echo number_format($diff, 1) . ' hrs';
-                                                } else {
-                                                    echo '-';
-                                                }
-                                                ?>
-                                            </span>
-                                        </td>
-                                        <td class="text-center">
-                                            <input type="checkbox" class="form-check-input" 
-                                                   <?php echo ($time_in && $time_out) ? 'checked' : ''; ?> disabled>
-                                        </td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <!-- Quick Presets -->
-                    <div class="mt-3">
-                        <label class="form-label fw-bold">Quick Presets:</label>
-                        <div class="btn-group" role="group">
-                            <button type="button" class="btn btn-outline-primary btn-sm" onclick="applyPreset('08:00', '17:00', 'weekday')">
-                                8AM-5PM (Mon-Fri)
-                            </button>
-                            <button type="button" class="btn btn-outline-primary btn-sm" onclick="applyPreset('07:00', '16:00', 'weekday')">
-                                7AM-4PM (Mon-Fri)
-                            </button>
-                            <button type="button" class="btn btn-outline-primary btn-sm" onclick="applyPreset('09:00', '18:00', 'all')">
-                                9AM-6PM (All Days)
-                            </button>
-                            <button type="button" class="btn btn-outline-danger btn-sm" onclick="clearAllSchedules()">
-                                <i class="fas fa-times"></i> Clear All
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="mt-4">
-                        <button type="submit" class="btn btn-primary btn-lg">
-                            <i class="fas fa-save me-2"></i> Save Schedule
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-
-        <!-- Special Schedules -->
-        <?php if (!empty($special_schedules)): ?>
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-white py-3">
-                <h5 class="mb-0">
-                    <i class="fas fa-calendar-alt text-success me-2"></i>
-                    Special Schedules
-                </h5>
-            </div>
-            <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle">
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Time In</th>
-                                <th>Time Out</th>
-                                <th>Type</th>
-                                <th>Notes</th>
-                                <th>Created By</th>
-                                <th width="100">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($special_schedules as $special): ?>
-                                <tr>
-                                    <td><?php echo formatDate($special['schedule_date']); ?></td>
-                                    <td><?php echo date('h:i A', strtotime($special['time_in'])); ?></td>
-                                    <td><?php echo date('h:i A', strtotime($special['time_out'])); ?></td>
-                                    <td><span class="badge bg-info"><?php echo htmlspecialchars($special['schedule_type']); ?></span></td>
-                                    <td><?php echo htmlspecialchars($special['notes'] ?? '-'); ?></td>
-                                    <td><small class="text-muted"><?php echo htmlspecialchars($special['created_by_name'] ?? 'System'); ?></small></td>
-                                    <td>
-                                        <form method="POST" style="display: inline;" onsubmit="return confirm('Delete this special schedule?');">
-                                            <input type="hidden" name="delete_special_schedule" value="1">
-                                            <input type="hidden" name="special_schedule_id" value="<?php echo $special['special_schedule_id']; ?>">
-                                            <input type="hidden" name="user_id" value="<?php echo $selected_user; ?>">
-                                            <button type="submit" class="btn btn-sm btn-outline-danger">
-                                                <i class="fas fa-trash"></i>
-                                            </button>
-                                        </form>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-        <?php endif; ?>
-    <?php else: ?>
-        <!-- No Staff Selected -->
-        <div class="card border-0 shadow-sm">
-            <div class="card-body text-center py-5">
-                <i class="fas fa-users fa-3x text-muted mb-3"></i>
-                <h4 class="text-muted">No Staff Selected</h4>
-                <p class="text-muted">Please select a staff member from the dropdown above to view and manage their duty schedule.</p>
-            </div>
-        </div>
+    <!-- Alerts -->
+    <?php if (!empty($_SESSION['success_message'])): ?>
+    <div class="db-alert db-alert--success"><div class="db-alert__icon"><i class="fas fa-check-circle"></i></div><span><?php echo htmlspecialchars($_SESSION['success_message']); unset($_SESSION['success_message']); ?></span><button class="db-alert__close" onclick="this.parentElement.remove()">×</button></div>
     <?php endif; ?>
-</div>
+    <?php if (!empty($_SESSION['error_message'])): ?>
+    <div class="db-alert db-alert--error"><div class="db-alert__icon"><i class="fas fa-exclamation-circle"></i></div><span><?php echo htmlspecialchars($_SESSION['error_message']); unset($_SESSION['error_message']); ?></span><button class="db-alert__close" onclick="this.parentElement.remove()">×</button></div>
+    <?php endif; ?>
 
-<!-- Apply Template Modal -->
-<div class="modal fade" id="templateModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <form method="POST">
-                <div class="modal-header bg-primary bg-opacity-10">
-                    <h5 class="modal-title">
-                        <i class="fas fa-clone me-2"></i>
-                        Apply Schedule Template
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+    <!-- Staff picker -->
+    <div class="ds-filter">
+        <form method="GET">
+            <div class="ds-filter__row">
+                <div class="ds-filter__field">
+                    <label><i class="fas fa-user me-1"></i> Staff Member</label>
+                    <select name="user_id" onchange="this.form.submit()">
+                        <option value="">— Select a staff member —</option>
+                        <?php
+                        $curGroup = '';
+                        foreach ($users as $u):
+                            if ($u['role'] !== $curGroup) {
+                                if ($curGroup !== '') echo '</optgroup>';
+                                echo '<optgroup label="'.htmlspecialchars($u['role']).'">';
+                                $curGroup = $u['role'];
+                            }
+                        ?>
+                            <option value="<?php echo $u['user_id']; ?>" <?php echo $selected_user==$u['user_id']?'selected':''; ?>>
+                                <?php echo htmlspecialchars($u['full_name'] ?? $u['username']); ?>
+                            </option>
+                        <?php endforeach; if ($curGroup !== '') echo '</optgroup>'; ?>
+                    </select>
                 </div>
-                <div class="modal-body">
-                    <input type="hidden" name="apply_template" value="1">
-                    
-                    <div class="alert alert-info">
-                        <i class="fas fa-info-circle me-2"></i>
-                        <strong>Instructions:</strong> Select staff members and a template to apply the schedule to multiple users at once.
-                    </div>
-                    
-                    <!-- Template Selection -->
-                    <div class="mb-4">
-                        <label for="template_id" class="form-label fw-bold">
-                            Select Template <span class="text-danger">*</span>
-                        </label>
-                        <select class="form-select form-select-lg" id="template_id" name="template_id" required onchange="showTemplatePreview()">
-                            <option value="">-- Choose a template --</option>
-                            <?php foreach ($templates as $template): ?>
-                                <option value="<?php echo $template['template_id']; ?>" 
-                                        data-template='<?php echo htmlspecialchars(json_encode($template)); ?>'>
-                                    <?php echo htmlspecialchars($template['template_name']); ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                        <small class="text-muted" id="template_description"></small>
-                    </div>
+                <div style="flex-shrink:0;padding-bottom:0">
+                    <a href="duty-schedule.php" class="db-btn db-btn--ghost db-btn--sm"><i class="fas fa-redo"></i> Reset</a>
+                </div>
+            </div>
+        </form>
+    </div>
 
-                    <!-- Template Preview -->
-                    <div id="template_preview" class="card border-secondary mb-4" style="display: none;">
-                        <div class="card-header bg-secondary bg-opacity-10">
-                            <strong>Template Preview</strong>
-                        </div>
-                        <div class="card-body" id="preview_content">
-                        </div>
-                    </div>
-                    
-                    <!-- Staff Selection — grouped by role -->
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Select Staff Members <span class="text-danger">*</span></label>
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" id="selectAllTemplate" onchange="toggleSelectAllTemplate()">
-                            <label class="form-check-label" for="selectAllTemplate">
-                                <strong>Select All</strong>
-                            </label>
-                        </div>
-                        <div style="max-height: 300px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 0.375rem; padding: 1rem;">
-                            <?php 
-                            $modal_role_group = '';
-                            foreach ($users as $user):
-                                if ($user['role'] !== $modal_role_group) {
-                                    if ($modal_role_group !== '') echo '</div>';
-                                    $modal_role_group = $user['role'];
-                                    echo '<div class="mb-1"><small class="text-muted fw-bold text-uppercase" style="letter-spacing:.5px;font-size:10px;">' . htmlspecialchars($modal_role_group) . '</small></div>';
-                                    echo '<div class="ms-2 mb-3">';
-                                }
-                            ?>
-                                <div class="form-check mb-2">
-                                    <input class="form-check-input template-user-checkbox" type="checkbox" 
-                                           name="selected_users[]" value="<?php echo $user['user_id']; ?>" 
-                                           id="template_user_<?php echo $user['user_id']; ?>">
-                                    <label class="form-check-label" for="template_user_<?php echo $user['user_id']; ?>">
-                                        <?php echo htmlspecialchars($user['full_name'] ?? $user['username']); ?>
-                                    </label>
-                                </div>
-                            <?php endforeach; ?>
-                            <?php if ($modal_role_group !== '') echo '</div>'; ?>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                        <i class="fas fa-times me-1"></i> Cancel
-                    </button>
-                    <button type="submit" class="btn btn-success">
-                        <i class="fas fa-save me-1"></i> Apply Template
-                    </button>
-                </div>
-            </form>
+    <?php if ($selected_user && $selected_user_data):
+        $suName    = trim($selected_user_data['full_name'] ?? '') ?: ($selected_user_data['username'] ?? '?');
+        $suInitial = strtoupper(substr($suName, 0, 1));
+        $suRole    = $selected_user_data['role'] ?? '';
+        $suPhoto   = !empty($selected_user_data['profile_photo']) ? '/barangaylink1/uploads/profiles/'.$selected_user_data['profile_photo'] : '';
+        $avBg      = $avatarColors[ord($suInitial) % count($avatarColors)];
+        $rc        = $roleColors[$suRole] ?? ['bg'=>'#f1f5f9','color'=>'#475569'];
+    ?>
+
+    <!-- Staff hero -->
+    <div class="ds-staff-hero">
+        <div class="ds-staff-hero__avatar" style="background:<?php echo $avBg; ?>">
+            <?php if ($suPhoto): ?>
+                <img src="<?php echo htmlspecialchars($suPhoto); ?>" alt="" onerror="this.style.display='none';this.nextSibling.style.display='flex'">
+                <span style="display:none;width:100%;height:100%;align-items:center;justify-content:center"><?php echo $suInitial; ?></span>
+            <?php else: echo $suInitial; endif; ?>
         </div>
+        <div class="ds-staff-hero__info">
+            <div class="ds-staff-hero__name"><?php echo htmlspecialchars($suName); ?></div>
+            <div>
+                <span style="display:inline-block;padding:3px 10px;border-radius:20px;background:rgba(255,255,255,.14);color:rgba(255,255,255,.85);font-size:11px;font-weight:700;letter-spacing:.4px;font-family:'DM Mono',monospace">
+                    <?php echo htmlspecialchars($suRole); ?>
+                </span>
+                <span style="font-size:11.5px;color:rgba(255,255,255,.5);margin-left:10px;font-family:'DM Mono',monospace">
+                    <?php echo count($user_schedules); ?> day(s) scheduled
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Weekly Schedule Panel -->
+    <div class="db-panel">
+        <div class="db-panel__header">
+            <div class="db-panel__title">
+                <span class="db-panel__icon" style="background:var(--db-sky-light);color:var(--db-sky)"><i class="fas fa-calendar-week"></i></span>
+                <h2>Weekly Duty Schedule</h2>
+            </div>
+        </div>
+
+        <form method="POST">
+            <input type="hidden" name="assign_schedule" value="1">
+            <input type="hidden" name="user_id" value="<?php echo $selected_user; ?>">
+
+            <?php
+            $days        = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+            $weekends    = ['Saturday','Sunday'];
+            $schedule_map = [];
+            foreach ($user_schedules as $s) $schedule_map[$s['day_of_week']] = $s;
+            ?>
+
+            <div class="ds-sched-grid">
+                <!-- Head -->
+                <div class="ds-sched-row ds-sched-row--head">
+                    <div class="ds-sched-head-label">Day</div>
+                    <div class="ds-sched-head-label">Time In</div>
+                    <div class="ds-sched-head-label">Time Out</div>
+                    <div class="ds-sched-head-label" style="text-align:center">Hours</div>
+                    <div class="ds-sched-head-label" style="text-align:center">On</div>
+                </div>
+
+                <?php foreach ($days as $day):
+                    $existing = $schedule_map[$day] ?? null;
+                    $ti = $existing ? substr($existing['time_in'],0,5)  : '';
+                    $to = $existing ? substr($existing['time_out'],0,5) : '';
+                    $isWeekend = in_array($day,$weekends);
+                    $hrs = '';
+                    if ($ti && $to) {
+                        $diff = (strtotime($to) - strtotime($ti)) / 3600;
+                        if ($diff < 0) $diff += 24;
+                        $hrs = number_format($diff, 1).' hrs';
+                    }
+                ?>
+                <div class="ds-sched-row">
+                    <div class="ds-day-label <?php echo $isWeekend?'ds-day-label--weekend':''; ?>">
+                        <?php if ($isWeekend): ?><i class="fas fa-sun" style="font-size:11px;margin-right:4px;opacity:.7"></i><?php endif; ?>
+                        <?php echo $day; ?>
+                    </div>
+                    <input type="time" class="ds-time-input" name="days[<?php echo $day; ?>][time_in]" value="<?php echo $ti; ?>" onchange="calcHours('<?php echo $day; ?>')">
+                    <input type="time" class="ds-time-input" name="days[<?php echo $day; ?>][time_out]" value="<?php echo $to; ?>" onchange="calcHours('<?php echo $day; ?>')">
+                    <div class="ds-hours-badge">
+                        <span class="db-badge <?php echo $hrs ? 'db-badge--info' : 'db-badge--muted'; ?>" id="hrs_<?php echo $day; ?>">
+                            <?php echo $hrs ?: '—'; ?>
+                        </span>
+                    </div>
+                    <div style="text-align:center">
+                        <input type="checkbox" class="ds-check" <?php echo ($ti&&$to)?'checked':''; ?> disabled>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+
+            <!-- Presets -->
+            <div class="ds-presets">
+                <span style="font-size:11px;font-weight:700;color:var(--db-muted);text-transform:uppercase;letter-spacing:.6px;font-family:'DM Mono',monospace;align-self:center">Quick Presets:</span>
+                <button type="button" class="db-btn db-btn--ghost db-btn--sm" onclick="applyPreset('08:00','17:00','weekday')">8AM–5PM (Mon–Fri)</button>
+                <button type="button" class="db-btn db-btn--ghost db-btn--sm" onclick="applyPreset('07:00','16:00','weekday')">7AM–4PM (Mon–Fri)</button>
+                <button type="button" class="db-btn db-btn--ghost db-btn--sm" onclick="applyPreset('09:00','18:00','all')">9AM–6PM (All Days)</button>
+                <button type="button" class="db-btn db-btn--danger db-btn--sm" onclick="clearAll()"><i class="fas fa-times"></i> Clear All</button>
+            </div>
+
+            <div style="padding:16px 22px;border-top:1px solid var(--db-border);background:var(--db-surf2)">
+                <button type="submit" class="db-btn db-btn--primary"><i class="fas fa-save"></i> Save Schedule</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Special Schedules Panel -->
+    <?php if (!empty($special_schedules)): ?>
+    <div class="db-panel">
+        <div class="db-panel__header">
+            <div class="db-panel__title">
+                <span class="db-panel__icon" style="background:var(--db-teal-light);color:var(--db-teal)"><i class="fas fa-calendar-alt"></i></span>
+                <h2>Special Schedules</h2>
+            </div>
+            <span class="db-badge db-badge--muted"><?php echo count($special_schedules); ?> upcoming</span>
+        </div>
+        <div class="db-table-wrap">
+            <table class="db-table">
+                <thead>
+                    <tr><th>Date</th><th>Time In</th><th>Time Out</th><th>Type</th><th>Notes</th><th>Created By</th><th>Action</th></tr>
+                </thead>
+                <tbody>
+                <?php foreach ($special_schedules as $ss): ?>
+                <tr>
+                    <td><span class="db-id"><?php echo date('M d, Y', strtotime($ss['schedule_date'])); ?></span></td>
+                    <td><span class="db-text-sm"><?php echo date('h:i A', strtotime($ss['time_in'])); ?></span></td>
+                    <td><span class="db-text-sm"><?php echo date('h:i A', strtotime($ss['time_out'])); ?></span></td>
+                    <td><span class="db-badge db-badge--info"><?php echo htmlspecialchars($ss['schedule_type']); ?></span></td>
+                    <td><span class="db-text-sm"><?php echo htmlspecialchars($ss['notes'] ?? '—'); ?></span></td>
+                    <td><span class="db-text-sm"><?php echo htmlspecialchars($ss['created_by_name'] ?? 'System'); ?></span></td>
+                    <td>
+                        <form method="POST" style="display:inline" onsubmit="return confirm('Delete this special schedule?')">
+                            <input type="hidden" name="delete_special_schedule" value="1">
+                            <input type="hidden" name="special_schedule_id" value="<?php echo $ss['special_schedule_id']; ?>">
+                            <input type="hidden" name="user_id" value="<?php echo $selected_user; ?>">
+                            <button type="submit" class="db-icon-btn db-icon-btn--danger" title="Delete"><i class="fas fa-trash"></i></button>
+                        </form>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <?php else: ?>
+    <!-- Empty state -->
+    <div class="db-panel">
+        <div class="db-empty">
+            <i class="fas fa-users"></i>
+            <p>Select a staff member from the dropdown above to view and manage their duty schedule.</p>
+        </div>
+    </div>
+    <?php endif; ?>
+
+</div><!-- /ds-page -->
+
+
+<!-- ── MODAL: Apply Template ── -->
+<div id="templateModal" class="db-modal">
+    <div class="db-modal__box" style="max-width:620px">
+        <div class="db-modal__header">
+            <h3><i class="fas fa-clone"></i> Apply Schedule Template</h3>
+            <button class="db-modal__close" onclick="closeModal('templateModal')">×</button>
+        </div>
+        <form method="POST" class="db-modal__body">
+            <input type="hidden" name="apply_template" value="1">
+
+            <div class="db-alert db-alert--success" style="margin-bottom:16px">
+                <div class="db-alert__icon"><i class="fas fa-info-circle"></i></div>
+                <span>Select a template and staff members to apply the schedule in bulk.</span>
+            </div>
+
+            <div class="db-field">
+                <label>Template <span class="req">*</span></label>
+                <select name="template_id" id="tmpl_select" class="db-input" required onchange="showTemplatePreview()">
+                    <option value="">— Choose a template —</option>
+                    <?php foreach ($templates as $t): ?>
+                    <option value="<?php echo $t['template_id']; ?>" data-template='<?php echo htmlspecialchars(json_encode($t)); ?>'>
+                        <?php echo htmlspecialchars($t['template_name']); ?>
+                    </option>
+                    <?php endforeach; ?>
+                </select>
+                <small id="tmpl_desc" class="ps-field-hint"></small>
+            </div>
+
+            <!-- Preview -->
+            <div id="tmpl_preview" class="db-panel" style="display:none;margin-bottom:16px">
+                <div class="db-panel__header" style="padding:12px 16px">
+                    <div class="db-panel__title">
+                        <span class="db-panel__icon db-panel__icon--blue"><i class="fas fa-eye"></i></span>
+                        <h2 style="font-size:13px">Template Preview</h2>
+                    </div>
+                </div>
+                <div id="tmpl_preview_content" class="db-table-wrap"></div>
+            </div>
+
+            <div class="db-field">
+                <label>Select Staff Members <span class="req">*</span></label>
+                <div style="margin-bottom:8px">
+                    <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;cursor:pointer">
+                        <input type="checkbox" id="selectAllTmpl" onchange="toggleSelectAll()" style="accent-color:var(--db-navy-light);width:15px;height:15px">
+                        Select All
+                    </label>
+                </div>
+                <div style="max-height:280px;overflow-y:auto;border:1.5px solid var(--db-border);border-radius:var(--db-radius-sm);padding:8px">
+                    <?php
+                    $mg = '';
+                    foreach ($users as $u):
+                        $si = strtoupper(substr($u['full_name'] ?? $u['username'], 0, 1));
+                        $sb = $avatarColors[ord($si) % count($avatarColors)];
+                        if ($u['role'] !== $mg) {
+                            if ($mg) echo '</div>';
+                            $mg = $u['role'];
+                            echo '<div style="font-size:10px;font-weight:700;color:var(--db-muted);text-transform:uppercase;letter-spacing:.6px;font-family:DM Mono,monospace;padding:6px 4px 2px">'.$mg.'</div>';
+                            echo '<div style="margin-bottom:8px;padding-left:4px">';
+                        }
+                    ?>
+                        <label style="display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:var(--db-radius-sm);cursor:pointer;transition:background .12s" onmouseover="this.style.background='var(--db-surf2)'" onmouseout="this.style.background='transparent'">
+                            <input type="checkbox" name="selected_users[]" value="<?php echo $u['user_id']; ?>" class="tmpl-cb" style="accent-color:var(--db-navy-light);width:15px;height:15px;flex-shrink:0">
+                            <div style="width:30px;height:30px;border-radius:7px;background:<?php echo $sb; ?>;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;overflow:hidden;flex-shrink:0">
+                                <?php if (!empty($u['profile_photo'])): ?>
+                                    <img src="/barangaylink1/uploads/profiles/<?php echo htmlspecialchars($u['profile_photo']); ?>" style="width:100%;height:100%;object-fit:cover" onerror="this.parentNode.innerHTML='<?php echo $si; ?>'">
+                                <?php else: echo $si; endif; ?>
+                            </div>
+                            <div>
+                                <div style="font-size:13px;font-weight:600;color:var(--db-text)"><?php echo htmlspecialchars($u['full_name'] ?? $u['username']); ?></div>
+                                <div style="font-size:10.5px;color:var(--db-muted)"><?php echo htmlspecialchars($u['role']); ?></div>
+                            </div>
+                        </label>
+                    <?php endforeach; if ($mg) echo '</div>'; ?>
+                </div>
+            </div>
+
+            <div style="display:flex;gap:10px;margin-top:6px">
+                <button type="button" class="db-btn db-btn--ghost db-btn--full" onclick="closeModal('templateModal')">Cancel</button>
+                <button type="submit" class="db-btn db-btn--primary db-btn--full"><i class="fas fa-save"></i> Apply Template</button>
+            </div>
+        </form>
     </div>
 </div>
 
-<!-- Add Special Schedule Modal -->
+
+<!-- ── MODAL: Special Schedule ── -->
 <?php if ($selected_user): ?>
-<div class="modal fade" id="specialScheduleModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <form method="POST">
-                <div class="modal-header bg-success bg-opacity-10">
-                    <h5 class="modal-title">
-                        <i class="fas fa-calendar-plus me-2"></i>
-                        Add Special Schedule
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <input type="hidden" name="add_special_schedule" value="1">
-                    <input type="hidden" name="user_id" value="<?php echo $selected_user; ?>">
-                    
-                    <div class="alert alert-info">
-                        <i class="fas fa-info-circle me-2"></i>
-                        Special schedules override the regular weekly schedule for specific dates.
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="schedule_date" class="form-label fw-bold">
-                            Date <span class="text-danger">*</span>
-                        </label>
-                        <input type="date" class="form-control" id="schedule_date" name="schedule_date" 
-                               min="<?php echo date('Y-m-d'); ?>" required>
-                    </div>
-                    
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label for="time_in" class="form-label fw-bold">
-                                Time In <span class="text-danger">*</span>
-                            </label>
-                            <input type="time" class="form-control" id="time_in" name="time_in" required>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label for="time_out" class="form-label fw-bold">
-                                Time Out <span class="text-danger">*</span>
-                            </label>
-                            <input type="time" class="form-control" id="time_out" name="time_out" required>
-                        </div>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="schedule_type" class="form-label fw-bold">
-                            Type <span class="text-danger">*</span>
-                        </label>
-                        <select class="form-select" id="schedule_type" name="schedule_type" required>
-                            <option value="">-- Select type --</option>
-                            <option value="Overtime">Overtime</option>
-                            <option value="Special Event">Special Event</option>
-                            <option value="Coverage">Coverage</option>
-                            <option value="Training">Training</option>
-                            <option value="Meeting">Meeting</option>
-                            <option value="Other">Other</option>
-                        </select>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="notes" class="form-label fw-bold">Notes</label>
-                        <textarea class="form-control" id="notes" name="notes" rows="3" 
-                                  placeholder="Optional notes about this special schedule..."></textarea>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                        <i class="fas fa-times me-1"></i> Cancel
-                    </button>
-                    <button type="submit" class="btn btn-success">
-                        <i class="fas fa-save me-1"></i> Add Schedule
-                    </button>
-                </div>
-            </form>
+<div id="specialScheduleModal" class="db-modal">
+    <div class="db-modal__box db-modal__box--sm">
+        <div class="db-modal__header" style="background:linear-gradient(135deg,var(--db-teal),#0f766e)">
+            <h3><i class="fas fa-calendar-plus"></i> Add Special Schedule</h3>
+            <button class="db-modal__close" onclick="closeModal('specialScheduleModal')">×</button>
         </div>
+        <form method="POST" class="db-modal__body">
+            <input type="hidden" name="add_special_schedule" value="1">
+            <input type="hidden" name="user_id" value="<?php echo $selected_user; ?>">
+
+            <div class="db-alert db-alert--success" style="margin-bottom:16px">
+                <div class="db-alert__icon"><i class="fas fa-info-circle"></i></div>
+                <span>Special schedules override the regular weekly schedule for a specific date.</span>
+            </div>
+
+            <div class="db-field">
+                <label>Date <span class="req">*</span></label>
+                <input type="date" name="schedule_date" class="db-input" min="<?php echo date('Y-m-d'); ?>" required>
+            </div>
+            <div class="db-field-row">
+                <div class="db-field">
+                    <label>Time In <span class="req">*</span></label>
+                    <input type="time" name="time_in" class="db-input" required>
+                </div>
+                <div class="db-field">
+                    <label>Time Out <span class="req">*</span></label>
+                    <input type="time" name="time_out" class="db-input" required>
+                </div>
+            </div>
+            <div class="db-field">
+                <label>Type <span class="req">*</span></label>
+                <select name="schedule_type" class="db-input" required>
+                    <option value="">— Select type —</option>
+                    <option value="Overtime">Overtime</option>
+                    <option value="Special Event">Special Event</option>
+                    <option value="Coverage">Coverage</option>
+                    <option value="Training">Training</option>
+                    <option value="Meeting">Meeting</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+            <div class="db-field">
+                <label>Notes</label>
+                <textarea name="notes" class="db-input" rows="3" placeholder="Optional notes…"></textarea>
+            </div>
+            <div style="display:flex;gap:10px">
+                <button type="button" class="db-btn db-btn--ghost db-btn--full" onclick="closeModal('specialScheduleModal')">Cancel</button>
+                <button type="submit" class="db-btn db-btn--primary db-btn--full"><i class="fas fa-save"></i> Add Schedule</button>
+            </div>
+        </form>
     </div>
 </div>
 <?php endif; ?>
 
+
 <script>
-// Calculate hours for a specific day
-function calculateDayHours(day) {
-    const timeIn = document.querySelector(`input[name="days[${day}][time_in]"]`).value;
-    const timeOut = document.querySelector(`input[name="days[${day}][time_out]"]`).value;
-    const hoursSpan = document.getElementById('hours_' + day);
-    
-    if (timeIn && timeOut) {
-        const [inHour, inMin] = timeIn.split(':').map(Number);
-        const [outHour, outMin] = timeOut.split(':').map(Number);
-        
-        let diff = (outHour * 60 + outMin) - (inHour * 60 + inMin);
-        if (diff < 0) diff += 24 * 60;
-        
-        const hours = (diff / 60).toFixed(1);
-        hoursSpan.textContent = hours + ' hrs';
-        hoursSpan.className = 'badge bg-info';
-    } else {
-        hoursSpan.textContent = '-';
-        hoursSpan.className = 'badge bg-secondary';
-    }
+// ── Modal helpers ──
+function openModal(id)  { document.getElementById(id).classList.add('db-modal--open');    document.body.style.overflow='hidden'; }
+function closeModal(id) { document.getElementById(id).classList.remove('db-modal--open'); document.body.style.overflow=''; }
+window.addEventListener('click', e => { if (e.target.classList.contains('db-modal')) closeModal(e.target.id); });
+document.addEventListener('keydown', e => { if(e.key==='Escape') document.querySelectorAll('.db-modal--open').forEach(m=>closeModal(m.id)); });
+
+// ── Hours calc ──
+function calcHours(day) {
+    const ti = document.querySelector(`input[name="days[${day}][time_in]"]`).value;
+    const to = document.querySelector(`input[name="days[${day}][time_out]"]`).value;
+    const el = document.getElementById('hrs_'+day);
+    if (ti && to) {
+        const [ih,im]=ti.split(':').map(Number), [oh,om]=to.split(':').map(Number);
+        let diff = (oh*60+om)-(ih*60+im); if(diff<0) diff+=1440;
+        el.textContent = (diff/60).toFixed(1)+' hrs';
+        el.className = 'db-badge db-badge--info';
+    } else { el.textContent='—'; el.className='db-badge db-badge--muted'; }
 }
 
-// Apply preset schedule
-function applyPreset(timeIn, timeOut, type) {
-    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-    const applyDays = type === 'weekday' ? weekdays : days;
-    
-    applyDays.forEach(day => {
-        document.querySelector(`input[name="days[${day}][time_in]"]`).value = timeIn;
-        document.querySelector(`input[name="days[${day}][time_out]"]`).value = timeOut;
-        calculateDayHours(day);
+function applyPreset(ti, to, type) {
+    const all=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+    const wd =['Monday','Tuesday','Wednesday','Thursday','Friday'];
+    (type==='weekday'?wd:all).forEach(d=>{
+        document.querySelector(`input[name="days[${d}][time_in]"]`).value=ti;
+        document.querySelector(`input[name="days[${d}][time_out]"]`).value=to;
+        calcHours(d);
     });
 }
 
-// Clear all schedules
-function clearAllSchedules() {
-    if (confirm('Are you sure you want to clear all schedules?')) {
-        const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-        days.forEach(day => {
-            document.querySelector(`input[name="days[${day}][time_in]"]`).value = '';
-            document.querySelector(`input[name="days[${day}][time_out]"]`).value = '';
-            calculateDayHours(day);
-        });
-    }
+function clearAll() {
+    if (!confirm('Clear all schedules?')) return;
+    ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].forEach(d=>{
+        document.querySelector(`input[name="days[${d}][time_in]"]`).value='';
+        document.querySelector(`input[name="days[${d}][time_out]"]`).value='';
+        calcHours(d);
+    });
 }
 
-// Format time from 24h to 12h
-function formatTime(time) {
-    if (!time) return '-';
-    const [hour, min] = time.split(':');
-    const h = parseInt(hour);
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    const displayHour = h % 12 || 12;
-    return `${displayHour}:${min} ${ampm}`;
-}
+// ── Template preview ──
+function fmtTime(t){ if(!t)return'—'; const [h,m]=t.split(':'); const ap=h>=12?'PM':'AM'; return `${h%12||12}:${m} ${ap}`; }
 
-// Show template preview
 function showTemplatePreview() {
-    const select = document.getElementById('template_id');
-    const selectedOption = select.options[select.selectedIndex];
-    
-    if (!selectedOption.value) {
-        document.getElementById('template_preview').style.display = 'none';
-        document.getElementById('template_description').textContent = '';
-        return;
-    }
-    
-    const template = JSON.parse(selectedOption.getAttribute('data-template'));
-    
-    // Show description
-    document.getElementById('template_description').textContent = template.description || '';
-    
-    // Build preview table
-    const days = [
-        {name: 'Monday', in: template.monday_in, out: template.monday_out},
-        {name: 'Tuesday', in: template.tuesday_in, out: template.tuesday_out},
-        {name: 'Wednesday', in: template.wednesday_in, out: template.wednesday_out},
-        {name: 'Thursday', in: template.thursday_in, out: template.thursday_out},
-        {name: 'Friday', in: template.friday_in, out: template.friday_out},
-        {name: 'Saturday', in: template.saturday_in, out: template.saturday_out},
-        {name: 'Sunday', in: template.sunday_in, out: template.sunday_out}
-    ];
-    
-    let previewHTML = '<div class="table-responsive"><table class="table table-sm table-bordered mb-0">';
-    previewHTML += '<thead><tr><th>Day</th><th>Time In</th><th>Time Out</th><th>Hours</th></tr></thead><tbody>';
-    
-    days.forEach(day => {
-        if (day.in && day.out) {
-            const [inHour, inMin] = day.in.split(':').map(Number);
-            const [outHour, outMin] = day.out.split(':').map(Number);
-            let diff = (outHour * 60 + outMin) - (inHour * 60 + inMin);
-            if (diff < 0) diff += 24 * 60;
-            const hours = (diff / 60).toFixed(1);
-            const timeIn = formatTime(day.in);
-            const timeOut = formatTime(day.out);
-            
-            previewHTML += `<tr>
-                <td><strong>${day.name}</strong></td>
-                <td><span class="text-success">${timeIn}</span></td>
-                <td><span class="text-danger">${timeOut}</span></td>
-                <td><span class="badge bg-info">${hours} hrs</span></td>
-            </tr>`;
-        } else {
-            previewHTML += `<tr>
-                <td><strong>${day.name}</strong></td>
-                <td colspan="3" class="text-center text-muted">Rest Day</td>
-            </tr>`;
-        }
+    const sel = document.getElementById('tmpl_select');
+    const opt = sel.options[sel.selectedIndex];
+    if (!opt.value) { document.getElementById('tmpl_preview').style.display='none'; document.getElementById('tmpl_desc').textContent=''; return; }
+    const t = JSON.parse(opt.getAttribute('data-template'));
+    document.getElementById('tmpl_desc').textContent = t.description || '';
+    const days=[['Monday','monday'],['Tuesday','tuesday'],['Wednesday','wednesday'],['Thursday','thursday'],['Friday','friday'],['Saturday','saturday'],['Sunday','sunday']];
+    let html='<table class="db-table"><thead><tr><th>Day</th><th>Time In</th><th>Time Out</th><th>Hours</th></tr></thead><tbody>';
+    days.forEach(([name,key])=>{
+        const ti=t[key+'_in'], to=t[key+'_out'];
+        if(ti&&to){ const [ih,im]=ti.split(':').map(Number),[oh,om]=to.split(':').map(Number); let d=(oh*60+om)-(ih*60+im); if(d<0)d+=1440; html+=`<tr><td><strong>${name}</strong></td><td>${fmtTime(ti)}</td><td>${fmtTime(to)}</td><td><span class="db-badge db-badge--info">${(d/60).toFixed(1)} hrs</span></td></tr>`; }
+        else html+=`<tr><td><strong>${name}</strong></td><td colspan="3" style="text-align:center"><span class="db-text-muted">Rest Day</span></td></tr>`;
     });
-    
-    previewHTML += '</tbody></table></div>';
-    
-    document.getElementById('preview_content').innerHTML = previewHTML;
-    document.getElementById('template_preview').style.display = 'block';
+    html+='</tbody></table>';
+    document.getElementById('tmpl_preview_content').innerHTML=html;
+    document.getElementById('tmpl_preview').style.display='block';
 }
 
-// Toggle select all template users
-function toggleSelectAllTemplate() {
-    const checked = document.getElementById('selectAllTemplate').checked;
-    document.querySelectorAll('.template-user-checkbox').forEach(cb => {
-        cb.checked = checked;
-    });
+// ── Select all template users ──
+function toggleSelectAll() {
+    const checked = document.getElementById('selectAllTmpl').checked;
+    document.querySelectorAll('.tmpl-cb').forEach(cb=>cb.checked=checked);
 }
-
-// Update select all checkbox when individual checkboxes change
-document.addEventListener('DOMContentLoaded', function() {
-    const templateCheckboxes = document.querySelectorAll('.template-user-checkbox');
-    const selectAllCheckbox = document.getElementById('selectAllTemplate');
-    
-    if (templateCheckboxes.length > 0 && selectAllCheckbox) {
-        templateCheckboxes.forEach(checkbox => {
-            checkbox.addEventListener('change', function() {
-                const allChecked = Array.from(templateCheckboxes).every(cb => cb.checked);
-                const someChecked = Array.from(templateCheckboxes).some(cb => cb.checked);
-                
-                selectAllCheckbox.checked = allChecked;
-                selectAllCheckbox.indeterminate = someChecked && !allChecked;
-            });
+document.addEventListener('DOMContentLoaded', ()=>{
+    document.querySelectorAll('.tmpl-cb').forEach(cb=>{
+        cb.addEventListener('change',()=>{
+            const all=document.querySelectorAll('.tmpl-cb');
+            const selectAll=document.getElementById('selectAllTmpl');
+            const allChecked=[...all].every(c=>c.checked);
+            const someChecked=[...all].some(c=>c.checked);
+            selectAll.checked=allChecked;
+            selectAll.indeterminate=someChecked&&!allChecked;
         });
-    }
+    });
 });
+
+// ── Auto-dismiss alerts ──
+setTimeout(()=>{ document.querySelectorAll('.db-alert').forEach(a=>{ a.style.opacity='0'; a.style.transform='translateY(-8px)'; setTimeout(()=>a.remove(),400); }); }, 5000);
 </script>
 
 <?php include '../../../includes/footer.php'; ?>
