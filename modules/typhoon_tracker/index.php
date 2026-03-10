@@ -1155,39 +1155,231 @@ setInterval(updateDateTime, 1000); updateDateTime();
    MAP INIT
 ══════════════════════════════════════════════════════════ */
 function initMap() {
-    APP.map = L.map('map', { zoomControl: true, scrollWheelZoom: true }).setView([12.8797, 121.7740], 6);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors', maxZoom: 18
+    APP.map = L.map('map', {
+        zoomControl: true,
+        scrollWheelZoom: true,
+        attributionControl: true
+    }).setView([15.0, 122.0], 5);
+
+    // ── Dark ocean tiles (PAGASA-style navy background)
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '© <a href="https://www.openstreetmap.org/copyright" style="color:#aaa">OpenStreetMap</a> © <a href="https://carto.com/" style="color:#aaa">CARTO</a>',
+        subdomains: 'abcd',
+        maxZoom: 18
     }).addTo(APP.map);
+
+    // ── PAR boundary (5°N–25°N, 115°E–135°E) — dashed cyan like PAGASA
+    const parCoords = [[25,115],[25,135],[5,135],[5,115],[25,115]];
+    L.polyline(parCoords, {
+        color: '#00d4ff', weight: 1.5, dashArray: '8,6', opacity: 0.7
+    }).addTo(APP.map);
+
+    // ── PAR label
+    L.marker([25.6, 115], {
+        icon: L.divIcon({
+            html: `<div style="color:#00d4ff;font-family:'DM Mono',monospace;font-size:9px;font-weight:600;
+                       letter-spacing:1.4px;text-transform:uppercase;opacity:.65;white-space:nowrap;
+                       text-shadow:0 1px 4px rgba(0,0,0,.9);pointer-events:none">
+                       ▸ Philippine Area of Responsibility (PAR)</div>`,
+            className: '', iconAnchor: [-4, 0]
+        }),
+        interactive: false,
+        zIndexOffset: -1000
+    }).addTo(APP.map);
+
+    // ── Store PAR layer group for typhoon overlays
+    APP.typhoonLayer = L.layerGroup().addTo(APP.map);
 }
 
 function updateMapMarkers() {
+    // ── User location marker
     if (APP.userMarker) APP.map.removeLayer(APP.userMarker);
     const userIcon = L.divIcon({
-        html: `<div style="width:14px;height:14px;border-radius:50%;background:#e11d48;border:3px solid #fff;box-shadow:0 2px 8px rgba(225,29,72,.5)"></div>`,
-        className: '', iconAnchor: [7, 7]
+        html: `<div style="width:12px;height:12px;border-radius:50%;background:#e11d48;
+                   border:2.5px solid #fff;box-shadow:0 0 0 4px rgba(225,29,72,.25),0 2px 8px rgba(225,29,72,.5)"></div>`,
+        className: '', iconAnchor: [6, 6]
     });
-    APP.userMarker = L.marker([APP.userLat, APP.userLon], { icon: userIcon })
-        .addTo(APP.map).bindPopup(`<strong>Your Location</strong><br>${APP.userLocation}`);
-    APP.typhoonMarkers.forEach(m => APP.map.removeLayer(m));
+    APP.userMarker = L.marker([APP.userLat, APP.userLon], { icon: userIcon, zIndexOffset: 1000 })
+        .addTo(APP.map)
+        .bindPopup(`<strong style="font-family:'Sora',sans-serif">📍 Your Location</strong><br>
+            <span style="font-size:11px;color:#64748b">${APP.userLocation}</span><br>
+            <span style="font-size:10px;font-family:'DM Mono',monospace">${APP.userLat.toFixed(4)}°N, ${APP.userLon.toFixed(4)}°E</span>`);
+
+    // ── Clear previous typhoon overlays
+    if (APP.typhoonLayer) APP.typhoonLayer.clearLayers();
     APP.typhoonMarkers = [];
+
+    if (!APP.typhoonData || !APP.typhoonData.length) return;
+
     APP.typhoonData.forEach(t => {
         const dist = parseFloat(t.distance);
-        const color = dist<300?'#ef4444':dist<600?'#f59e0b':'#3b82f6';
-        const sz = dist<300?22:dist<600?18:14;
-        const icon = L.divIcon({
-            html: `<div style="width:${sz}px;height:${sz}px;border-radius:50%;background:${color};border:3px solid #fff;box-shadow:0 2px 8px ${color}88;display:flex;align-items:center;justify-content:center;color:#fff;font-size:9px;font-weight:700">🌀</div>`,
-            className: '', iconAnchor: [sz/2, sz/2]
+        const wind = parseFloat(t.windSpeed);
+
+       // Use REAL coordinates if available, otherwise fall back to bearing estimate
+        let tLat, tLon;
+        if (t.lat != null && t.lon != null && !isNaN(parseFloat(t.lat))) {
+            tLat = parseFloat(t.lat);
+            tLon = parseFloat(t.lon);
+        } else {
+            const bearing = (t._bearing !== undefined) ? t._bearing : (Math.random() * 360);
+            t._bearing = bearing;
+            const rad = bearing * Math.PI / 180;
+            tLat = APP.userLat + (dist / 111) * Math.cos(rad);
+            tLon = APP.userLon + (dist / (111 * Math.cos(APP.userLat * Math.PI / 180))) * Math.sin(rad);
+        }
+
+        // ── Color + size by intensity
+        const isSuper = wind >= 185;
+        const isTyphoon = wind >= 118;
+        const isStorm = wind >= 62;
+        const color = isSuper ? '#ff3860' : isTyphoon ? '#f97316' : isStorm ? '#f59e0b' : '#60a5fa';
+        const glowColor = isSuper ? 'rgba(255,56,96,.5)' : isTyphoon ? 'rgba(249,115,22,.45)' : isStorm ? 'rgba(245,158,11,.4)' : 'rgba(96,165,250,.35)';
+        const iconSize = isSuper ? 38 : isTyphoon ? 32 : isStorm ? 26 : 20;
+        const label = isSuper ? 'SUPER TYPHOON' : isTyphoon ? 'TYPHOON' : isStorm ? 'TROPICAL STORM' : 'TROPICAL DEPRESSION';
+
+        // ── Typhoon eye icon (spinning)
+        const tIcon = L.divIcon({
+            html: `<div style="
+                width:${iconSize}px;height:${iconSize}px;border-radius:50%;
+                background:radial-gradient(circle at 38% 38%, ${color}cc, ${color}44);
+                border:2px solid ${color};
+                box-shadow:0 0 0 4px ${glowColor},0 0 18px ${glowColor};
+                display:flex;align-items:center;justify-content:center;
+                animation:tt-spin 4s linear infinite;
+                cursor:pointer;
+            ">
+                <div style="width:${Math.round(iconSize*0.35)}px;height:${Math.round(iconSize*0.35)}px;
+                    border-radius:50%;background:#fff;opacity:.85"></div>
+            </div>`,
+            className: '',
+            iconAnchor: [iconSize / 2, iconSize / 2]
         });
-        const angle = Math.random() * Math.PI * 2;
-        const m = L.marker([APP.userLat+(dist/111)*Math.cos(angle), APP.userLon+(dist/111)*Math.sin(angle)], { icon })
-            .addTo(APP.map).bindPopup(`<strong>${t.name}</strong><br>Wind: ${t.windSpeed} km/h<br>Distance: ${dist} km`);
-        APP.typhoonMarkers.push(m);
-        const circle = L.circle([APP.userLat+(dist/111)*Math.cos(angle), APP.userLon+(dist/111)*Math.sin(angle)], {
-            color, fillColor: color, fillOpacity: 0.05, radius: dist*1000*0.1, weight: 1, dashArray: '4'
-        }).addTo(APP.map);
-        APP.typhoonMarkers.push(circle);
+
+        const marker = L.marker([tLat, tLon], { icon: tIcon, zIndexOffset: 900 })
+            .bindPopup(`
+                <div style="font-family:'Sora',sans-serif;min-width:200px">
+                    <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:6px">
+                        🌀 ${t.name}
+                    </div>
+                    <div style="display:inline-block;padding:2px 8px;border-radius:20px;
+                        background:${color}22;border:1px solid ${color}66;
+                        color:${color};font-size:10px;font-weight:700;margin-bottom:8px">${label}</div>
+                    <div style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:#475569">
+                        <div>💨 Wind: <strong>${wind} km/h</strong></div>
+                        <div>📍 Distance: <strong>${dist} km from you</strong></div>
+                        ${t.direction ? `<div>🧭 Moving: <strong>${t.direction}</strong></div>` : ''}
+                        ${t.pressure ? `<div>🌡️ Pressure: <strong>${t.pressure} hPa</strong></div>` : ''}
+                        <div style="margin-top:4px;padding-top:4px;border-top:1px solid #e2e8f0;font-size:10px;color:#94a3b8">
+                            Source: ${t.source || 'PAGASA/JTWC'}
+                        </div>
+                    </div>
+                </div>
+            `);
+
+        APP.typhoonLayer.addLayer(marker);
+        APP.typhoonMarkers.push(marker);
+
+        // ── Forecast track line (dotted, fading) if track data exists
+        if (t.track && t.track.length > 1) {
+            const trackLine = L.polyline(t.track.map(p => [p.lat, p.lon]), {
+                color, weight: 2.5, opacity: 0.85, dashArray: '1, 0'
+            });
+            APP.typhoonLayer.addLayer(trackLine);
+
+            // Past track dots
+            t.track.forEach((pt, idx) => {
+                const dotSize = idx === t.track.length - 1 ? 0 : 7;
+                if (dotSize === 0) return;
+                const pastIcon = L.divIcon({
+                    html: `<div style="width:${dotSize}px;height:${dotSize}px;border-radius:50%;
+                               background:${color};opacity:${0.3 + (idx / t.track.length) * 0.5};
+                               border:1px solid ${color}88"></div>`,
+                    className: '', iconAnchor: [dotSize / 2, dotSize / 2]
+                });
+                APP.typhoonLayer.addLayer(L.marker([pt.lat, pt.lon], { icon: pastIcon, interactive: false }));
+            });
+        }
+
+        // ── Forecast track (dashed, lighter)
+        if (t.forecast && t.forecast.length > 0) {
+            const forecastCoords = [[tLat, tLon], ...t.forecast.map(p => [p.lat, p.lon])];
+            const forecastLine = L.polyline(forecastCoords, {
+                color, weight: 2, opacity: 0.55, dashArray: '6, 5'
+            });
+            APP.typhoonLayer.addLayer(forecastLine);
+
+            // Forecast cone (uncertainty envelope)
+            if (t.forecast.length >= 2) {
+                const conePoints = buildConePolygon([{lat: tLat, lon: tLon}, ...t.forecast]);
+                if (conePoints.length > 2) {
+                    const cone = L.polygon(conePoints, {
+                        color, fillColor: color, fillOpacity: 0.08,
+                        weight: 0, interactive: false
+                    });
+                    APP.typhoonLayer.addLayer(cone);
+                }
+            }
+
+            // Forecast position dots with time labels
+            t.forecast.forEach((pt, idx) => {
+                const hours = (idx + 1) * 24;
+                const fIcon = L.divIcon({
+                    html: `<div style="display:flex;flex-direction:column;align-items:center;pointer-events:none">
+                        <div style="width:10px;height:10px;border-radius:50%;background:transparent;
+                            border:2px solid ${color};opacity:.75"></div>
+                        <div style="font-size:8px;font-weight:700;color:${color};
+                            font-family:'DM Mono',monospace;margin-top:1px;
+                            text-shadow:0 1px 3px rgba(0,0,0,.9);white-space:nowrap">+${hours}h</div>
+                    </div>`,
+                    className: '', iconAnchor: [5, 5]
+                });
+                APP.typhoonLayer.addLayer(L.marker([pt.lat, pt.lon], { icon: fIcon, interactive: false }));
+            });
+        }
+
+        // ── Wind radius circle (danger zone)
+        const windRadiusKm = wind >= 185 ? 250 : wind >= 118 ? 180 : wind >= 88 ? 120 : wind >= 62 ? 80 : 50;
+        const windCircle = L.circle([tLat, tLon], {
+            radius: windRadiusKm * 1000,
+            color, fillColor: color, fillOpacity: 0.04,
+            weight: 1, dashArray: '3,4', opacity: 0.45
+        });
+        APP.typhoonLayer.addLayer(windCircle);
     });
+
+    // ── If there are typhoons, fit the map to show all of them + user
+    if (APP.typhoonData.length > 0) {
+        try {
+            const allMarkers = [
+    [APP.userLat, APP.userLon],
+    ...APP.typhoonData
+        .filter(t => t.lat != null && t.lon != null && !isNaN(parseFloat(t.lat)))
+        .map(t => [parseFloat(t.lat), parseFloat(t.lon)])
+];
+if (allMarkers.length > 1) {
+    APP.map.fitBounds(L.latLngBounds(allMarkers), { padding: [60, 60], maxZoom: 7 });
+}
+        } catch(e) { /* fallback: do nothing */ }
+    }
+}
+
+// ── Helper: build a simple cone-of-uncertainty polygon around a track array
+function buildConePolygon(points) {
+    if (points.length < 2) return [];
+    const leftSide = [], rightSide = [];
+    points.forEach((pt, i) => {
+        const spreadKm = 40 + i * 35; // cone widens over time
+        const spreadDeg = spreadKm / 111;
+        // compute bearing to next point for perpendicular offset
+        const next = points[Math.min(i + 1, points.length - 1)];
+        const dx = next.lon - pt.lon, dy = next.lat - pt.lat;
+        const angle = Math.atan2(dx, dy);
+        const perpLat = Math.cos(angle) * spreadDeg;
+        const perpLon = Math.sin(angle) * spreadDeg;
+        leftSide.push([pt.lat + perpLat, pt.lon - perpLon]);
+        rightSide.push([pt.lat - perpLat, pt.lon + perpLon]);
+    });
+    return [...leftSide, ...rightSide.reverse()];
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -1285,15 +1477,18 @@ async function fetchTyphoons() {
     /* skeleton is visible for AT LEAST 1 800 ms regardless of API speed */
     const minDelay = new Promise(resolve => setTimeout(resolve, 1800));
 
-    const sources = [fetchFromPAGASAProxy, fetchFromJTWC, fetchFromOpenWeatherTyphoons];
     let result = null, found = false;
-
-    for (const source of sources) {
-        try {
-            const data = await source();
-            if (data !== null) { result = data; found = true; break; }
-        } catch { /* try next source */ }
-    }
+try {
+    const data = await fetchFromPAGASAProxy(); // now fetches PAGASA + JTWC combined
+    result = data;
+    found = true;
+} catch(e) {
+    // last resort: JTWC only
+    try {
+        const data = await fetchFromJTWC();
+        if (data && data.length > 0) { result = data; found = true; }
+    } catch(e2) {}
+}
 
     /* wait until both the API round-trip AND the minimum delay are done */
     await minDelay;
@@ -1313,38 +1508,102 @@ async function fetchTyphoons() {
 }
 
 async function fetchFromPAGASAProxy() {
-    const res = await fetch('pagasa_proxy.php', { signal: AbortSignal.timeout(20000) });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const data = await res.json();
-    if (data.typhoons && data.typhoons.length > 0) return data.typhoons;
-    return [];
+    let proxyStorms = [];
+    try {
+        const res = await fetch('pagasa_proxy.php', { signal: AbortSignal.timeout(20000) });
+        if (res.ok) {
+            const data = await res.json();
+            if (data.typhoons && data.typhoons.length > 0) proxyStorms = data.typhoons;
+        }
+    } catch(e) { /* proxy failed, continue */ }
+
+    // Always also fetch JTWC/GDACS for outside-PAR storms
+    let jtwcStorms = [];
+    try { jtwcStorms = await fetchFromJTWC() || []; } catch(e) {}
+
+    // Merge: add JTWC storms not already in proxy results
+    const existing = new Set(proxyStorms.map(t => t.name));
+    const newStorms = jtwcStorms.filter(t => t.lat != null && !existing.has(t.name));
+
+    return [...proxyStorms, ...newStorms];
 }
 
 async function fetchFromJTWC() {
-    const res = await fetch('https://www.nhc.noaa.gov/productfeeds/jtwc_atcf.xml', { signal: AbortSignal.timeout(6000) });
-    if (!res.ok) return null;
-    const text = await res.text();
-    const parser = new DOMParser();
-    const xml = parser.parseFromString(text, 'text/xml');
-    const items = xml.querySelectorAll('item');
-    if (!items.length) return [];
-    const storms = [];
-    items.forEach(item => {
-        const title = item.querySelector('title')?.textContent || '';
-        const desc  = item.querySelector('description')?.textContent || '';
-        if (title.includes('W') || title.includes('WP') || desc.toLowerCase().includes('philippine')) {
-            const windMatch = desc.match(/(\d+)\s*kt/i);
-            const windKt    = windMatch ? parseInt(windMatch[1]) : 0;
+    // ── Try GDACS GeoJSON first (real lat/lon, reliable)
+    try {
+        const gRes = await fetch(
+            'https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH?eventtype=TC&alertlevel=Orange;Red',
+            { signal: AbortSignal.timeout(8000) }
+        );
+        if (gRes.ok) {
+            const gJson = await gRes.json();
+            const storms = [];
+            (gJson.features || []).forEach(f => {
+                const p = f.properties || {};
+                const coords = f.geometry?.coordinates;
+                if (!coords) return;
+                const [lon, lat] = coords;
+                if (lon < 95 || lon > 185 || lat < -5 || lat > 45) return;
+                const windKts = parseFloat(p.maxwind || p.wind_max || 0);
+                const windKmh = windKts > 0 ? Math.round(windKts * 1.852) : parseInt(p.windspeed || 0);
+                storms.push({
+                    name:      (p.name || p.eventname || 'UNNAMED').toUpperCase(),
+                    windSpeed: windKmh,
+                    lat:       parseFloat(lat),
+                    lon:       parseFloat(lon),
+                    distance:  Math.round(haversineKm(APP.userLat, APP.userLon, lat, lon)),
+                    direction: null,
+                    source:    'GDACS'
+                });
+            });
+            if (storms.length > 0) return storms;
+        }
+    } catch(e) { /* fall through */ }
+
+    // ── Fallback: JTWC XML with real coordinate parsing
+    try {
+        const res = await fetch(
+            'https://www.nhc.noaa.gov/productfeeds/jtwc_atcf.xml',
+            { signal: AbortSignal.timeout(8000) }
+        );
+        if (!res.ok) return null;
+        const text = await res.text();
+        const parser = new DOMParser();
+        const xml = parser.parseFromString(text, 'text/xml');
+        const items = xml.querySelectorAll('item');
+        if (!items.length) return [];
+        const storms = [];
+        items.forEach(item => {
+            const title = item.querySelector('title')?.textContent || '';
+            const desc  = item.querySelector('description')?.textContent || '';
+            // Western Pacific only
+            if (!title.match(/\bW\b|\bWP\b/i) &&
+                !desc.toLowerCase().includes('western pacific') &&
+                !desc.toLowerCase().includes('philippine')) return;
+            // Parse real coordinates from description
+            const cM = desc.match(/(\d+\.?\d*)\s*[°\s]*([NS])[\s,\/]+(\d+\.?\d*)\s*[°\s]*([EW])/i);
+            let tLat = null, tLon = null;
+            if (cM) {
+                tLat = parseFloat(cM[1]); if (cM[2].toUpperCase() === 'S') tLat = -tLat;
+                tLon = parseFloat(cM[3]); if (cM[4].toUpperCase() === 'W') tLon = -tLon;
+            }
+            const wM = desc.match(/(\d+)\s*kt/i);
+            const pM = desc.match(/(\d{3,4})\s*(?:mb|hpa)/i);
             storms.push({
-                name:      title.replace(/^(Tropical|Typhoon|Storm)\s*/i,'').trim() || 'UNNAMED',
-                windSpeed: Math.round(windKt * 1.852),
-                distance:  estimateDistanceFromDesc(desc, APP.userLat, APP.userLon),
+                name:      title.replace(/^(Tropical\s+)?(Cyclone|Typhoon|Storm|Depression)\s*/i,'').trim() || 'UNNAMED',
+                windSpeed: wM ? Math.round(parseInt(wM[1]) * 1.852) : 0,
+                lat:       tLat,
+                lon:       tLon,
+                distance:  (tLat !== null && tLon !== null)
+                               ? Math.round(haversineKm(APP.userLat, APP.userLon, tLat, tLon))
+                               : 9999,
                 direction: extractDirection(desc),
+                pressure:  pM ? parseInt(pM[1]) : null,
                 source:    'JTWC'
             });
-        }
-    });
-    return storms;
+        });
+        return storms;
+    } catch(e) { return null; }
 }
 
 async function fetchFromOpenWeatherTyphoons() { return null; }
@@ -1403,6 +1662,12 @@ function renderTyphoonList(typhoons) {
             : d<600
                 ? `<span class="tt-badge tt-badge--warning"><i class="fas fa-exclamation-circle"></i> High Alert</span>`
                 : `<span class="tt-badge tt-badge--info"><i class="fas fa-eye"></i> Monitoring</span>`;
+        const inPAR = t.lat != null && t.lon != null
+            && t.lat >= 5 && t.lat <= 25
+            && t.lon >= 115 && t.lon <= 135;
+        const parTag = inPAR
+            ? `<span class="tt-badge tt-badge--danger" style="margin-left:4px">IN PAR</span>`
+            : `<span class="tt-badge tt-badge--muted" style="margin-left:4px">Outside PAR</span>`;
         return `<div class="tt-typhoon-item tt-typhoon-item--${lvl}">
             <div class="tt-typhoon-item__stripe"></div>
             <div class="tt-typhoon-item__body">
@@ -1413,6 +1678,7 @@ function renderTyphoonList(typhoons) {
                     <span><i class="fas fa-tachometer-alt" style="margin-right:2px"></i>${t.windSpeed} km/h</span>
                     <span><i class="fas fa-map-marker-alt" style="margin-right:2px"></i>${t.distance} km away</span>
                     ${t.direction?`<span><i class="fas fa-compass" style="margin-right:2px"></i>${t.direction}</span>`:''}
+                    ${parTag}
                 </div>
             </div>
         </div>`;

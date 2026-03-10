@@ -1036,41 +1036,7 @@ const PH_TYPHOON_HISTORY = [
     { year: 1881, name: 'Haiphong Typhoon', intlName: '—', peak: 'Typhoon (Historic)', deaths: 20_000, affected: null, damage_m: null, area: 'Haiphong (Vietnam) / South China Sea / Philippines vicinity', notes: 'Deadliest typhoon in recorded history; estimated 20,000+ fatalities; devastated Haiphong, Vietnam but also impacted northern Philippine sea; cited in Britannica and Encyclopaedia of Natural Disasters as the deadliest tropical cyclone event ever; struck before modern warning systems existed' },
 ];
 
-// ─── BUILD + INJECT TRIGGER BUTTON ───────────────────────────────────────────
-(function injectHistoryButton() {
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', injectHistoryButton);
-        return;
-    }
-    const existing = document.getElementById('typhoonHistoryBtn');
-    if (existing) return;
 
-    const btn = document.createElement('button');
-    btn.id = 'typhoonHistoryBtn';
-    btn.innerHTML = '<i class="fas fa-book-open"></i><span>Philippine Typhoon History</span>';
-    btn.setAttribute('aria-label', 'View Philippine Typhoon History');
-    btn.style.cssText = `
-    position:fixed;bottom:100px;right:26px;z-index:8990;
-    display:flex;align-items:center;gap:8px;
-    padding:10px 16px;
-    background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%);
-    color:#e2e8f0;border:1px solid rgba(255,255,255,.15);
-    border-radius:22px;font-family:'Sora',sans-serif;
-    font-size:12px;font-weight:700;cursor:pointer;
-    box-shadow:0 6px 24px rgba(0,0,0,.4),0 0 0 1px rgba(255,255,255,.05);
-    transition:all .2s;letter-spacing:.2px;
-  `;
-    btn.addEventListener('mouseenter', () => {
-        btn.style.transform = 'translateY(-2px)';
-        btn.style.boxShadow = '0 10px 32px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.08)';
-    });
-    btn.addEventListener('mouseleave', () => {
-        btn.style.transform = '';
-        btn.style.boxShadow = '0 6px 24px rgba(0,0,0,.4),0 0 0 1px rgba(255,255,255,.05)';
-    });
-    btn.addEventListener('click', openTyphoonHistoryModal);
-    document.body.appendChild(btn);
-})();
 
 // ─── OPEN MODAL ──────────────────────────────────────────────────────────────
 function openTyphoonHistoryModal() {
