@@ -1169,6 +1169,7 @@ function positionHoverCard(e) {
 function hideHoverCard() { if (hoverCard) hoverCard.style.display='none'; }
 
 /* ── Row click — always navigates to view_url ── */
+/* ── Row click — navigate immediately, mark read in background ── */
 document.querySelectorAll('.db-notif-row').forEach(function(row) {
     row.addEventListener('mouseenter', function(e) { showHoverCard(this, e); });
     row.addEventListener('mousemove',  function(e) { positionHoverCard(e); });
@@ -1177,22 +1178,26 @@ document.querySelectorAll('.db-notif-row').forEach(function(row) {
     });
     row.addEventListener('click', function(e) {
         if (e.target.closest('input[type="checkbox"]')) return;
+
         var notifId = this.getAttribute('data-notif-id');
         var url     = this.getAttribute('data-url');
         var isRead  = this.getAttribute('data-is-read');
+
         if (!notifId) return;
-        // url is already correctly set — email rows go to notification-detail.php
-        var dest = (url && url !== '') ? url : ('notification-detail.php?id=' + notifId);
+
+        // Always build a valid destination
+        var dest = (url && url.trim() !== '') ? url : ('notification-detail.php?id=' + notifId);
+
+        // Fire mark-as-read in background (don't wait for it)
         if (isRead === '0') {
             var fd = new FormData();
             fd.append('action', 'mark_read');
             fd.append('notification_id', notifId);
-            fetch('mark-as-read.php', { method: 'POST', body: fd })
-                .catch(function(){})
-                .finally(function() { window.location.href = dest; });
-        } else {
-            window.location.href = dest;
+            fetch('mark-as-read.php', { method: 'POST', body: fd }).catch(function(){});
         }
+
+        // Navigate immediately regardless
+        window.location.href = dest;
     });
 });
 

@@ -825,6 +825,29 @@ body{font-family:'Sora',sans-serif;background:var(--bg);color:var(--text);font-s
             </a>
             <?php endforeach;?>
         </div>
+        <!-- ── TYPHOON HISTORY BUTTON ── -->
+<button onclick="openTyphoonHistoryModal()"
+    style="display:flex;align-items:center;gap:9px;padding:9px 11px;
+           background:linear-gradient(135deg,#1e1b4b,var(--navy-light));
+           border:1px solid rgba(99,102,241,.35);border-radius:8px;
+           color:#fff;cursor:pointer;width:100%;
+           font-family:'Sora',sans-serif;
+           transition:transform .15s,box-shadow .15s;margin-top:4px"
+    onmouseover="this.style.transform='translateX(3px)';this.style.boxShadow='0 4px 14px rgba(99,102,241,.3)'"
+    onmouseout="this.style.transform='';this.style.boxShadow=''">
+    <div style="width:30px;height:30px;border-radius:8px;
+                background:rgba(99,102,241,.2);color:#a5b4fc;
+                display:flex;align-items:center;justify-content:center;
+                font-size:12px;flex-shrink:0">
+        <i class="fas fa-book-open"></i>
+    </div>
+    <div style="flex:1;text-align:left">
+        <div style="font-size:10px;font-weight:600;color:rgba(255,255,255,.6);
+                    text-transform:uppercase;letter-spacing:.5px">Reference</div>
+        <div style="font-size:12px;font-weight:600">PH Typhoon History</div>
+    </div>
+    <i class="fas fa-chevron-right" style="font-size:10px;color:rgba(255,255,255,.3)"></i>
+</button>
     </div>
 
 </div><!-- /right -->
@@ -1702,5 +1725,6 @@ document.addEventListener('DOMContentLoaded', boot);
 
 </script>
 <script src="typhoon_live_patch.js"></script>
+
 </body>
 </html>

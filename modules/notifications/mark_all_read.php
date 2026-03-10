@@ -1,34 +1,33 @@
 <?php
 /**
- * Mark All Notifications as Read - modules/notifications/mark_all_read.php
- * Marks all unread notifications as read for current user
+ * mark-as-read.php - modules/notifications/mark-as-read.php
+ * Lightweight AJAX endpoint to mark a single notification as read.
  */
-require_once '../../config/config.php';
-require_once '../../config/session.php';
-require_once '../../config/database.php';
-require_once '../../includes/functions.php';
+@ini_set('display_errors', 0);
 
-requireLogin();
+if (session_status() === PHP_SESSION_NONE) session_start();
 
-$user_id = $_SESSION['user_id'];
+header('Content-Type: application/json; charset=utf-8');
 
-try {
-    // Mark all unread notifications as read for current user
-    $stmt = $conn->prepare("UPDATE tbl_notifications SET is_read = 1 WHERE user_id = ? AND is_read = 0");
-    $stmt->bind_param("i", $user_id);
-    $stmt->execute();
-    $affected_rows = $stmt->affected_rows;
-    $stmt->close();
-    
-    // Set success message
-    $_SESSION['success_message'] = "Marked {$affected_rows} notification(s) as read successfully!";
-    
-} catch (Exception $e) {
-    $_SESSION['error_message'] = 'Failed to mark notifications as read: ' . $e->getMessage();
+if (empty($_SESSION['user_id'])) {
+    echo json_encode(['success' => false, 'error' => 'Not logged in']);
+    exit();
 }
 
-// Redirect back to referring page or notifications page
-$redirect = $_SERVER['HTTP_REFERER'] ?? 'index.php';
-header('Location: ' . $redirect);
+require_once __DIR__ . '/../../config/database.php';
+
+$user_id = (int)$_SESSION['user_id'];
+$nid     = intval($_POST['notification_id'] ?? 0);
+
+if (!$nid) {
+    echo json_encode(['success' => false, 'error' => 'Invalid ID']);
+    exit();
+}
+
+$stmt = $conn->prepare("UPDATE tbl_notifications SET is_read = 1 WHERE notification_id = ? AND user_id = ?");
+$stmt->bind_param("ii", $nid, $user_id);
+$stmt->execute();
+$stmt->close();
+
+echo json_encode(['success' => true]);
 exit();
-?>
