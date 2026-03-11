@@ -1989,8 +1989,105 @@ document.addEventListener('keydown',e=>{
 
 document.addEventListener('DOMContentLoaded', boot);
 
+(function gpsReEnablePatch() {
+    const LS_KEY = 'tt_gps_v4';
+
+    // After DOM is ready, watch for the location bar and inject the button
+    function injectEnableButton() {
+        // If already allowed/active, do nothing
+        if (localStorage.getItem(LS_KEY) === 'allow') return;
+
+        const targets = [
+            document.getElementById('userLocation'),
+            document.querySelector('.tt-location span'),
+            document.querySelector('#ttLbText'),
+        ].filter(Boolean);
+
+        if (!targets.length) {
+            setTimeout(injectEnableButton, 400);
+            return;
+        }
+
+        // Don't add duplicate buttons
+        if (document.getElementById('gpsEnableBtn')) return;
+
+        const btn = document.createElement('button');
+        btn.id = 'gpsEnableBtn';
+        btn.innerHTML = '<i class="fas fa-map-marker-alt"></i> Enable GPS';
+        btn.style.cssText = `
+            margin-left: 10px;
+            padding: 3px 11px;
+            background: linear-gradient(135deg, #0d1b36, #1c3461);
+            color: #fff;
+            border: none;
+            border-radius: 20px;
+            font-family: 'Sora', sans-serif;
+            font-size: 10px;
+            font-weight: 700;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            transition: all .18s;
+            vertical-align: middle;
+        `;
+        btn.onmouseenter = () => btn.style.transform = 'translateY(-1px)';
+        btn.onmouseleave = () => btn.style.transform = '';
+
+        btn.onclick = function () {
+            // Reset stored choice so modal shows fresh
+            localStorage.removeItem(LS_KEY);
+            window._locationDenied = false;
+            btn.remove();
+
+            // If the patch's modal function exists, re-run it
+            if (typeof window.decideAction === 'function') {
+                window.decideAction();
+                return;
+            }
+
+            // Fallback: show the modal directly
+            const modal = document.getElementById('ttGpsModal');
+            if (modal) {
+                modal.classList.add('open');
+                return;
+            }
+
+            // Last resort: call GPS directly
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    pos => {
+                        if (typeof window.applyGPS === 'function') {
+                            window.applyGPS(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+                        } else if (window.APP) {
+                            window.APP.userLat = pos.coords.latitude;
+                            window.APP.userLon = pos.coords.longitude;
+                            if (typeof updateMapMarkers === 'function') updateMapMarkers();
+                        }
+                    },
+                    err => alert('GPS error: ' + err.message),
+                    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+                );
+            }
+        };
+
+        // Insert after the first target element
+        const anchor = targets[0];
+        anchor.parentNode.insertBefore(btn, anchor.nextSibling);
+    }
+
+    // Run after everything else loads
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => setTimeout(injectEnableButton, 800));
+    } else {
+        setTimeout(injectEnableButton, 800);
+    }
+})();
+
 </script>
 <script src="typhoon_live_patch.js"></script>
+<script src="typhoon_hourly_patch.js"></script>
+<script src="typhoon_location_patch.js"></script>
 
 </body>
 </html>

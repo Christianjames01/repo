@@ -1,30 +1,18 @@
-/**
- * map-patch.js — PAGASA Map v3.0
- * ─────────────────────────────────────────────────────────────
- *  FIXES:
- *  1. Map is truly responsive (fixes the hardcoded 460px in index.php)
- *  2. Heavy rain / thunderstorm areas shown OUTSIDE the PAR
- *  3. Outside-PAR typhoons rendered with dashed ring + label
- *  4. GDACS → JMA → JTWC real coordinate fetch chain
- *  5. ResizeObserver + window resize both trigger invalidateSize
- * ─────────────────────────────────────────────────────────────
- */
-
 (function () {
     'use strict';
 
-    /* ═══════════════════════════════════════════════════════════
-       0.  OVERRIDE THE HARDCODED #map HEIGHT IN index.php
-           index.php has `#map{height:460px;width:100%}` in its
-           <style> block. We inject a rule with higher specificity
-           AFTER the page loads so it wins.
-    ══════════════════════════════════════════════════════════════ */
+
+    if (localStorage.getItem('tt_gps_v4') === 'deny') {
+        window._locationDenied = true;
+    }
+
+
     function injectResponsiveOverride() {
         const id = 'mp-responsive-override';
         if (document.getElementById(id)) return;
         const s = document.createElement('style');
         s.id = id;
-        // !important beats anything in index.php
+
         s.textContent = `
       /* ── Responsive map: overrides the hardcoded height in index.php ── */
       #map,
@@ -197,9 +185,7 @@
         document.head.appendChild(s);
     }
 
-    /* ═══════════════════════════════════════════════════════════
-       1.  CONSTANTS
-    ══════════════════════════════════════════════════════════════ */
+
     const PAR = { latMin: 5, latMax: 25, lonMin: 115, lonMax: 135 };
 
     function inPAR(lat, lon) {
@@ -223,9 +209,6 @@
         return { color: '#60a5fa', label: 'LIGHT', fo: 0.09 };
     }
 
-    /* ═══════════════════════════════════════════════════════════
-       2.  GRATICULE + PAR BOUNDARY
-    ══════════════════════════════════════════════════════════════ */
     function drawGraticule(map) {
         const o = { color: '#00e5ff', opacity: .09, weight: .5, dashArray: '3 6', interactive: false };
         for (let lat = -10; lat <= 40; lat += 5) L.polyline([[lat, 90], [lat, 165]], o).addTo(map);
@@ -250,9 +233,7 @@
         }).addTo(map);
     }
 
-    /* ═══════════════════════════════════════════════════════════
-       3.  TC ICON
-    ══════════════════════════════════════════════════════════════ */
+
     function makeTCIcon(style, sz = 34) {
         const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${sz}" height="${sz}" viewBox="0 0 34 34">
       <defs>
@@ -279,9 +260,7 @@
         });
     }
 
-    /* ═══════════════════════════════════════════════════════════
-       4.  WIND RADII + FORECAST TRACK
-    ══════════════════════════════════════════════════════════════ */
+
     function drawWindRadii(target, lat, lon, w) {
         w = parseFloat(w) || 0;
         if (w < 30) return;
@@ -593,7 +572,9 @@
         APP.typhoonLayer.clearLayers();
         APP.typhoonMarkers = [];
 
-        placeUserDot(map, APP.userLat, APP.userLon);
+        if (!window._locationDenied) {
+            placeUserDot(map, APP.userLat, APP.userLon);
+        }
 
         const storms = APP.typhoonData || [];
         if (!storms.length) { showAllClear(map); return; }
@@ -791,7 +772,10 @@
         addLegend(map);
         addLayerBar(map);   // ← also calls setTile('dark')
         addTimestamp(map);
-        placeUserDot(map, APP.userLat, APP.userLon);
+
+        if (!window._locationDenied) {
+            placeUserDot(map, APP.userLat, APP.userLon);
+        }
 
         // ── TRUE RESPONSIVENESS ───────────────────────────────────
         // Method A: ResizeObserver on the map element itself
