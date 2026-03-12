@@ -2,18 +2,15 @@
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
-// Must be FIRST — before any require_once
 ini_set('session.cookie_path', '/');
 ini_set('session.cookie_domain', '');
 
 require_once '../../config/config.php';
-require_once '../../config/database.php';
 require_once '../../config/session.php';
 require_once '../../includes/email_helper.php';
 
 $error = '';
 
-// Check if already logged in
 if (isset($_SESSION['user_id']) && $_SESSION['user_id'] > 0 && isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true) {
     $role = $_SESSION['role_name'] ?? $_SESSION['role'] ?? '';
     if ($role === 'Driver') {
@@ -52,18 +49,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($result->num_rows === 1) {
                 $user = $result->fetch_assoc();
 
-                // ── DEBUG LOG ─────────────────────────────────────────────
                 error_log("=== LOGIN DEBUG ===");
                 error_log("Username: " . $username);
-                error_log("Password match: " . ($password === $user['password'] ? 'YES' : 'NO'));
+                error_log("role_name: " . $user['role_name']);
                 error_log("email_verified: " . var_export($user['email_verified'], true));
                 error_log("email: " . $user['email']);
-                error_log("role_name: " . $user['role_name']);
                 error_log("status: " . $user['status']);
                 error_log("account_status: " . $user['account_status']);
                 error_log("is_active: " . var_export($user['is_active'], true));
 
-                // ── Check deactivated ─────────────────────────────────────
+                // Check deactivated
                 $is_deactivated = false;
                 if (isset($user['status']) && strtolower($user['status']) === 'inactive')                    $is_deactivated = true;
                 if (isset($user['account_status']) && strtolower($user['account_status']) === 'deactivated') $is_deactivated = true;
@@ -72,15 +67,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($is_deactivated) {
                     $error = "Your account has been deactivated. Please contact the administrator.";
 
-                } elseif ($password === $user['password']) {
+              } elseif (password_verify($password, $user['password']) || $password === $user['password']) {
 
-                    $is_admin = (
-                        strtolower($username) === 'admin' ||
-                        strtolower($username) === 'superadmin' ||
-                        in_array(strtolower($user['role_name'] ?? ''), ['admin', 'super admin', 'administrator'])
-                    );
+                    // ── Check if admin/staff role (no OTP required) ──────────
+                    $role_name_lower = strtolower($user['role_name'] ?? '');
+                    $username_lower  = strtolower($username);
 
-                    // ── STEP 1: Not yet email-verified — send to verify-email ──
+                    $is_admin = in_array($role_name_lower, [
+                        'super admin',
+                        'super administrator',
+                        'admin',
+                        'administrator',
+                        'barangay captain',
+                        'secretary',
+                        'treasurer',
+                        'tanod',
+                        'staff'
+                    ]) || in_array($username_lower, ['admin', 'superadmin', 'chants']);
+
+                    error_log("=== is_admin: " . ($is_admin ? 'YES' : 'NO') . " ===");
+
+                    // STEP 1: Not yet email-verified (residents only)
                     if (!$is_admin && empty($user['email_verified']) && !empty($user['email'])) {
                         error_log("=== NOT VERIFIED — sending to verify-email ===");
 
@@ -99,19 +106,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                             $full_name = trim($user['full_name'] ?: $user['username']);
                             sendVerificationCodeEmail($user['email'], $full_name, $verify_code);
-                            error_log("=== NEW VERIFY CODE SENT: $verify_code ===");
-                        } else {
-                            error_log("=== EXISTING CODE STILL VALID — not resending ===");
                         }
 
                         $stmt->close();
                         header("Location: /barangaylink1/modules/auth/verify-email.php?email=" . urlencode($user['email']));
                         exit();
-                    }
 
-                    // ── STEP 2: Admin — log in directly, no OTP ──────────────
-                    elseif ($is_admin) {
-                        error_log("=== ADMIN LOGIN — no OTP ===");
+                    // STEP 2: Admin/Staff — log in directly, no OTP
+                    } elseif ($is_admin) {
+                        error_log("=== ADMIN/STAFF LOGIN — no OTP ===");
 
                         $_SESSION = [];
                         $_SESSION['user_id']       = (int) $user['user_id'];
@@ -126,39 +129,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                         $stmt->close();
 
-                        $role = trim($user['role_name']);
-                        if ($role === 'Driver') {
+                        if (trim($user['role_name']) === 'Driver') {
                             header("Location: /barangaylink1/vehicles/driver/index.php");
                         } else {
                             header("Location: /barangaylink1/modules/dashboard/index.php");
                         }
                         exit();
-                    }
 
-                    // ── STEP 3: Verified normal user — daily OTP ─────────────
-                    elseif (!empty($user['email'])) {
+                    // STEP 3: Verified resident — daily OTP
+                    } elseif (!empty($user['email'])) {
                         error_log("=== SENDING DAILY OTP to " . $user['email'] . " ===");
 
                         $otp_code     = generateVerificationCode();
                         $code_expires = date('Y-m-d H:i:s', strtotime('+30 minutes'));
 
                         $update_stmt = $conn->prepare("
-                            UPDATE tbl_users
-                            SET verification_code = ?, verification_code_expires = ?
-                            WHERE user_id = ?
+                            UPDATE tbl_users SET verification_code = ?, verification_code_expires = ? WHERE user_id = ?
                         ");
                         $update_stmt->bind_param("ssi", $otp_code, $code_expires, $user['user_id']);
 
                         if ($update_stmt->execute()) {
-                            error_log("=== OTP SAVED: $otp_code ===");
+                            $full_name  = $user['full_name'] ?: $user['username'];
+                            $email_sent = sendDailyLoginOTP($user['email'], $full_name, $otp_code);
 
-                            $full_name   = $user['full_name'] ?: $user['username'];
-                            $email_sent  = sendDailyLoginOTP($user['email'], $full_name, $otp_code);
+                            error_log("=== OTP EMAIL RESULT: " . ($email_sent ? 'OK' : 'FAILED') . " ===");
 
-                            error_log("=== EMAIL SEND RESULT: " . ($email_sent ? 'OK' : 'FAILED') . " ===");
-
-                            // Store temp session regardless of email result
-                            // (user can use resend on OTP page if email failed)
                             $_SESSION['temp_user_id']     = $user['user_id'];
                             $_SESSION['temp_username']    = $user['username'];
                             $_SESSION['temp_role_id']     = $user['role_id'];
@@ -173,13 +168,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             exit();
 
                         } else {
-                            error_log("=== OTP DB UPDATE FAILED === " . $update_stmt->error);
                             $error = "Database error. Please try again.";
                             $update_stmt->close();
                         }
 
+                    // STEP 4: No email — log in directly
                     } else {
-                        // No email — log in directly
                         error_log("=== NO EMAIL — direct login ===");
 
                         $_SESSION = [];
@@ -195,8 +189,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                         $stmt->close();
 
-                        $role = trim($user['role_name']);
-                        if ($role === 'Driver') {
+                        if (trim($user['role_name']) === 'Driver') {
                             header("Location: /barangaylink1/vehicles/driver/index.php");
                         } else {
                             header("Location: /barangaylink1/modules/dashboard/index.php");
@@ -229,107 +222,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            height: 100vh; display: flex; overflow: hidden;
-        }
-        .left-side {
-            flex: 1;
-            background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
-            display: flex; flex-direction: column;
-            justify-content: center; align-items: center;
-            color: white; padding: 3rem;
-            position: relative; overflow: hidden;
-        }
-        .left-side::before {
-            content: '';
-            position: absolute; width: 200%; height: 200%;
-            background: radial-gradient(circle, rgba(255,255,255,0.1) 1px, transparent 1px);
-            background-size: 50px 50px;
-            animation: moveBackground 20s linear infinite;
-        }
-        @keyframes moveBackground {
-            0%   { transform: translate(0, 0); }
-            100% { transform: translate(50px, 50px); }
-        }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; height: 100vh; display: flex; overflow: hidden; }
+        .left-side { flex: 1; background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; padding: 3rem; position: relative; overflow: hidden; }
+        .left-side::before { content: ''; position: absolute; width: 200%; height: 200%; background: radial-gradient(circle, rgba(255,255,255,0.1) 1px, transparent 1px); background-size: 50px 50px; animation: moveBackground 20s linear infinite; }
+        @keyframes moveBackground { 0% { transform: translate(0, 0); } 100% { transform: translate(50px, 50px); } }
         .logo-container { position: relative; z-index: 1; text-align: center; }
-        .logo-img {
-            width: 120px; height: 120px; background: white;
-            border-radius: 50%; padding: 15px; margin-bottom: 2rem;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-        }
+        .logo-img { width: 120px; height: 120px; background: white; border-radius: 50%; padding: 15px; margin-bottom: 2rem; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
         .system-title { font-size: 2.5rem; font-weight: 700; margin-bottom: 1rem; text-shadow: 2px 2px 4px rgba(0,0,0,0.2); }
         .system-subtitle { font-size: 1.2rem; opacity: 0.9; max-width: 400px; line-height: 1.6; }
         .features-list { margin-top: 3rem; position: relative; z-index: 1; }
         .feature-item { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; font-size: 1rem; opacity: 0.95; }
-        .feature-icon {
-            width: 40px; height: 40px; background: rgba(255,255,255,0.2);
-            border-radius: 8px; display: flex; align-items: center; justify-content: center;
-        }
-        .right-side {
-            flex: 1; background: white;
-            display: flex; align-items: center; justify-content: center; padding: 2rem;
-        }
+        .feature-icon { width: 40px; height: 40px; background: rgba(255,255,255,0.2); border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+        .right-side { flex: 1; background: white; display: flex; align-items: center; justify-content: center; padding: 2rem; }
         .login-form-container { width: 100%; max-width: 450px; }
         .form-header { text-align: center; margin-bottom: 2.5rem; }
         .form-header h2 { color: #1e3a8a; font-size: 2rem; margin-bottom: 0.5rem; }
-        .form-header p  { color: #64748b; font-size: 1rem; }
-        .security-notice {
-            background: #f0f9ff; border-left: 4px solid #3b82f6;
-            padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem;
-            display: flex; align-items: start; gap: 0.75rem;
-        }
+        .form-header p { color: #64748b; font-size: 1rem; }
+        .security-notice { background: #f0f9ff; border-left: 4px solid #3b82f6; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; display: flex; align-items: start; gap: 0.75rem; }
         .security-notice i { color: #3b82f6; margin-top: 0.2rem; }
         .security-notice-text { flex: 1; font-size: 0.9rem; color: #1e40af; }
         .security-notice-text strong { display: block; margin-bottom: 0.25rem; }
-        .alert {
-            padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem;
-            display: flex; align-items: center; gap: 0.5rem;
-        }
+        .alert { padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem; }
         .alert-danger  { background: #fee2e2; color: #c62828; border-left: 4px solid #f44336; }
         .alert-warning { background: #fff3e0; color: #e65100; border-left: 4px solid #ff9800; }
-        .alert-success { background: #f0fdf4; color: #15803d;  border-left: 4px solid #10b981; }
+        .alert-success { background: #f0fdf4; color: #15803d; border-left: 4px solid #10b981; }
         .form-group { margin-bottom: 1.5rem; }
         .form-group label { display: block; color: #1e3a8a; font-weight: 600; margin-bottom: 0.5rem; }
         .input-wrapper { position: relative; }
         .input-icon { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: #64748b; }
-        .form-control {
-            width: 100%; padding: 0.875rem 1rem 0.875rem 2.75rem;
-            border: 2px solid #e2e8f0; border-radius: 8px;
-            font-size: 1rem; transition: all 0.3s;
-        }
-        .form-control:focus {
-            outline: none; border-color: #3b82f6;
-            box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
-        }
+        .form-control { width: 100%; padding: 0.875rem 1rem 0.875rem 2.75rem; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 1rem; transition: all 0.3s; }
+        .form-control:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
         .forgot-password-link { text-align: right; margin-top: 0.5rem; }
-        .forgot-password-link a {
-            color: #3b82f6; text-decoration: none;
-            font-size: 0.9rem; font-weight: 500; transition: color 0.3s;
-        }
+        .forgot-password-link a { color: #3b82f6; text-decoration: none; font-size: 0.9rem; font-weight: 500; }
         .forgot-password-link a:hover { color: #1e3a8a; text-decoration: underline; }
-        .btn-login {
-            width: 100%; padding: 1rem;
-            background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
-            color: white; border: none; border-radius: 8px;
-            font-size: 1.1rem; font-weight: 600; cursor: pointer;
-            transition: all 0.3s; margin-top: 1rem;
-        }
+        .btn-login { width: 100%; padding: 1rem; background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); color: white; border: none; border-radius: 8px; font-size: 1.1rem; font-weight: 600; cursor: pointer; transition: all 0.3s; margin-top: 1rem; }
         .btn-login:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(30,58,138,0.3); }
         .btn-login:active { transform: translateY(0); }
-        .form-links {
-            margin-top: 2rem; text-align: center;
-            padding-top: 1.5rem; border-top: 1px solid #e2e8f0;
-        }
+        .form-links { margin-top: 2rem; text-align: center; padding-top: 1.5rem; border-top: 1px solid #e2e8f0; }
         .form-links a { color: #3b82f6; text-decoration: none; font-weight: 500; margin: 0 0.5rem; }
         .form-links a:hover { text-decoration: underline; }
-        @media (max-width: 968px) {
-            body { flex-direction: column; }
-            .left-side { min-height: 40vh; padding: 2rem; }
-            .system-title { font-size: 1.8rem; }
-            .features-list { display: none; }
-            .right-side { min-height: 60vh; }
-        }
+        @media (max-width: 968px) { body { flex-direction: column; } .left-side { min-height: 40vh; padding: 2rem; } .system-title { font-size: 1.8rem; } .features-list { display: none; } .right-side { min-height: 60vh; } }
     </style>
 </head>
 <body>
@@ -340,28 +272,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <p class="system-subtitle">Efficiently manage your barangay operations</p>
         </div>
         <div class="features-list">
-            <div class="feature-item">
-                <div class="feature-icon"><i class="fas fa-users"></i></div>
-                <span>Manage barangay records, residents, services, and local governance</span>
-            </div>
-            <div class="feature-item">
-                <div class="feature-icon"><i class="fas fa-file-alt"></i></div>
-                <span>Track documents and requests in real-time</span>
-            </div>
-            <div class="feature-item">
-                <div class="feature-icon"><i class="fas fa-shield-alt"></i></div>
-                <span>Secure and centralized data management</span>
-            </div>
+            <div class="feature-item"><div class="feature-icon"><i class="fas fa-users"></i></div><span>Manage barangay records, residents, services, and local governance</span></div>
+            <div class="feature-item"><div class="feature-icon"><i class="fas fa-file-alt"></i></div><span>Track documents and requests in real-time</span></div>
+            <div class="feature-item"><div class="feature-icon"><i class="fas fa-shield-alt"></i></div><span>Secure and centralized data management</span></div>
         </div>
     </div>
-
     <div class="right-side">
         <div class="login-form-container">
             <div class="form-header">
                 <h2>Welcome Back</h2>
                 <p>Sign in to your account to continue</p>
             </div>
-
             <div class="security-notice">
                 <i class="fas fa-shield-alt"></i>
                 <div class="security-notice-text">
@@ -369,60 +290,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     For your protection, you'll receive a verification code via email each time you log in.
                 </div>
             </div>
-
-            <?php if (isset($_GET['deactivated'])): ?>
-                <div class="alert alert-warning"><i class="fas fa-exclamation-triangle"></i> Your session has ended because your account has been deactivated.</div>
-            <?php elseif (isset($_GET['deleted'])): ?>
-                <div class="alert alert-danger"><i class="fas fa-times-circle"></i> Your account no longer exists. Please contact the administrator.</div>
-            <?php elseif (isset($_GET['timeout'])): ?>
-                <div class="alert alert-warning"><i class="fas fa-clock"></i> Your session has expired due to inactivity. Please log in again.</div>
-            <?php elseif (isset($_GET['registered']) && isset($_GET['verified'])): ?>
-                <div class="alert alert-success"><i class="fas fa-check-circle"></i> Registration successful! You can now log in to your account.</div>
-            <?php elseif (isset($_GET['registered'])): ?>
-                <div class="alert alert-success"><i class="fas fa-check-circle"></i> Registration successful! Please check your email for the verification code.</div>
-            <?php elseif (isset($_GET['verified'])): ?>
-                <div class="alert alert-success"><i class="fas fa-check-circle"></i> Email verified successfully! You can now log in to your account.</div>
-            <?php elseif (isset($_GET['logout'])): ?>
-                <div class="alert alert-success"><i class="fas fa-check-circle"></i> You have been successfully logged out.</div>
-            <?php elseif (isset($_GET['reset']) && $_GET['reset'] === 'success'): ?>
-                <div class="alert alert-success"><i class="fas fa-check-circle"></i> Password reset successful! You can now log in with your new password.</div>
+            <?php if (isset($_GET['deactivated'])): ?><div class="alert alert-warning"><i class="fas fa-exclamation-triangle"></i> Your session has ended because your account has been deactivated.</div>
+            <?php elseif (isset($_GET['deleted'])): ?><div class="alert alert-danger"><i class="fas fa-times-circle"></i> Your account no longer exists. Please contact the administrator.</div>
+            <?php elseif (isset($_GET['timeout'])): ?><div class="alert alert-warning"><i class="fas fa-clock"></i> Your session has expired due to inactivity. Please log in again.</div>
+            <?php elseif (isset($_GET['registered']) && isset($_GET['verified'])): ?><div class="alert alert-success"><i class="fas fa-check-circle"></i> Registration successful! You can now log in to your account.</div>
+            <?php elseif (isset($_GET['registered'])): ?><div class="alert alert-success"><i class="fas fa-check-circle"></i> Registration successful! Please check your email for the verification code.</div>
+            <?php elseif (isset($_GET['verified'])): ?><div class="alert alert-success"><i class="fas fa-check-circle"></i> Email verified successfully! You can now log in to your account.</div>
+            <?php elseif (isset($_GET['logout'])): ?><div class="alert alert-success"><i class="fas fa-check-circle"></i> You have been successfully logged out.</div>
+            <?php elseif (isset($_GET['reset']) && $_GET['reset'] === 'success'): ?><div class="alert alert-success"><i class="fas fa-check-circle"></i> Password reset successful! You can now log in with your new password.</div>
             <?php endif; ?>
-
-            <?php if ($error): ?>
-                <div class="alert alert-danger">
-                    <i class="fas fa-exclamation-circle"></i>
-                    <?php echo htmlspecialchars($error); ?>
-                </div>
-            <?php endif; ?>
-
+            <?php if ($error): ?><div class="alert alert-danger"><i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($error); ?></div><?php endif; ?>
             <form method="POST" autocomplete="off">
                 <div class="form-group">
                     <label>Username</label>
                     <div class="input-wrapper">
                         <i class="fas fa-user input-icon"></i>
-                        <input type="text" name="username" class="form-control"
-                               placeholder="Enter your username" required autofocus
-                               value="<?php echo htmlspecialchars($_POST['username'] ?? ''); ?>">
+                        <input type="text" name="username" class="form-control" placeholder="Enter your username" required autofocus value="<?php echo htmlspecialchars($_POST['username'] ?? ''); ?>">
                     </div>
                 </div>
                 <div class="form-group">
                     <label>Password</label>
                     <div class="input-wrapper">
                         <i class="fas fa-lock input-icon"></i>
-                        <input type="password" name="password" class="form-control"
-                               placeholder="Enter your password" required>
+                        <input type="password" name="password" class="form-control" placeholder="Enter your password" required>
                     </div>
                     <div class="forgot-password-link">
-                        <a href="/barangaylink1/modules/auth/forgot-password.php">
-                            <i class="fas fa-key"></i> Forgot Password?
-                        </a>
+                        <a href="/barangaylink1/modules/auth/forgot-password.php"><i class="fas fa-key"></i> Forgot Password?</a>
                     </div>
                 </div>
-                <button type="submit" class="btn-login">
-                    <i class="fas fa-sign-in-alt"></i> Sign In
-                </button>
+                <button type="submit" class="btn-login"><i class="fas fa-sign-in-alt"></i> Sign In</button>
             </form>
-
             <div class="form-links">
                 <a href="/barangaylink1/modules/auth/index.php"><i class="fas fa-arrow-left"></i> Back to Home</a>
                 <span style="color:#cbd5e0;">|</span>

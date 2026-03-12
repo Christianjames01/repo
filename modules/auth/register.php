@@ -243,7 +243,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             error_log("✓ Role ID: $role_id");
 
             // ── 3. Prepare user values ──────────────────────────────────────
-            $hashed_password   = $password;
+          $hashed_password = password_hash($password, PASSWORD_DEFAULT);
             // FIX: generateVerificationCode() returns a STRING — keep it as string
             $verification_code = generateVerificationCode();
             $code_expires      = date('Y-m-d H:i:s', strtotime('+30 minutes'));
