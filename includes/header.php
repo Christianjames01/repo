@@ -294,6 +294,177 @@ $current_path = $_SERVER['PHP_SELF'];
         .notif-toast-msg   { font-size: 12px; color: #718096; line-height: 1.45; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
         .notif-toast-close { background: none; border: none; cursor: pointer; color: #a0aec0; font-size: 16px; line-height: 1; padding: 0; flex-shrink: 0; margin-top: -1px; }
         .notif-toast-close:hover { color: #4a5568; }
+
+        /* ── Dark Mode ── */
+body.dark-mode {
+    background: #0f172a !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .main-content {
+    background: #0f172a !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .header {
+    background: #1e293b !important;
+    border-bottom: 1px solid #334155 !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.4) !important;
+}
+body.dark-mode .card,
+body.dark-mode .table,
+body.dark-mode .modal-content,
+body.dark-mode .dropdown-menu {
+    background: #1e293b !important;
+    color: #e2e8f0 !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .table td,
+body.dark-mode .table th {
+    border-color: #334155 !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .table thead th {
+    background: #334155 !important;
+}
+body.dark-mode .table tbody tr:hover {
+    background: #334155 !important;
+}
+body.dark-mode input,
+body.dark-mode select,
+body.dark-mode textarea,
+body.dark-mode .form-control,
+body.dark-mode .form-select {
+    background: #334155 !important;
+    color: #e2e8f0 !important;
+    border-color: #475569 !important;
+}
+body.dark-mode input::placeholder,
+body.dark-mode textarea::placeholder {
+    color: #94a3b8 !important;
+}
+body.dark-mode .btn-light {
+    background: #334155 !important;
+    color: #e2e8f0 !important;
+    border-color: #475569 !important;
+}
+body.dark-mode .text-muted {
+    color: #94a3b8 !important;
+}
+body.dark-mode .border,
+body.dark-mode .border-bottom,
+body.dark-mode .border-top {
+    border-color: #334155 !important;
+}
+body.dark-mode .bg-white,
+body.dark-mode .bg-light {
+    background: #1e293b !important;
+}
+/* Only change text that hasn't been explicitly colored */
+body.dark-mode { color: #e2e8f0 !important; }
+
+/* ── Dark Mode ── */
+body.dark-mode { background: #0f172a !important; }
+body.dark-mode .main-content { background: #0f172a !important; }
+
+body.dark-mode .header {
+    background: #1e293b !important;
+    border-bottom: 1px solid #334155 !important;
+}
+body.dark-mode .card {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .card-header,
+body.dark-mode .card-body,
+body.dark-mode .card-footer {
+    background: #1e293b !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .card-title,
+body.dark-mode .card-header h5,
+body.dark-mode .card-header h6 {
+    color: #f1f5f9 !important;
+}
+body.dark-mode .table {
+    background: #1e293b !important;
+    color: #e2e8f0 !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .table td,
+body.dark-mode .table th {
+    border-color: #334155 !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .table thead th {
+    background: #334155 !important;
+    color: #f1f5f9 !important;
+}
+body.dark-mode .table-striped tbody tr:nth-of-type(odd) {
+    background: #243044 !important;
+}
+body.dark-mode .modal-content {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .modal-header,
+body.dark-mode .modal-footer {
+    border-color: #334155 !important;
+}
+body.dark-mode input,
+body.dark-mode select,
+body.dark-mode textarea,
+body.dark-mode .form-control,
+body.dark-mode .form-select {
+    background: #334155 !important;
+    color: #e2e8f0 !important;
+    border-color: #475569 !important;
+}
+body.dark-mode input::placeholder,
+body.dark-mode textarea::placeholder {
+    color: #94a3b8 !important;
+}
+body.dark-mode .bg-white { background: #1e293b !important; }
+body.dark-mode .bg-light { background: #243044 !important; }
+body.dark-mode .text-muted { color: #94a3b8 !important; }
+body.dark-mode .border { border-color: #334155 !important; }
+body.dark-mode .notification-panel {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .user-name { color: #f1f5f9 !important; }
+body.dark-mode .user-role { color: #94a3b8 !important; }
+body.dark-mode #themeIcon  { color: #fbbf24 !important; }
+
+/* Keep colored badges/status text visible */
+body.dark-mode .badge,
+body.dark-mode .btn,
+body.dark-mode .alert {
+    color: inherit !important;
+}
+
+/* Keep white text on colored backgrounds */
+body.dark-mode .bg-primary *,
+body.dark-mode .bg-success *,
+body.dark-mode .bg-danger *,
+body.dark-mode .bg-warning *,
+body.dark-mode .bg-info * {
+    color: #ffffff !important;
+}
+
+/* Keep links visible */
+body.dark-mode a {
+    color: #60a5fa !important;
+}
+body.dark-mode a:hover {
+    color: #93c5fd !important;
+}
+body.dark-mode .notification-panel {
+    background: #1e293b !important;
+    border: 1px solid #334155 !important;
+}
+body.dark-mode .user-name { color: #f1f5f9 !important; }
+body.dark-mode .user-role { color: #94a3b8 !important; }
+body.dark-mode #themeIcon { color: #fbbf24 !important; }
     </style>
 
     <?php if (isset($extra_css)): ?>
@@ -1171,6 +1342,17 @@ $current_path = $_SERVER['PHP_SELF'];
     </div>
 
     <div class="header-right">
+
+    <!-- ★ Dark/Light Mode Toggle ★ -->
+<button id="themeToggle" onclick="toggleTheme()"
+    style="background:none;border:none;cursor:pointer;padding:10px;
+           position:relative;margin-right:4px;border-radius:50%;
+           transition:background 0.2s;"
+    title="Toggle Dark/Light Mode"
+    onmouseover="this.style.background='rgba(0,0,0,0.08)'"
+    onmouseout="this.style.background='none'">
+    <i id="themeIcon" class="fas fa-moon" style="font-size:18px;color:#4a5568;"></i>
+</button>
         <!-- ★ Notification bell — real-time badge ★ -->
         <div class="notification-dropdown" style="position:relative;margin-right:20px;">
             <button class="notification-bell" id="notificationBell"
@@ -1481,6 +1663,33 @@ document.addEventListener('DOMContentLoaded', function () {
     setInterval(pollCount, POLL_MS);
 
 }); // end DOMContentLoaded
+
+/* ── Dark / Light Mode Toggle ── */
+function toggleTheme() {
+    var isDark = document.body.classList.toggle('dark-mode');
+    var icon   = document.getElementById('themeIcon');
+    if (isDark) {
+        icon.classList.replace('fa-moon', 'fa-sun');
+        icon.style.color = '#fbbf24';
+        localStorage.setItem('theme', 'dark');
+    } else {
+        icon.classList.replace('fa-sun', 'fa-moon');
+        icon.style.color = '#4a5568';
+        localStorage.setItem('theme', 'light');
+    }
+}
+
+/* Apply saved theme on page load */
+(function() {
+    if (localStorage.getItem('theme') === 'dark') {
+        document.body.classList.add('dark-mode');
+        var icon = document.getElementById('themeIcon');
+        if (icon) {
+            icon.classList.replace('fa-moon', 'fa-sun');
+            icon.style.color = '#fbbf24';
+        }
+    }
+})();
 </script>
 
 <!-- Main Content -->

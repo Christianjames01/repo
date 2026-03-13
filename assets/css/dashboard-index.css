@@ -1539,3 +1539,133 @@ select.db-input {
         align-items: flex-start;
     }
 }
+
+/* ══════════════════════════════════════
+   DARK MODE OVERRIDES — dashboard
+══════════════════════════════════════ */
+body.dark-mode {
+    --db-bg: #0f172a;
+    --db-surf: #1e293b;
+    --db-surf2: #243044;
+    --db-border: #334155;
+    --db-text: #e2e8f0;
+    --db-muted: #94a3b8;
+}
+
+/* Table rows */
+body.dark-mode .db-table tbody tr:hover {
+    background: #2d3f58;
+}
+
+body.dark-mode .db-table tbody td {
+    color: #e2e8f0;
+}
+
+/* Announcement variants */
+body.dark-mode .db-ann--normal {
+    background: #1e293b;
+}
+
+body.dark-mode .db-ann--high {
+    background: #2a2310;
+}
+
+body.dark-mode .db-ann--urgent {
+    background: #2a1520;
+}
+
+/* Activity timeline cards */
+body.dark-mode .db-timeline__item--upcoming .db-timeline__card {
+    background: #1a2744;
+    border-color: #2d4a7a;
+}
+
+body.dark-mode .db-timeline__item--today .db-timeline__card {
+    background: #2a2010;
+    border-color: #5a4a20;
+}
+
+body.dark-mode .db-timeline__item--past .db-timeline__card {
+    background: #1e293b;
+}
+
+/* Form inputs inside modals */
+body.dark-mode .db-input {
+    background: #334155 !important;
+    color: #e2e8f0 !important;
+    border-color: #475569 !important;
+}
+
+body.dark-mode .db-input::placeholder {
+    color: #64748b;
+}
+
+/* Modal box */
+body.dark-mode .db-modal__box {
+    background: #1e293b;
+}
+
+body.dark-mode .db-modal__body {
+    color: #e2e8f0;
+}
+
+body.dark-mode .db-delete-target {
+    background: #243044;
+    border-color: #334155;
+    color: #e2e8f0;
+}
+
+/* Panel footer */
+body.dark-mode .db-panel__footer {
+    background: #243044;
+    border-color: #334155;
+}
+
+/* Ghost/outline buttons */
+body.dark-mode .db-btn--ghost {
+    background: #334155;
+    color: #e2e8f0;
+    border-color: #475569;
+}
+
+body.dark-mode .db-btn--ghost:hover {
+    background: #475569;
+}
+
+body.dark-mode .db-btn--outline {
+    color: #93c5fd;
+    border-color: #93c5fd;
+}
+
+body.dark-mode .db-btn--outline:hover {
+    background: #1d4ed8;
+    color: #fff;
+    border-color: #1d4ed8;
+}
+
+/* Icon buttons */
+body.dark-mode .db-icon-btn {
+    background: #334155;
+    border-color: #475569;
+    color: #94a3b8;
+}
+
+/* Stat cards */
+body.dark-mode .db-stat-card__num {
+    color: #f1f5f9;
+}
+
+body.dark-mode .db-stat-card__label {
+    color: #94a3b8;
+}
+
+/* Gallery */
+body.dark-mode .db-gallery__item {
+    border-color: #334155;
+    background: #243044;
+}
+
+/* Empty states */
+body.dark-mode .db-empty p {
+    color: #94a3b8;
+}
