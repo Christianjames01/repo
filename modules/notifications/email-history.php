@@ -20,7 +20,7 @@ $stmt->close();
 
 $user_role = $current_user['role'] ?? '';
 
-if ($user_role !== 'Super Administrator') {
+if ($user_role !== 'Super Admin') {
     $_SESSION['error_message'] = 'Access denied. Super Administrator only.';
     header('Location: ../../dashboard.php');
     exit();
@@ -198,6 +198,87 @@ body{font-family:'Sora',sans-serif;background:var(--db-bg);color:var(--db-text);
 .db-preview__footer{font-size:.72rem;color:var(--db-muted);display:flex;justify-content:space-between;border-top:1px solid var(--db-border);padding-top:8px;}
 
 @media(max-width:768px){.rm-hero{padding:20px;border-radius:0;}.db-preview{display:none!important;}}
+/* ══════════════════════════════════════
+   DARK MODE — email-history.php
+══════════════════════════════════════ */
+body.dark-mode { background: #0f172a !important; color: #e2e8f0 !important; }
+
+/* Stat cards */
+body.dark-mode .db-stat-card { background: #1e293b !important; border-color: #334155 !important; }
+body.dark-mode .db-stat-card:hover { background: #243044 !important; }
+body.dark-mode .db-stat-card__label { color: #94a3b8 !important; }
+
+/* Panel */
+body.dark-mode .db-panel { background: #1e293b !important; border-color: #334155 !important; }
+body.dark-mode .db-panel__header { border-color: #334155 !important; }
+body.dark-mode .db-panel__title h2 { color: #f1f5f9 !important; }
+
+/* Table */
+body.dark-mode .db-table tbody tr { border-color: #334155 !important; }
+body.dark-mode .db-table tbody td { color: #e2e8f0 !important; }
+body.dark-mode .db-table tbody tr.email-row:hover {
+    background: #243044 !important;
+    box-shadow: inset 3px 0 0 var(--db-indigo) !important;
+}
+body.dark-mode .db-table tbody td [style*="color:var(--db-text)"] { color: #f1f5f9 !important; }
+body.dark-mode .db-table tbody td [style*="color:var(--db-muted)"] { color: #64748b !important; }
+body.dark-mode .db-mini-stat span[style*="color:var(--db-muted)"] { color: #475569 !important; }
+
+/* Badges */
+body.dark-mode .db-badge--muted {
+    background: #243044 !important;
+    color: #94a3b8 !important;
+    border-color: #334155 !important;
+}
+
+/* Pagination */
+body.dark-mode .db-page-btn {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+    color: #cbd5e1 !important;
+}
+body.dark-mode .db-page-btn:hover {
+    background: rgba(99,102,241,.15) !important;
+    border-color: var(--db-indigo) !important;
+    color: #a5b4fc !important;
+}
+body.dark-mode .db-page-btn.active {
+    background: var(--db-navy-light) !important;
+    border-color: var(--db-navy-light) !important;
+    color: #fff !important;
+}
+
+/* Hover preview card */
+body.dark-mode .db-preview {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+    box-shadow: 0 8px 40px rgba(0,0,0,.5) !important;
+}
+body.dark-mode .db-preview__header { border-color: #334155 !important; }
+body.dark-mode .db-preview__title  { color: #f1f5f9 !important; }
+body.dark-mode .db-preview__type   { color: #64748b !important; }
+body.dark-mode .db-preview__recipients { color: #94a3b8 !important; }
+body.dark-mode .db-preview__stats  { background: #162032 !important; }
+body.dark-mode .db-preview__stat-lbl { color: #64748b !important; }
+body.dark-mode .db-preview__footer {
+    border-color: #334155 !important;
+    color: #64748b !important;
+}
+
+/* Empty state */
+body.dark-mode .db-empty i { color: #334155 !important; }
+body.dark-mode .db-empty p { color: #64748b !important; }
+
+/* Hero buttons */
+body.dark-mode .rm-hero .db-btn--ghost {
+    background: rgba(255,255,255,.1) !important;
+    border-color: rgba(255,255,255,.2) !important;
+    color: rgba(255,255,255,.85) !important;
+}
+body.dark-mode .rm-hero .db-btn--ghost:hover {
+    background: rgba(255,255,255,.18) !important;
+    color: #fff !important;
+}
 </style>
 
 <!-- HERO -->

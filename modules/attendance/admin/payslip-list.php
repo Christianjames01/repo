@@ -72,6 +72,83 @@ include '../../../includes/header.php';
 ?>
 
 <style>
+    /* ══════════════════════════════════════
+   PAYSLIP LIST DARK MODE OVERRIDES
+══════════════════════════════════════ */
+
+/* Page header */
+body.dark-mode .pl-header__title {
+    color: #e2e8f0;
+}
+body.dark-mode .pl-header__sub {
+    color: #94a3b8;
+}
+
+/* Filter bar */
+body.dark-mode .pl-filter {
+    background: #1e293b;
+    border-color: #334155;
+}
+body.dark-mode .pl-filter__field label {
+    color: #94a3b8;
+}
+body.dark-mode .pl-filter__field select,
+body.dark-mode .pl-filter__field input[type="month"] {
+    background: #334155;
+    color: #e2e8f0;
+    border-color: #475569;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2394a3b8'/%3E%3C/svg%3E");
+}
+body.dark-mode .pl-filter__field select:focus,
+body.dark-mode .pl-filter__field input[type="month"]:focus {
+    border-color: #60a5fa;
+    box-shadow: 0 0 0 3px rgba(96,165,250,.15);
+}
+
+/* Stat cards */
+body.dark-mode .pl-stat {
+    background: #1e293b;
+    border-color: #334155;
+}
+body.dark-mode .pl-stat__label {
+    color: #94a3b8;
+}
+
+/* Table money values */
+body.dark-mode .pl-money-pos {
+    color: #34d399;
+}
+body.dark-mode .pl-money-neg {
+    color: #fca5a5;
+}
+body.dark-mode .pl-money-net {
+    color: #93c5fd;
+}
+
+/* Period text */
+body.dark-mode .pl-period {
+    color: #e2e8f0;
+}
+body.dark-mode .pl-period-sub {
+    color: #64748b;
+}
+
+/* Table rows */
+body.dark-mode .db-table tbody td strong {
+    color: #e2e8f0;
+}
+body.dark-mode .db-text-sm {
+    color: #94a3b8;
+}
+
+/* Delete modal body */
+body.dark-mode #deletePayslipModal .db-modal__body div[style*="font-size:15px"] {
+    color: #e2e8f0;
+}
+body.dark-mode #deletePayslipModal .db-modal__body div[style*="font-size:13px"] {
+    color: #94a3b8;
+}
+
 /* ── Payslip List page styles (dashboard-matched) ── */
 .pl-page { padding: 0 0 40px; }
 

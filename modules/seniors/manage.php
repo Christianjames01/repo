@@ -181,6 +181,128 @@ body{font-family:'Sora',sans-serif;background:var(--db-bg);color:var(--db-text);
 .db-benefit-recent td{padding:8px 12px;border-top:1px solid var(--db-border);}
 
 @media(max-width:768px){.rm-hero{padding:20px;border-radius:0;}.db-form-row{grid-template-columns:1fr;}.db-detail-grid{grid-template-columns:1fr;}}
+/* ══════════════════════════════════════
+   DARK MODE — seniors/manage.php
+══════════════════════════════════════ */
+body.dark-mode { background: #0f172a !important; color: #e2e8f0 !important; }
+
+/* Alerts */
+body.dark-mode .db-alert--success { background: #064e3b !important; color: #6ee7b7 !important; border-color: #10b981 !important; }
+body.dark-mode .db-alert--error   { background: #450a0a !important; color: #fca5a5 !important; border-color: #ef4444 !important; }
+
+/* Stat cards */
+body.dark-mode .db-stat-card { background: #1e293b !important; border-color: #334155 !important; }
+body.dark-mode .db-stat-card:hover { background: #243044 !important; }
+body.dark-mode .db-stat-card__label { color: #94a3b8 !important; }
+
+/* Panels */
+body.dark-mode .db-panel { background: #1e293b !important; border-color: #334155 !important; }
+body.dark-mode .db-panel__header { border-color: #334155 !important; }
+body.dark-mode .db-panel__title h2 { color: #f1f5f9 !important; }
+
+/* Info banner */
+body.dark-mode .db-info-banner {
+    background: rgba(180,83,9,.18) !important;
+    border-color: var(--db-amber) !important;
+    color: #fcd34d !important;
+}
+
+/* Table */
+body.dark-mode .db-table tbody tr { border-color: #334155 !important; }
+body.dark-mode .db-table tbody tr:hover { background: #243044 !important; }
+body.dark-mode .db-table tbody td { color: #e2e8f0 !important; }
+body.dark-mode .db-resident-name { color: #f1f5f9 !important; }
+body.dark-mode .db-resident-addr { color: #64748b !important; }
+
+/* Badges */
+body.dark-mode .db-badge--muted {
+    background: #243044 !important;
+    color: #94a3b8 !important;
+    border-color: #334155 !important;
+}
+
+/* Icon buttons */
+body.dark-mode .db-icon-btn { color: #64748b !important; }
+body.dark-mode .db-icon-btn:hover { background: #243044 !important; color: #e2e8f0 !important; }
+body.dark-mode .db-icon-btn.violet:hover { background: rgba(124,58,237,.18) !important; color: #c4b5fd !important; }
+body.dark-mode .db-icon-btn.success:hover { background: rgba(16,185,129,.18) !important; color: #6ee7b7 !important; }
+
+/* Ghost button */
+body.dark-mode .db-btn--ghost {
+    background: #243044 !important;
+    border-color: #334155 !important;
+    color: #cbd5e1 !important;
+}
+body.dark-mode .db-btn--ghost:hover {
+    background: #2d3f58 !important;
+    color: #e2e8f0 !important;
+}
+
+/* Empty state */
+body.dark-mode .db-empty i { color: #334155 !important; }
+body.dark-mode .db-empty p { color: #64748b !important; }
+
+/* ── Modals ── */
+body.dark-mode .db-modal { background: rgba(0,0,0,.7) !important; }
+body.dark-mode .db-modal__box { background: #1e293b !important; }
+
+/* Section titles inside modals */
+body.dark-mode .db-section-title {
+    color: #a5b4fc !important;
+    border-color: #334155 !important;
+}
+
+/* Form inputs inside modals */
+body.dark-mode .db-input {
+    background: #243044 !important;
+    border-color: #334155 !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .db-input:focus {
+    background: #1e293b !important;
+    border-color: var(--db-indigo) !important;
+    box-shadow: 0 0 0 3px rgba(99,102,241,.2) !important;
+}
+body.dark-mode .db-input::placeholder { color: #64748b !important; }
+body.dark-mode .db-input[readonly] {
+    background: #162032 !important;
+    color: #94a3b8 !important;
+}
+body.dark-mode .db-form-group label { color: #64748b !important; }
+body.dark-mode .db-required { color: #fda4af !important; }
+
+/* Modal body text */
+body.dark-mode .db-modal__body p[style*="color:var(--db-muted)"] { color: #64748b !important; }
+
+/* View details modal — detail grid */
+body.dark-mode .db-detail-item label { color: #64748b !important; }
+body.dark-mode .db-detail-item p { color: #e2e8f0 !important; }
+
+/* Benefit summary banner */
+body.dark-mode .db-benefit-summary {
+    background: linear-gradient(135deg, rgba(16,185,129,.12), rgba(16,185,129,.06)) !important;
+    border-color: rgba(16,185,129,.25) !important;
+}
+body.dark-mode .db-benefit-summary span[style*="color:var(--db-muted)"] { color: #94a3b8 !important; }
+
+/* Benefit recent table */
+body.dark-mode .db-benefit-recent {
+    border-color: #334155 !important;
+}
+body.dark-mode .db-benefit-recent th {
+    background: #162032 !important;
+    color: #64748b !important;
+}
+body.dark-mode .db-benefit-recent td {
+    border-color: #334155 !important;
+    color: #cbd5e1 !important;
+}
+
+/* Hero actions button */
+body.dark-mode .rm-hero .db-btn--violet {
+    background: linear-gradient(135deg, #4c1d95, #7c3aed) !important;
+    color: #fff !important;
+}
 </style>
 
 <div class="rm-hero">

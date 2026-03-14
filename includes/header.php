@@ -87,384 +87,290 @@ $current_path = $_SERVER['PHP_SELF'];
     <link rel="stylesheet" href="<?php echo $base_url; ?>/assets/css/sidebar-layout.css">
 
     <style>
-        /* ── Avatar ── */
-        .user-avatar {
-            width: 40px; height: 40px;
-            border-radius: 50%;
-            display: flex; align-items: center; justify-content: center;
-            font-weight: bold; font-size: 16px;
-            overflow: hidden;
-            background: #2d3748; color: white;
-        }
-        .user-avatar img { width: 100%; height: 100%; object-fit: cover; }
-
-        /* ── Sidebar logo ── */
-        .sidebar-logo {
-            width: 40px; height: 40px;
-            border-radius: 8px;
-            display: flex; align-items: center; justify-content: center;
-            background: white; padding: 4px;
-        }
-        .sidebar-logo img { width: 100%; height: 100%; object-fit: contain; }
-
-        /* ── Notification badge inside nav ── */
-        .nav-link .notification-badge {
-            position: absolute; right: 15px; top: 50%;
-            transform: translateY(-50%);
-            background: #dc3545; color: white;
-            border-radius: 10px; padding: 2px 6px;
-            font-size: 0.7rem; font-weight: bold;
-            min-width: 18px; text-align: center;
-        }
-        .nav-item { position: relative; }
-
-        /* ══════════════════════════════════════
-           COLLAPSIBLE NAV SECTIONS
-        ══════════════════════════════════════ */
-
-        .nav-section {
-            margin-bottom: 4px;
-        }
-
-        /* Hide old static nav-section-title divs that aren't inside a toggle */
-        .sidebar .nav-section > .nav-section-title {
-            display: none !important;
-        }
-
-        /* The clickable section header — LIGHT sidebar (Resident) */
-        .sidebar .nav-section-toggle {
-            display: flex !important;
-            align-items: center !important;
-            justify-content: space-between !important;
-            padding: 8px 12px !important;
-            margin: 3px 8px !important;
-            cursor: pointer !important;
-            user-select: none !important;
-            border-radius: 7px !important;
-            transition: background 0.2s !important;
-            background: rgba(0,0,0,0.05) !important;
-            border: 1px solid rgba(0,0,0,0.08) !important;
-            text-decoration: none !important;
-        }
-        .sidebar .nav-section-toggle:hover {
-            background: rgba(0,0,0,0.09) !important;
-            border-color: rgba(0,0,0,0.15) !important;
-        }
-        .sidebar .nav-section.open > .nav-section-toggle {
-            background: rgba(0,0,0,0.08) !important;
-            border-color: rgba(0,0,0,0.15) !important;
-        }
-        .sidebar .nav-section-toggle .nav-section-title {
-            margin: 0 !important;
-            padding: 0 !important;
-            font-size: 0.7rem !important;
-            font-weight: 700 !important;
-            letter-spacing: 0.07em !important;
-            text-transform: uppercase !important;
-            color: #374151 !important;
-            opacity: 1 !important;
-            background: none !important;
-            border: none !important;
-            line-height: 1 !important;
-        }
-        .sidebar .nav-section-toggle .toggle-chevron {
-            font-size: 0.65rem !important;
-            color: #6b7280 !important;
-            opacity: 1 !important;
-            transition: transform 0.25s ease !important;
-            flex-shrink: 0 !important;
-        }
-        .sidebar .nav-section.open > .nav-section-toggle .toggle-chevron {
-            transform: rotate(180deg) !important;
-            color: #374151 !important;
-        }
-
-        /* ── DARK sidebar overrides (Admin / Super Admin / Staff / Tanod / Driver) ── */
-        .sidebar-dark .nav-section-toggle {
-            background: rgba(255,255,255,0.07) !important;
-            border: 1px solid rgba(255,255,255,0.12) !important;
-        }
-        .sidebar-dark .nav-section-toggle:hover {
-            background: rgba(255,255,255,0.13) !important;
-            border-color: rgba(255,255,255,0.2) !important;
-        }
-        .sidebar-dark .nav-section.open > .nav-section-toggle {
-            background: rgba(255,255,255,0.12) !important;
-            border-color: rgba(255,255,255,0.22) !important;
-        }
-        .sidebar-dark .nav-section-toggle .nav-section-title,
-        .sidebar-dark .nav-section-toggle span.nav-section-title {
-            color: #ffffff !important;
-            opacity: 1 !important;
-        }
-        .sidebar-dark .nav-section-toggle .toggle-chevron,
-        .sidebar-dark .nav-section-toggle i.toggle-chevron {
-            color: #ffffff !important;
-            opacity: 0.8 !important;
-        }
-        .sidebar-dark .nav-section.open > .nav-section-toggle .toggle-chevron {
-            color: #ffffff !important;
-            opacity: 1 !important;
-        }
-
-        /* Collapsible body */
-        .sidebar .nav-section-body {
-            overflow: hidden !important;
-            max-height: 0 !important;
-            transition: max-height 0.32s ease, opacity 0.25s ease !important;
-            opacity: 0 !important;
-        }
-        .sidebar .nav-section.open > .nav-section-body {
-            max-height: 2000px !important;
-            opacity: 1 !important;
-        }
-
-        /* Non-collapsible standalone items */
-        .nav-item-standalone {
-            padding: 0 8px;
-        }
-
-        /* ══════════════════════════════════════
-           BELL BADGE — real-time polling styles
-        ══════════════════════════════════════ */
-        /* The count badge on the header bell */
-        #bell-badge {
-            position: absolute;
-            top: 5px; right: 5px;
-            background: #dc3545; color: white;
-            border-radius: 50%;
-            min-width: 18px; height: 18px;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 11px; font-weight: bold;
-            pointer-events: none;
-            line-height: 1;
-            padding: 0 3px;
-        }
-        /* Same badge on nav-sidebar Notifications link */
-        #sidebar-notif-badge {
-            position: absolute; right: 15px; top: 50%;
-            transform: translateY(-50%);
-            background: #dc3545; color: white;
-            border-radius: 10px; padding: 2px 6px;
-            font-size: 0.7rem; font-weight: bold;
-            min-width: 18px; text-align: center;
-            display: none;
-        }
-        @keyframes bellShake {
-            0%,100%{ transform:rotate(0) }
-            20%    { transform:rotate(-18deg) }
-            40%    { transform:rotate(18deg) }
-            60%    { transform:rotate(-10deg) }
-            80%    { transform:rotate(10deg) }
-        }
-        @keyframes badgePop {
-            0%,100%{ transform:scale(1) }
-            50%    { transform:scale(1.4) }
-        }
-        .bell-shake { animation: bellShake .65s ease; }
-        .badge-pop  { animation: badgePop  .35s ease; }
-
-        /* Toast container */
-        #notif-toast-wrap {
-            position: fixed;
-            top: 68px; right: 18px;
-            z-index: 99999;
-            display: flex; flex-direction: column; gap: 8px;
-            pointer-events: none;
-        }
-        .notif-toast {
-            background: #fff;
-            border-radius: 12px;
-            box-shadow: 0 8px 28px rgba(0,0,0,.16);
-            border-left: 4px solid #3182ce;
-            padding: 12px 16px;
-            min-width: 270px; max-width: 340px;
-            display: flex; align-items: flex-start; gap: 10px;
-            pointer-events: all; cursor: pointer;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            animation: toastIn .22s ease;
-        }
-        @keyframes toastIn {
-            from { opacity:0; transform:translateX(24px) }
-            to   { opacity:1; transform:translateX(0) }
-        }
-        .notif-toast-icon { font-size: 1.25rem; flex-shrink: 0; line-height: 1.3; }
-        .notif-toast-body { flex: 1; min-width: 0; }
-        .notif-toast-title { font-size: 13px; font-weight: 700; color: #1a202c; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .notif-toast-msg   { font-size: 12px; color: #718096; line-height: 1.45; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-        .notif-toast-close { background: none; border: none; cursor: pointer; color: #a0aec0; font-size: 16px; line-height: 1; padding: 0; flex-shrink: 0; margin-top: -1px; }
-        .notif-toast-close:hover { color: #4a5568; }
-
-        /* ── Dark Mode ── */
-body.dark-mode {
-    background: #0f172a !important;
-    color: #e2e8f0 !important;
+ /* ── Avatar ── */
+.user-avatar {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: bold; font-size: 16px;
+    overflow: hidden;
+    background: #2d3748; color: white;
 }
-body.dark-mode .main-content {
-    background: #0f172a !important;
-    color: #e2e8f0 !important;
+.user-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+/* ── Sidebar logo ── */
+.sidebar-logo {
+    width: 40px; height: 40px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    background: white; padding: 4px;
 }
+.sidebar-logo img { width: 100%; height: 100%; object-fit: contain; }
+
+/* ── Notification badge inside nav ── */
+.nav-link .notification-badge {
+    position: absolute; right: 15px; top: 50%;
+    transform: translateY(-50%);
+    background: #dc3545; color: white;
+    border-radius: 10px; padding: 2px 6px;
+    font-size: 0.7rem; font-weight: bold;
+    min-width: 18px; text-align: center;
+}
+.nav-item { position: relative; }
+
+/* ══════════════════════════════════════
+   COLLAPSIBLE NAV SECTIONS
+══════════════════════════════════════ */
+.nav-section { margin-bottom: 4px; }
+
+.sidebar .nav-section > .nav-section-title { display: none !important; }
+
+.sidebar .nav-section-toggle {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    padding: 8px 12px !important;
+    margin: 3px 8px !important;
+    cursor: pointer !important;
+    user-select: none !important;
+    border-radius: 7px !important;
+    transition: background 0.2s !important;
+    background: rgba(0,0,0,0.05) !important;
+    border: 1px solid rgba(0,0,0,0.08) !important;
+    text-decoration: none !important;
+}
+.sidebar .nav-section-toggle:hover {
+    background: rgba(0,0,0,0.09) !important;
+    border-color: rgba(0,0,0,0.15) !important;
+}
+.sidebar .nav-section.open > .nav-section-toggle {
+    background: rgba(0,0,0,0.08) !important;
+    border-color: rgba(0,0,0,0.15) !important;
+}
+.sidebar .nav-section-toggle .nav-section-title {
+    margin: 0 !important; padding: 0 !important;
+    font-size: 0.7rem !important; font-weight: 700 !important;
+    letter-spacing: 0.07em !important; text-transform: uppercase !important;
+    color: #374151 !important; opacity: 1 !important;
+    background: none !important; border: none !important; line-height: 1 !important;
+}
+.sidebar .nav-section-toggle .toggle-chevron {
+    font-size: 0.65rem !important; color: #6b7280 !important;
+    opacity: 1 !important; transition: transform 0.25s ease !important; flex-shrink: 0 !important;
+}
+.sidebar .nav-section.open > .nav-section-toggle .toggle-chevron {
+    transform: rotate(180deg) !important; color: #374151 !important;
+}
+
+/* ── Dark sidebar (Admin/Staff/Tanod/Driver) ── */
+.sidebar-dark .nav-section-toggle {
+    background: rgba(255,255,255,0.07) !important;
+    border: 1px solid rgba(255,255,255,0.12) !important;
+}
+.sidebar-dark .nav-section-toggle:hover {
+    background: rgba(255,255,255,0.13) !important;
+    border-color: rgba(255,255,255,0.2) !important;
+}
+.sidebar-dark .nav-section.open > .nav-section-toggle {
+    background: rgba(255,255,255,0.12) !important;
+    border-color: rgba(255,255,255,0.22) !important;
+}
+.sidebar-dark .nav-section-toggle .nav-section-title,
+.sidebar-dark .nav-section-toggle span.nav-section-title {
+    color: #ffffff !important; opacity: 1 !important;
+}
+.sidebar-dark .nav-section-toggle .toggle-chevron,
+.sidebar-dark .nav-section-toggle i.toggle-chevron {
+    color: #ffffff !important; opacity: 0.8 !important;
+}
+.sidebar-dark .nav-section.open > .nav-section-toggle .toggle-chevron {
+    color: #ffffff !important; opacity: 1 !important;
+}
+
+/* Collapsible body */
+.sidebar .nav-section-body {
+    overflow: hidden !important; max-height: 0 !important;
+    transition: max-height 0.32s ease, opacity 0.25s ease !important; opacity: 0 !important;
+}
+.sidebar .nav-section.open > .nav-section-body {
+    max-height: 2000px !important; opacity: 1 !important;
+}
+
+.nav-item-standalone { padding: 0 8px; }
+
+/* ══════════════════════════════════════
+   BELL BADGE
+══════════════════════════════════════ */
+#bell-badge {
+    position: absolute; top: 5px; right: 5px;
+    background: #dc3545; color: white;
+    border-radius: 50%; min-width: 18px; height: 18px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: bold;
+    pointer-events: none; line-height: 1; padding: 0 3px;
+}
+#sidebar-notif-badge {
+    position: absolute; right: 15px; top: 50%;
+    transform: translateY(-50%);
+    background: #dc3545; color: white;
+    border-radius: 10px; padding: 2px 6px;
+    font-size: 0.7rem; font-weight: bold;
+    min-width: 18px; text-align: center; display: none;
+}
+
+@keyframes bellShake {
+    0%,100%{ transform:rotate(0) }
+    20%    { transform:rotate(-18deg) }
+    40%    { transform:rotate(18deg) }
+    60%    { transform:rotate(-10deg) }
+    80%    { transform:rotate(10deg) }
+}
+@keyframes badgePop {
+    0%,100%{ transform:scale(1) }
+    50%    { transform:scale(1.4) }
+}
+.bell-shake { animation: bellShake .65s ease; }
+.badge-pop  { animation: badgePop  .35s ease; }
+
+/* ── Toast ── */
+#notif-toast-wrap {
+    position: fixed; top: 68px; right: 18px;
+    z-index: 99999; display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+}
+.notif-toast {
+    background: #fff; border-radius: 12px;
+    box-shadow: 0 8px 28px rgba(0,0,0,.16);
+    border-left: 4px solid #3182ce; padding: 12px 16px;
+    min-width: 270px; max-width: 340px;
+    display: flex; align-items: flex-start; gap: 10px;
+    pointer-events: all; cursor: pointer;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    animation: toastIn .22s ease;
+}
+@keyframes toastIn {
+    from { opacity:0; transform:translateX(24px) }
+    to   { opacity:1; transform:translateX(0) }
+}
+.notif-toast-icon { font-size: 1.25rem; flex-shrink: 0; line-height: 1.3; }
+.notif-toast-body { flex: 1; min-width: 0; }
+.notif-toast-title { font-size: 13px; font-weight: 700; color: #1a202c; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.notif-toast-msg   { font-size: 12px; color: #718096; line-height: 1.45; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.notif-toast-close { background: none; border: none; cursor: pointer; color: #a0aec0; font-size: 16px; line-height: 1; padding: 0; flex-shrink: 0; margin-top: -1px; }
+.notif-toast-close:hover { color: #4a5568; }
+
+/* ══════════════════════════════════════
+   DARK MODE — single consolidated block
+══════════════════════════════════════ */
+body.dark-mode { background: #0f172a !important; color: #e2e8f0 !important; }
+body.dark-mode .main-content { background: #0f172a !important; color: #e2e8f0 !important; }
+
+/* Header */
 body.dark-mode .header {
     background: #1e293b !important;
     border-bottom: 1px solid #334155 !important;
     box-shadow: 0 1px 4px rgba(0,0,0,0.4) !important;
 }
-body.dark-mode .card,
-body.dark-mode .table,
-body.dark-mode .modal-content,
-body.dark-mode .dropdown-menu {
-    background: #1e293b !important;
-    color: #e2e8f0 !important;
-    border-color: #334155 !important;
-}
-body.dark-mode .table td,
-body.dark-mode .table th {
-    border-color: #334155 !important;
-    color: #e2e8f0 !important;
-}
-body.dark-mode .table thead th {
-    background: #334155 !important;
-}
-body.dark-mode .table tbody tr:hover {
-    background: #334155 !important;
-}
-body.dark-mode input,
-body.dark-mode select,
-body.dark-mode textarea,
-body.dark-mode .form-control,
-body.dark-mode .form-select {
-    background: #334155 !important;
-    color: #e2e8f0 !important;
-    border-color: #475569 !important;
-}
-body.dark-mode input::placeholder,
-body.dark-mode textarea::placeholder {
-    color: #94a3b8 !important;
-}
-body.dark-mode .btn-light {
-    background: #334155 !important;
-    color: #e2e8f0 !important;
-    border-color: #475569 !important;
-}
-body.dark-mode .text-muted {
-    color: #94a3b8 !important;
-}
-body.dark-mode .border,
-body.dark-mode .border-bottom,
-body.dark-mode .border-top {
-    border-color: #334155 !important;
-}
-body.dark-mode .bg-white,
-body.dark-mode .bg-light {
-    background: #1e293b !important;
-}
-/* Only change text that hasn't been explicitly colored */
-body.dark-mode { color: #e2e8f0 !important; }
 
-/* ── Dark Mode ── */
-body.dark-mode { background: #0f172a !important; }
-body.dark-mode .main-content { background: #0f172a !important; }
+/* User profile — must come AFTER the global 'a' rule below to win */
+body.dark-mode .user-info .user-name { color: #f1f5f9 !important; }
+body.dark-mode .user-info .user-role { color: #94a3b8 !important; }
 
-body.dark-mode .header {
-    background: #1e293b !important;
-    border-bottom: 1px solid #334155 !important;
-}
-body.dark-mode .card {
-    background: #1e293b !important;
-    border-color: #334155 !important;
-}
-body.dark-mode .card-header,
-body.dark-mode .card-body,
-body.dark-mode .card-footer {
-    background: #1e293b !important;
-    color: #e2e8f0 !important;
-}
-body.dark-mode .card-title,
-body.dark-mode .card-header h5,
-body.dark-mode .card-header h6 {
-    color: #f1f5f9 !important;
-}
-body.dark-mode .table {
-    background: #1e293b !important;
-    color: #e2e8f0 !important;
-    border-color: #334155 !important;
-}
-body.dark-mode .table td,
-body.dark-mode .table th {
-    border-color: #334155 !important;
-    color: #e2e8f0 !important;
-}
-body.dark-mode .table thead th {
-    background: #334155 !important;
-    color: #f1f5f9 !important;
-}
-body.dark-mode .table-striped tbody tr:nth-of-type(odd) {
-    background: #243044 !important;
-}
-body.dark-mode .modal-content {
-    background: #1e293b !important;
-    border-color: #334155 !important;
-    color: #e2e8f0 !important;
-}
-body.dark-mode .modal-header,
-body.dark-mode .modal-footer {
-    border-color: #334155 !important;
-}
-body.dark-mode input,
-body.dark-mode select,
-body.dark-mode textarea,
-body.dark-mode .form-control,
-body.dark-mode .form-select {
-    background: #334155 !important;
-    color: #e2e8f0 !important;
-    border-color: #475569 !important;
-}
-body.dark-mode input::placeholder,
-body.dark-mode textarea::placeholder {
-    color: #94a3b8 !important;
-}
-body.dark-mode .bg-white { background: #1e293b !important; }
-body.dark-mode .bg-light { background: #243044 !important; }
-body.dark-mode .text-muted { color: #94a3b8 !important; }
-body.dark-mode .border { border-color: #334155 !important; }
-body.dark-mode .notification-panel {
-    background: #1e293b !important;
-    border-color: #334155 !important;
-}
-body.dark-mode .user-name { color: #f1f5f9 !important; }
-body.dark-mode .user-role { color: #94a3b8 !important; }
+/* Prevent global link colour from bleeding into header */
+body.dark-mode .header a { color: inherit !important; }
+body.dark-mode .header .user-name { color: #f1f5f9 !important; }
+body.dark-mode .header .user-role { color: #94a3b8 !important; }
+
+/* Icons */
+body.dark-mode #bell-icon  { color: #94a3b8 !important; }
 body.dark-mode #themeIcon  { color: #fbbf24 !important; }
 
-/* Keep colored badges/status text visible */
-body.dark-mode .badge,
-body.dark-mode .btn,
-body.dark-mode .alert {
-    color: inherit !important;
-}
-
-/* Keep white text on colored backgrounds */
-body.dark-mode .bg-primary *,
-body.dark-mode .bg-success *,
-body.dark-mode .bg-danger *,
-body.dark-mode .bg-warning *,
-body.dark-mode .bg-info * {
-    color: #ffffff !important;
-}
-
-/* Keep links visible */
-body.dark-mode a {
-    color: #60a5fa !important;
-}
-body.dark-mode a:hover {
-    color: #93c5fd !important;
-}
+/* Notification panel */
 body.dark-mode .notification-panel {
     background: #1e293b !important;
     border: 1px solid #334155 !important;
 }
-body.dark-mode .user-name { color: #f1f5f9 !important; }
-body.dark-mode .user-role { color: #94a3b8 !important; }
-body.dark-mode #themeIcon { color: #fbbf24 !important; }
+body.dark-mode #panel-unread-label {
+    background: #334155 !important;
+    color: #e2e8f0 !important;
+}
+
+/* Cards */
+body.dark-mode .card { background: #1e293b !important; border-color: #334155 !important; }
+body.dark-mode .card-header,
+body.dark-mode .card-body,
+body.dark-mode .card-footer { background: #1e293b !important; color: #e2e8f0 !important; }
+body.dark-mode .card-title,
+body.dark-mode .card-header h5,
+body.dark-mode .card-header h6 { color: #f1f5f9 !important; }
+
+/* Tables */
+body.dark-mode .table { background: #1e293b !important; color: #e2e8f0 !important; border-color: #334155 !important; }
+body.dark-mode .table td,
+body.dark-mode .table th { border-color: #334155 !important; color: #e2e8f0 !important; }
+body.dark-mode .table thead th { background: #334155 !important; color: #f1f5f9 !important; }
+body.dark-mode .table-striped tbody tr:nth-of-type(odd) { background: #243044 !important; }
+body.dark-mode .table tbody tr:hover { background: #2d3f58 !important; }
+
+/* Modals */
+body.dark-mode .modal-content { background: #1e293b !important; border-color: #334155 !important; color: #e2e8f0 !important; }
+body.dark-mode .modal-header,
+body.dark-mode .modal-footer { border-color: #334155 !important; }
+body.dark-mode .dropdown-menu { background: #1e293b !important; border-color: #334155 !important; }
+
+/* Forms */
+body.dark-mode input,
+body.dark-mode select,
+body.dark-mode textarea,
+body.dark-mode .form-control,
+body.dark-mode .form-select { background: #334155 !important; color: #e2e8f0 !important; border-color: #475569 !important; }
+body.dark-mode input::placeholder,
+body.dark-mode textarea::placeholder { color: #94a3b8 !important; }
+
+/* Utilities */
+body.dark-mode .bg-white { background: #1e293b !important; }
+body.dark-mode .bg-light { background: #243044 !important; }
+body.dark-mode .btn-light { background: #334155 !important; color: #e2e8f0 !important; border-color: #475569 !important; }
+body.dark-mode .text-muted { color: #94a3b8 !important; }
+body.dark-mode .border,
+body.dark-mode .border-bottom,
+body.dark-mode .border-top { border-color: #334155 !important; }
+
+/* Keep colored bg text white */
+body.dark-mode .bg-primary *,
+body.dark-mode .bg-success *,
+body.dark-mode .bg-danger *,
+body.dark-mode .bg-warning *,
+body.dark-mode .bg-info * { color: #ffffff !important; }
+
+/* Global links — intentionally last so header overrides above it win */
+body.dark-mode a { color: #60a5fa !important; }
+body.dark-mode a:hover { color: #93c5fd !important; }
+
+/* Re-assert these AFTER the global a{color} rule */
+body.dark-mode .header .user-name,
+body.dark-mode .user-info .user-name { color: #f1f5f9 !important; }
+
+body.dark-mode .header .user-role,
+body.dark-mode .user-info .user-role { color: #94a3b8 !important; }
+/* Re-assert header user info after global link rule */
+body.dark-mode .header a { color: inherit !important; }
+body.dark-mode .header .user-name,
+body.dark-mode .user-info .user-name { color: #f1f5f9 !important; }
+body.dark-mode .header .user-role,
+body.dark-mode .user-info .user-role { color: #94a3b8 !important; }
+/* ABSOLUTE OVERRIDE — must be last */
+body.dark-mode .user-name,
+body.dark-mode .user-name *,
+body.dark-mode div.user-name {
+    color: #f1f5f9 !important;
+    -webkit-text-fill-color: #f1f5f9 !important;
+}
+body.dark-mode .user-role,
+body.dark-mode .user-role *,
+body.dark-mode div.user-role {
+    color: #94a3b8 !important;
+    -webkit-text-fill-color: #94a3b8 !important;
+}
     </style>
 
     <?php if (isset($extra_css)): ?>
@@ -1344,14 +1250,8 @@ body.dark-mode #themeIcon { color: #fbbf24 !important; }
     <div class="header-right">
 
     <!-- ★ Dark/Light Mode Toggle ★ -->
-<button id="themeToggle" onclick="toggleTheme()"
-    style="background:none;border:none;cursor:pointer;padding:10px;
-           position:relative;margin-right:4px;border-radius:50%;
-           transition:background 0.2s;"
-    title="Toggle Dark/Light Mode"
-    onmouseover="this.style.background='rgba(0,0,0,0.08)'"
-    onmouseout="this.style.background='none'">
-    <i id="themeIcon" class="fas fa-moon" style="font-size:18px;color:#4a5568;"></i>
+<button id="themeToggle" onclick="toggleTheme()" title="Toggle Dark/Light Mode">
+    <i id="themeIcon" class="fas fa-moon"></i>
 </button>
         <!-- ★ Notification bell — real-time badge ★ -->
         <div class="notification-dropdown" style="position:relative;margin-right:20px;">
@@ -1665,31 +1565,44 @@ document.addEventListener('DOMContentLoaded', function () {
 }); // end DOMContentLoaded
 
 /* ── Dark / Light Mode Toggle ── */
-function toggleTheme() {
-    var isDark = document.body.classList.toggle('dark-mode');
-    var icon   = document.getElementById('themeIcon');
+function applyTheme(isDark) {
+    var icon        = document.getElementById('themeIcon');
+    var themeToggle = document.getElementById('themeToggle');
+    var bellBtn     = document.getElementById('notificationBell');
+    var bellIcon    = document.getElementById('bell-icon');
+    var userName    = document.querySelector('.user-name');
+    var userRole    = document.querySelector('.user-role');
+
     if (isDark) {
-        icon.classList.replace('fa-moon', 'fa-sun');
-        icon.style.color = '#fbbf24';
-        localStorage.setItem('theme', 'dark');
+        if (icon)        { icon.className = 'fas fa-sun'; icon.style.color = '#fbbf24'; }
+        if (themeToggle) { themeToggle.style.cssText = 'background:#1e293b;border:1px solid #334155;border-radius:9px;cursor:pointer;width:38px;height:38px;display:flex;align-items:center;justify-content:center;margin-right:4px;'; }
+        if (bellBtn)     { bellBtn.style.background = '#1e293b'; bellBtn.style.border = '1px solid #334155'; bellBtn.style.borderRadius = '9px'; bellBtn.style.padding = '0'; bellBtn.style.width = '38px'; bellBtn.style.height = '38px'; bellBtn.style.display = 'flex'; bellBtn.style.alignItems = 'center'; bellBtn.style.justifyContent = 'center'; }
+        if (bellIcon)    { bellIcon.style.color = '#94a3b8'; bellIcon.style.fontSize = '15px'; }
+        if (userName)    { userName.style.setProperty('color', '#f1f5f9', 'important'); }
+        if (userRole)    { userRole.style.setProperty('color', '#94a3b8', 'important'); }
     } else {
-        icon.classList.replace('fa-sun', 'fa-moon');
-        icon.style.color = '#4a5568';
-        localStorage.setItem('theme', 'light');
+        if (icon)        { icon.className = 'fas fa-moon'; icon.style.color = '#64748b'; }
+        if (themeToggle) { themeToggle.style.cssText = 'background:#f8fafc;border:1px solid #e2e8f0;border-radius:9px;cursor:pointer;width:38px;height:38px;display:flex;align-items:center;justify-content:center;margin-right:4px;'; }
+        if (bellBtn)     { bellBtn.style.background = ''; bellBtn.style.border = ''; bellBtn.style.padding = ''; bellBtn.style.width = ''; bellBtn.style.height = ''; bellBtn.style.display = ''; bellBtn.style.alignItems = ''; bellBtn.style.justifyContent = ''; }
+        if (bellIcon)    { bellIcon.style.color = '#4a5568'; bellIcon.style.fontSize = '20px'; }
+        if (userName)    { userName.style.removeProperty('color'); }
+        if (userRole)    { userRole.style.removeProperty('color'); }
     }
 }
 
-/* Apply saved theme on page load */
-(function() {
+function toggleTheme() {
+    var isDark = document.body.classList.toggle('dark-mode');
+    localStorage.setItem('theme', isDark ? 'dark' : 'light');
+    applyTheme(isDark);
+}
+
+/* Apply saved theme — MUST run after DOM is ready */
+document.addEventListener('DOMContentLoaded', function() {
     if (localStorage.getItem('theme') === 'dark') {
         document.body.classList.add('dark-mode');
-        var icon = document.getElementById('themeIcon');
-        if (icon) {
-            icon.classList.replace('fa-moon', 'fa-sun');
-            icon.style.color = '#fbbf24';
-        }
+        applyTheme(true);
     }
-})();
+});
 </script>
 
 <!-- Main Content -->

@@ -251,6 +251,209 @@ body{font-family:'Sora',sans-serif;background:var(--db-bg);color:var(--db-text);
 .db-contact-link:hover{color:var(--db-navy);text-decoration:underline;}
 
 @media(max-width:768px){.rm-hero{padding:20px;border-radius:0;}.db-info-grid{grid-template-columns:1fr;}}
+
+/* ══════════════════════════════════════
+   DARK MODE OVERRIDES
+══════════════════════════════════════ */
+body.dark-mode { background: #0f172a !important; color: #e2e8f0 !important; }
+
+/* Panels */
+body.dark-mode .db-panel {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .db-panel__header {
+    border-bottom-color: #334155 !important;
+}
+body.dark-mode .db-panel__title h2 {
+    color: #f1f5f9 !important;
+}
+
+/* Info items */
+body.dark-mode .db-info-item {
+    background: #243044 !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .db-info-item:hover {
+    background: #1e3a5f !important;
+}
+body.dark-mode .db-info-label {
+    color: #64748b !important;
+}
+body.dark-mode .db-info-value {
+    color: #e2e8f0 !important;
+}
+body.dark-mode .db-info-value--block {
+    color: #94a3b8 !important;
+}
+
+/* Panel icons */
+body.dark-mode .db-panel__icon--amber {
+    background: #27211a !important;
+    color: #fbbf24 !important;
+}
+body.dark-mode .db-panel__icon--sky {
+    background: #0c2a40 !important;
+    color: #38bdf8 !important;
+}
+body.dark-mode .db-panel__icon--success {
+    background: #052e16 !important;
+    color: #4ade80 !important;
+}
+body.dark-mode .db-panel__icon--navy {
+    background: #1e3a5f !important;
+    color: #93c5fd !important;
+}
+body.dark-mode .db-panel__icon--rose {
+    background: #2d1c1c !important;
+    color: #fb7185 !important;
+}
+
+/* Badges */
+body.dark-mode .db-badge--amber {
+    background: #27211a !important;
+    color: #fbbf24 !important;
+}
+body.dark-mode .db-badge--sky {
+    background: #0c2a40 !important;
+    color: #38bdf8 !important;
+}
+body.dark-mode .db-badge--success {
+    background: #052e16 !important;
+    color: #4ade80 !important;
+}
+body.dark-mode .db-badge--rose {
+    background: #2d1c1c !important;
+    color: #fb7185 !important;
+}
+body.dark-mode .db-badge--muted {
+    background: #1e293b !important;
+    color: #94a3b8 !important;
+    border-color: #475569 !important;
+}
+body.dark-mode .db-badge--navy {
+    background: #1e3a5f !important;
+    color: #93c5fd !important;
+}
+body.dark-mode .db-badge--indigo {
+    background: #1e1b4b !important;
+    color: #a5b4fc !important;
+}
+
+/* Alerts */
+body.dark-mode .db-alert--info {
+    background: #0c2a40 !important;
+    color: #93c5fd !important;
+    border-color: #3b82f6 !important;
+}
+body.dark-mode .db-alert--success {
+    background: #052e16 !important;
+    color: #86efac !important;
+    border-color: #4ade80 !important;
+}
+body.dark-mode .db-alert--error {
+    background: #2d1c1c !important;
+    color: #fca5a5 !important;
+    border-color: #ef4444 !important;
+}
+
+/* Buttons */
+body.dark-mode .db-btn--ghost {
+    background: #1e293b !important;
+    color: #e2e8f0 !important;
+    border-color: #475569 !important;
+}
+body.dark-mode .db-btn--ghost:hover {
+    background: #334155 !important;
+}
+
+/* Timeline */
+body.dark-mode .db-timeline-item {
+    border-left-color: #334155 !important;
+}
+body.dark-mode .db-timeline-item::before {
+    border-color: #1e293b !important;
+}
+body.dark-mode .db-timeline-card {
+    background: #243044 !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .db-timeline-card:hover {
+    background: #1e3a5f !important;
+}
+body.dark-mode .db-timeline-author {
+    color: #f1f5f9 !important;
+}
+body.dark-mode .db-timeline-date {
+    color: #64748b !important;
+}
+body.dark-mode .db-timeline-msg {
+    color: #94a3b8 !important;
+}
+
+/* Image cards */
+body.dark-mode .db-img-card {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .db-img-card__foot {
+    border-top-color: #334155 !important;
+}
+
+/* Empty state */
+body.dark-mode .db-empty i {
+    color: #334155 !important;
+}
+body.dark-mode .db-empty p {
+    color: #64748b !important;
+}
+
+/* Contact links */
+body.dark-mode .db-contact-link {
+    color: #38bdf8 !important;
+}
+body.dark-mode .db-contact-link:hover {
+    color: #93c5fd !important;
+}
+
+/* Modals */
+body.dark-mode .db-modal .modal-content {
+    background: #1e293b !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .db-modal .modal-body {
+    background: #1e293b !important;
+}
+body.dark-mode .db-modal .modal-footer {
+    background: #243044 !important;
+    border-top-color: #334155 !important;
+}
+body.dark-mode .db-modal .form-label {
+    color: #94a3b8 !important;
+}
+body.dark-mode .db-modal .form-control,
+body.dark-mode .db-modal .form-select {
+    background: #334155 !important;
+    color: #e2e8f0 !important;
+    border-color: #475569 !important;
+}
+body.dark-mode .db-modal .form-control:focus,
+body.dark-mode .db-modal .form-select:focus {
+    border-color: #60a5fa !important;
+    box-shadow: 0 0 0 3px rgba(96,165,250,.15) !important;
+}
+body.dark-mode .db-modal .form-control::placeholder {
+    color: #64748b !important;
+}
+body.dark-mode .db-modal .form-check-label {
+    color: #e2e8f0 !important;
+}
+
+/* Status display box inside modal */
+body.dark-mode .db-modal [style*="background:var(--db-surf2)"] {
+    background: #243044 !important;
+    border-color: #334155 !important;
+}
 </style>
 
 <div class="rm-hero">

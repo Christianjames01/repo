@@ -93,6 +93,73 @@ select.db-form-control{background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 .db-btn--glass{background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.25);}
 .db-btn--glass:hover{background:rgba(255,255,255,.22);color:#fff;}
 @media(max-width:768px){.rm-hero{padding:20px;border-radius:0;}}
+/* ══════════════════════════════════════
+   DARK MODE OVERRIDES
+══════════════════════════════════════ */
+body.dark-mode { background: #0f172a !important; color: #e2e8f0 !important; }
+
+body.dark-mode .db-panel {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .db-panel__header {
+    border-bottom-color: #334155 !important;
+}
+body.dark-mode .db-panel__title h2 {
+    color: #f1f5f9 !important;
+}
+body.dark-mode .db-panel__icon--sky {
+    background: #0c2a40 !important;
+    color: #38bdf8 !important;
+}
+body.dark-mode .db-panel__icon--amber {
+    background: #27211a !important;
+    color: #fbbf24 !important;
+}
+body.dark-mode .db-panel__icon--navy {
+    background: #1e3a5f !important;
+    color: #93c5fd !important;
+}
+body.dark-mode .db-form-label {
+    color: #e2e8f0 !important;
+}
+body.dark-mode .db-form-control {
+    background: #334155 !important;
+    color: #e2e8f0 !important;
+    border-color: #475569 !important;
+}
+body.dark-mode .db-form-control:focus {
+    border-color: #60a5fa !important;
+    box-shadow: 0 0 0 3px rgba(96,165,250,.15) !important;
+}
+body.dark-mode .db-form-control option {
+    background: #334155 !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .db-alert--success {
+    background: #052e16 !important;
+    color: #86efac !important;
+    border-color: #4ade80 !important;
+}
+body.dark-mode .db-alert--error {
+    background: #2d1c1c !important;
+    color: #fca5a5 !important;
+    border-color: #ef4444 !important;
+}
+body.dark-mode .db-btn--ghost {
+    background: #1e293b !important;
+    color: #e2e8f0 !important;
+    border-color: #475569 !important;
+}
+body.dark-mode .db-btn--ghost:hover {
+    background: #334155 !important;
+    color: #e2e8f0 !important;
+}
+/* Action bar at bottom */
+body.dark-mode [style*="background:var(--db-surf)"][style*="border:1px solid var(--db-border)"] {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
 </style>
 
 <!-- Hero -->

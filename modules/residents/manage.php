@@ -499,6 +499,140 @@ body {
     .rm-filter-row .db-btn { width: 100%; }
     .db-table thead th, .db-table tbody td { padding: 9px 10px; font-size: 11.5px; }
 }
+/* ══════════════════════════════════════
+   DARK MODE — manage.php overrides
+══════════════════════════════════════ */
+body.dark-mode {
+    background: #0f172a !important;
+    color: #e2e8f0 !important;
+}
+
+/* Stat cards */
+body.dark-mode .db-stat-card {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .db-stat-card:hover { color: #e2e8f0 !important; }
+body.dark-mode .db-stat-card.active { border-color: #60a5fa !important; }
+body.dark-mode .db-stat-card__label { color: #94a3b8 !important; }
+
+/* Panels */
+body.dark-mode .db-panel {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .db-panel__header {
+    border-bottom-color: #334155 !important;
+}
+body.dark-mode .db-panel__title h2 { color: #f1f5f9 !important; }
+
+/* Inputs */
+body.dark-mode .db-input {
+    background: #334155 !important;
+    border-color: #475569 !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .db-input:focus {
+    border-color: #60a5fa !important;
+    box-shadow: 0 0 0 3px rgba(96,165,250,.15) !important;
+}
+body.dark-mode .db-input option { background: #334155; color: #e2e8f0; }
+
+/* Buttons */
+body.dark-mode .db-btn--ghost {
+    background: #334155 !important;
+    border-color: #475569 !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .db-btn--ghost:hover {
+    background: #475569 !important;
+    color: #f1f5f9 !important;
+}
+
+/* Icon buttons */
+body.dark-mode .db-icon-btn {
+    background: #334155 !important;
+    border-color: #475569 !important;
+    color: #94a3b8 !important;
+}
+
+/* Table */
+body.dark-mode .db-table tbody tr {
+    border-bottom-color: #334155 !important;
+}
+body.dark-mode .db-table tbody tr:hover {
+    background: #243044 !important;
+}
+body.dark-mode .db-table tbody td {
+    color: #e2e8f0 !important;
+}
+body.dark-mode .db-table tbody td strong {
+    color: #f1f5f9 !important;
+}
+body.dark-mode .db-text-sm { color: #94a3b8 !important; }
+body.dark-mode .db-id { color: #a5b4fc !important; }
+
+/* Modals */
+body.dark-mode .db-modal__box {
+    background: #1e293b !important;
+}
+body.dark-mode .db-modal__info {
+    background: #0f172a !important;
+    border-color: #334155 !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .db-modal__info p { color: #e2e8f0 !important; }
+body.dark-mode .db-modal__info strong { color: #f1f5f9 !important; }
+
+/* Empty state */
+body.dark-mode .db-empty p { color: #94a3b8 !important; }
+body.dark-mode .db-empty i { color: #334155 !important; }
+
+/* Alerts */
+body.dark-mode .db-alert--success {
+    background: rgba(16,185,129,.15) !important;
+    color: #6ee7b7 !important;
+    border-color: #10b981 !important;
+}
+body.dark-mode .db-alert--error {
+    background: rgba(239,68,68,.15) !important;
+    color: #fca5a5 !important;
+    border-color: #ef4444 !important;
+}
+
+/* Stat card icon backgrounds in dark mode */
+body.dark-mode .db-stat-card__icon--teal   { background: rgba(13,148,136,.2) !important; }
+body.dark-mode .db-stat-card__icon--success { background: rgba(16,185,129,.2) !important; }
+body.dark-mode .db-stat-card__icon--amber  { background: rgba(245,158,11,.2) !important; }
+
+/* Panel icon backgrounds */
+body.dark-mode .db-panel__icon--teal { background: rgba(13,148,136,.2) !important; }
+
+/* Badge backgrounds */
+body.dark-mode .db-badge--success {
+    background: rgba(16,185,129,.2) !important;
+    color: #6ee7b7 !important;
+}
+body.dark-mode .db-badge--warning {
+    background: rgba(245,158,11,.2) !important;
+    color: #fcd34d !important;
+}
+
+/* Modal notice backgrounds */
+body.dark-mode .db-modal__notice--info {
+    background: rgba(59,130,246,.15) !important;
+    color: #93c5fd !important;
+}
+body.dark-mode .db-modal__notice--warning {
+    background: rgba(245,158,11,.15) !important;
+    color: #fcd34d !important;
+}
+body.dark-mode .db-modal__notice--danger {
+    background: rgba(239,68,68,.15) !important;
+    color: #fca5a5 !important;
+}
+body.dark-mode .db-modal__notice strong { color: inherit !important; }
 </style>
 
 <!-- ── HERO ── -->

@@ -399,6 +399,96 @@ include '../../includes/header.php';
     background: linear-gradient(135deg, #0d1b36, #1c3461); color: #fff;
 }
 .rv-btn-primary:hover { background: linear-gradient(135deg, #1c3461, #2748a0); color: #fff; transform: translateY(-1px); }
+/* ══════════════════════════════════════
+   DARK MODE — view.php overrides
+══════════════════════════════════════ */
+body.dark-mode { background: #0f172a !important; }
+
+/* Banner stays dark (already dark-colored, just tweak) */
+body.dark-mode .rv-banner { box-shadow: 0 8px 40px rgba(0,0,0,.4) !important; }
+
+/* Stat cards */
+body.dark-mode .rv-stat {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .rv-stat-num  { color: #f1f5f9 !important; }
+body.dark-mode .rv-stat-label { color: #94a3b8 !important; }
+body.dark-mode .rv-stat-icon-blue   { background: rgba(14,165,233,.15) !important; }
+body.dark-mode .rv-stat-icon-amber  { background: rgba(245,158,11,.15) !important; }
+body.dark-mode .rv-stat-icon-indigo { background: rgba(99,102,241,.15) !important; }
+body.dark-mode .rv-stat-icon-teal   { background: rgba(13,148,136,.15) !important; }
+body.dark-mode .rv-stat-icon-rose   { background: rgba(225,29,72,.15)  !important; }
+
+/* Panels */
+body.dark-mode .rv-panel {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .rv-panel-header {
+    border-bottom-color: #334155 !important;
+}
+body.dark-mode .rv-panel-title h2 { color: #f1f5f9 !important; }
+
+/* Panel icons */
+body.dark-mode .rv-panel-icon-blue   { background: rgba(14,165,233,.15) !important; }
+body.dark-mode .rv-panel-icon-teal   { background: rgba(13,148,136,.15) !important; }
+body.dark-mode .rv-panel-icon-rose   { background: rgba(225,29,72,.15)  !important; }
+body.dark-mode .rv-panel-icon-amber  { background: rgba(245,158,11,.15) !important; }
+body.dark-mode .rv-panel-icon-indigo { background: rgba(99,102,241,.15) !important; }
+
+/* Info grid */
+body.dark-mode .rv-item { border-bottom-color: #334155 !important; }
+body.dark-mode .rv-ilabel { color: #64748b !important; }
+body.dark-mode .rv-ival   { color: #e2e8f0 !important; }
+
+/* Quick info rows */
+body.dark-mode .rv-qrow  { border-bottom-color: #334155 !important; }
+body.dark-mode .rv-qlabel { color: #94a3b8 !important; }
+body.dark-mode .rv-qval   { color: #f1f5f9 !important; }
+
+/* ID box */
+body.dark-mode .rv-id-box {
+    background: #0f172a !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .rv-id-hint { color: #94a3b8 !important; }
+
+/* Table */
+body.dark-mode .rv-table tbody tr { border-bottom-color: #334155 !important; }
+body.dark-mode .rv-table tbody tr:hover { background: #243044 !important; }
+body.dark-mode .rv-table tbody td { color: #e2e8f0 !important; }
+body.dark-mode .rv-tid { color: #a5b4fc !important; }
+body.dark-mode .rv-tsm { color: #94a3b8 !important; }
+
+/* Empty state */
+body.dark-mode .rv-empty p { color: #94a3b8 !important; }
+body.dark-mode .rv-empty i { color: #334155 !important; }
+
+/* Badges */
+body.dark-mode .rv-badge-success { background: rgba(16,185,129,.2)  !important; color: #6ee7b7 !important; }
+body.dark-mode .rv-badge-warning { background: rgba(245,158,11,.2)  !important; color: #fcd34d !important; }
+body.dark-mode .rv-badge-info    { background: rgba(59,130,246,.2)  !important; color: #93c5fd !important; }
+body.dark-mode .rv-badge-danger  { background: rgba(239,68,68,.2)   !important; color: #fca5a5 !important; }
+body.dark-mode .rv-badge-muted   { background: #334155 !important; color: #94a3b8 !important; border-color: #475569 !important; }
+
+/* Notice */
+body.dark-mode .rv-notice {
+    background: rgba(59,130,246,.12) !important;
+    border-color: rgba(59,130,246,.3) !important;
+    color: #93c5fd !important;
+}
+
+/* Alerts */
+body.dark-mode .rv-alert-success {
+    background: rgba(16,185,129,.15) !important;
+    color: #6ee7b7 !important; border-color: #10b981 !important;
+}
+body.dark-mode .rv-alert-error {
+    background: rgba(239,68,68,.15) !important;
+    color: #fca5a5 !important; border-color: #ef4444 !important;
+}
+
 </style>
 
 <!-- ════════ PRINT LAYOUT ════════ -->

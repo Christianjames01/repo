@@ -557,6 +557,169 @@ body { font-family: 'Sora', sans-serif; background: var(--db-bg); color: var(--d
     .db-preview-card { display: none !important; }
     .db-table thead th, .db-table tbody td { padding: 9px 10px; font-size: 11.5px; }
 }
+/* ══════════════════════════════════════
+   DARK MODE — notifications/index.php
+══════════════════════════════════════ */
+
+/* ── Page background & hero ── */
+body.dark-mode { background: #0f172a !important; color: #e2e8f0 !important; }
+body.dark-mode .rm-hero { background: linear-gradient(135deg, #0a1628 0%, #0f2040 65%, #142a5a 100%); }
+
+/* ── Panels ── */
+body.dark-mode .db-panel       { background: #1e293b !important; border-color: #334155 !important; }
+body.dark-mode .db-panel__footer { background: #162032 !important; border-color: #334155 !important; }
+
+/* ── Stat cards ── */
+body.dark-mode .db-stat-card {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .db-stat-card:hover {
+    background: #243044 !important;
+    box-shadow: 0 8px 40px rgba(0,0,0,.4), 0 2px 8px rgba(0,0,0,.3) !important;
+}
+body.dark-mode .db-stat-card--active { border-color: #4a6fa5 !important; }
+body.dark-mode .db-stat-card__label { color: #94a3b8 !important; }
+
+/* ── Alerts ── */
+body.dark-mode .db-alert--success { background: #064e3b !important; color: #6ee7b7 !important; border-color: #10b981 !important; }
+body.dark-mode .db-alert--error   { background: #450a0a !important; color: #fca5a5 !important; border-color: #ef4444 !important; }
+
+/* ── Filter strip & pills ── */
+body.dark-mode .db-filter-strip {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .db-pill {
+    background: #243044 !important;
+    border-color: #334155 !important;
+    color: #cbd5e1 !important;
+}
+body.dark-mode .db-pill:hover {
+    background: #2d3f58 !important;
+    border-color: #4a6fa5 !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .db-pill--active {
+    background: var(--db-navy-light) !important;
+    border-color: var(--db-navy-light) !important;
+    color: #fff !important;
+}
+body.dark-mode .db-pill__count { background: rgba(255,255,255,.12) !important; color: #94a3b8 !important; }
+body.dark-mode .db-pill--active .db-pill__count { background: rgba(255,255,255,.2) !important; color: #fff !important; }
+
+/* ── Buttons ── */
+body.dark-mode .db-btn--ghost {
+    background: #243044 !important;
+    color: #cbd5e1 !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .db-btn--ghost:hover {
+    background: #2d3f58 !important;
+    color: #e2e8f0 !important;
+}
+
+/* ── Table ── */
+body.dark-mode .db-table tbody tr { border-color: #334155 !important; }
+body.dark-mode .db-table tbody td { color: #e2e8f0 !important; }
+body.dark-mode .db-table tbody tr:hover { background: #243044 !important; }
+body.dark-mode .db-notif-row--unread {
+    background: linear-gradient(to right, rgba(99,102,241,.1), rgba(99,102,241,.03)) !important;
+}
+body.dark-mode .db-notif-row--email-unread {
+    background: linear-gradient(to right, rgba(14,165,233,.1), rgba(14,165,233,.03)) !important;
+}
+body.dark-mode .db-notif-title   { color: #f1f5f9 !important; }
+body.dark-mode .db-notif-preview { color: #94a3b8 !important; }
+body.dark-mode .db-notif-time    { color: #64748b !important; }
+body.dark-mode .db-notif-sender  { color: #38bdf8 !important; }
+
+/* ── Notification icons (keep their colors, darken the bg chips) ── */
+body.dark-mode .db-notif-icon--primary { background: rgba(99,102,241,.18) !important; }
+body.dark-mode .db-notif-icon--warning { background: rgba(245,158,11,.18) !important; }
+body.dark-mode .db-notif-icon--success { background: rgba(16,185,129,.18) !important; }
+body.dark-mode .db-notif-icon--info    { background: rgba(59,130,246,.18) !important; }
+body.dark-mode .db-notif-icon--danger  { background: rgba(239,68,68,.18) !important; }
+body.dark-mode .db-notif-icon--dark    { background: rgba(255,255,255,.08) !important; color: #cbd5e1 !important; }
+body.dark-mode .db-notif-icon--sky     { background: rgba(14,165,233,.18) !important; }
+body.dark-mode .db-notif-icon--teal    { background: rgba(13,148,136,.18) !important; }
+
+/* ── Dropdown menus ── */
+body.dark-mode .db-dropdown-menu {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+    box-shadow: 0 8px 32px rgba(0,0,0,.5) !important;
+}
+body.dark-mode .db-dropdown-header { color: #64748b !important; }
+body.dark-mode .db-dropdown-item   { color: #cbd5e1 !important; }
+body.dark-mode .db-dropdown-item:hover { background: #243044 !important; color: #e2e8f0 !important; }
+body.dark-mode .db-dropdown-item.active { background: linear-gradient(135deg, #1c3461, #224090) !important; color: #fff !important; }
+body.dark-mode .db-dropdown-divider { background: #334155 !important; }
+
+/* ── Badges ── */
+body.dark-mode .db-badge--muted { background: #243044 !important; color: #94a3b8 !important; border-color: #334155 !important; }
+body.dark-mode .db-badge--dark  { background: #334155 !important; color: #e2e8f0 !important; }
+
+/* ── Modals ── */
+body.dark-mode .db-modal { background: rgba(0,0,0,.7) !important; }
+body.dark-mode .db-modal__box  { background: #1e293b !important; }
+body.dark-mode .db-modal__body { color: #e2e8f0 !important; }
+body.dark-mode .db-modal__body p { color: #94a3b8 !important; }
+body.dark-mode .db-modal__footer { border-top: 1px solid #334155 !important; }
+
+/* ── Pagination ── */
+body.dark-mode .db-page-btn {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+    color: #cbd5e1 !important;
+}
+body.dark-mode .db-page-btn:hover { background: #243044 !important; color: #e2e8f0 !important; }
+body.dark-mode .db-page-btn.active {
+    background: linear-gradient(135deg, #0d1b36, #1c3461) !important;
+    border-color: #1c3461 !important;
+    color: #fff !important;
+}
+
+/* ── Hover preview card ── */
+body.dark-mode .db-preview-card {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+    box-shadow: 0 8px 40px rgba(0,0,0,.5) !important;
+}
+body.dark-mode .db-preview-card__type  { color: #64748b !important; }
+body.dark-mode .db-preview-card__title { color: #f1f5f9 !important; }
+body.dark-mode .db-preview-card__msg   { color: #94a3b8 !important; }
+body.dark-mode .db-preview-card__time  { color: #64748b !important; }
+body.dark-mode .db-preview-card__sender { color: #38bdf8 !important; }
+
+/* ── Empty state ── */
+body.dark-mode .db-empty i { color: #334155 !important; }
+body.dark-mode .db-empty p { color: #64748b !important; }
+
+/* ── Checkboxes (subtle tint) ── */
+body.dark-mode input[type="checkbox"] { accent-color: var(--db-indigo); }
+/* ── Hero action buttons on dark navy background ── */
+body.dark-mode .rm-hero .db-btn--ghost {
+    background: rgba(255,255,255,.1) !important;
+    border-color: rgba(255,255,255,.2) !important;
+    color: rgba(255,255,255,.85) !important;
+}
+body.dark-mode .rm-hero .db-btn--ghost:hover {
+    background: rgba(255,255,255,.18) !important;
+    border-color: rgba(255,255,255,.3) !important;
+    color: #fff !important;
+}
+
+/* ── Info buttons — ensure they stay vivid on dark bg ── */
+body.dark-mode .rm-hero .db-btn--info {
+    background: var(--db-sky) !important;
+    color: #fff !important;
+}
+body.dark-mode .rm-hero .db-btn--info:hover {
+    background: #0284c7 !important;
+    color: #fff !important;
+}
 </style>
 
 <!-- ═══════════════════ HERO ═══════════════════ -->

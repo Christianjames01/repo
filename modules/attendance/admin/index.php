@@ -218,6 +218,197 @@ include '../../../includes/header.php';
 ?>
 
 <style>
+    /* ══════════════════════════════════════
+   ATTENDANCE DARK MODE OVERRIDES
+══════════════════════════════════════ */
+
+/* Filter card */
+body.dark-mode .att-filter-card {
+    background: #1e293b;
+    border-color: #334155;
+}
+body.dark-mode .att-filter-card .db-input,
+body.dark-mode .att-filter-group select,
+body.dark-mode .att-filter-group input {
+    background: #334155 !important;
+    color: #e2e8f0 !important;
+    border-color: #475569 !important;
+}
+
+/* Table */
+body.dark-mode .db-table tbody td {
+    color: #e2e8f0;
+}
+body.dark-mode .staff-name {
+    color: #e2e8f0 !important;
+}
+
+/* Status badges — keep their colors but adjust for dark bg */
+body.dark-mode .att-badge--unmarked {
+    background: #1e293b;
+    color: #94a3b8;
+    border-color: #334155;
+}
+
+/* Role pills */
+body.dark-mode .role-pill--admin     { background: #3b0000; color: #fca5a5; }
+body.dark-mode .role-pill--captain   { background: #3b0020; color: #f9a8d4; }
+body.dark-mode .role-pill--secretary { background: #2a2000; color: #fde68a; }
+body.dark-mode .role-pill--treasurer { background: #0c2340; color: #7dd3fc; }
+body.dark-mode .role-pill--staff     { background: #2a1f00; color: #fcd34d; }
+body.dark-mode .role-pill--tanod     { background: #0c1f4a; color: #93c5fd; }
+body.dark-mode .role-pill--driver    { background: #052e1c; color: #6ee7b7; }
+
+/* Mark button */
+body.dark-mode .btn-mark {
+    background: linear-gradient(135deg, #1e3a5f, #2d4f7c);
+}
+
+/* Modals */
+body.dark-mode .db-modal__box {
+    background: #1e293b !important;
+}
+body.dark-mode .att-modal-body {
+    background: #1e293b;
+    color: #e2e8f0;
+}
+body.dark-mode .att-modal-footer {
+    background: #243044;
+    border-color: #334155;
+}
+
+/* Staff info box inside modal */
+body.dark-mode .att-staff-info-box {
+    background: linear-gradient(135deg, #1a2744, #1a2e2c);
+    border-color: #2d4a7a;
+}
+body.dark-mode .att-staff-info-box .info-name {
+    color: #e2e8f0;
+}
+
+/* Form fields in modal */
+body.dark-mode .att-field label {
+    color: #e2e8f0;
+}
+body.dark-mode .att-input {
+    background: #334155 !important;
+    color: #e2e8f0 !important;
+    border-color: #475569 !important;
+}
+body.dark-mode .att-input:focus {
+    border-color: #60a5fa !important;
+    box-shadow: 0 0 0 3px rgba(96,165,250,.15) !important;
+    background: #3d4f68 !important;
+}
+body.dark-mode textarea.att-input {
+    background: #334155 !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .att-input::placeholder {
+    color: #64748b !important;
+}
+
+/* Time card */
+body.dark-mode .att-time-card {
+    background: #243044;
+    border-color: #334155;
+}
+body.dark-mode .att-time-card-header {
+    color: #e2e8f0;
+}
+body.dark-mode .att-time-field label {
+    color: #94a3b8;
+}
+body.dark-mode .att-now-btn {
+    background: #334155;
+    border-color: #475569;
+    color: #94a3b8;
+}
+body.dark-mode .att-now-btn:hover {
+    background: #0d1b36;
+    border-color: #0d1b36;
+    color: #fff;
+}
+body.dark-mode .att-now-btn--in:hover  { background: #065f46; border-color: #065f46; }
+body.dark-mode .att-now-btn--out:hover { background: #7f1d1d; border-color: #7f1d1d; }
+
+/* Preset buttons */
+body.dark-mode .att-preset-btn {
+    background: #334155;
+    border-color: #475569;
+    color: #94a3b8;
+}
+body.dark-mode .att-preset-btn:hover {
+    border-color: #60a5fa;
+    color: #60a5fa;
+    background: #1e3a5f;
+}
+body.dark-mode .att-presets-label {
+    color: #64748b;
+}
+
+/* Hours box */
+body.dark-mode .att-hours-box {
+    background: #052e1c;
+    border-color: #065f46;
+    color: #6ee7b7;
+}
+
+/* Status hint */
+body.dark-mode #ma_status_hint {
+    color: #64748b;
+}
+
+/* Bulk modal info boxes */
+body.dark-mode #bulk_staff_preview {
+    background: #243044;
+    border-color: #334155;
+}
+body.dark-mode .bulk-staff-chip {
+    background: #1e3a5f;
+    color: #93c5fd;
+}
+body.dark-mode .att-check-card {
+    background: #243044;
+    border-color: #334155;
+}
+body.dark-mode .att-check-card label {
+    color: #e2e8f0;
+}
+body.dark-mode .att-check-body {
+    border-color: #334155;
+}
+body.dark-mode .overwrite-warn {
+    background: #2a1f00;
+    border-color: #854d0e;
+    color: #fcd34d;
+}
+
+/* Cancel button in modal */
+body.dark-mode .att-cancel-btn {
+    background: #334155;
+    border-color: #475569;
+    color: #e2e8f0;
+}
+body.dark-mode .att-cancel-btn:hover {
+    border-color: #94a3b8;
+    background: #475569;
+}
+
+/* Empty state */
+body.dark-mode .att-empty p {
+    color: #64748b;
+}
+body.dark-mode .att-empty i {
+    color: #334155;
+}
+
+/* Selected pill in bulk modal */
+body.dark-mode .att-selected-pill {
+    background: #1e3a5f;
+    border-color: #2d4a7a;
+    color: #93c5fd;
+}
 .att-badge {
     display: inline-flex; align-items: center; gap: 4px;
     padding: 3px 10px; border-radius: 20px;

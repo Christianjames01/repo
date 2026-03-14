@@ -125,6 +125,136 @@ body{font-family:'Sora',sans-serif;background:var(--db-bg);color:var(--db-text);
 .db-preview__msg{font-size:.8rem;color:var(--db-muted);line-height:1.6;margin-bottom:10px;}
 .db-preview__footer{font-size:.72rem;color:#adb5bd;display:flex;align-items:center;gap:8px;}
 @media(max-width:768px){.rm-hero{padding:20px;border-radius:0;}.db-preview{display:none !important;}}
+/* ══════════════════════════════════════
+   DARK MODE OVERRIDES
+══════════════════════════════════════ */
+body.dark-mode { background: #0f172a !important; color: #e2e8f0 !important; }
+
+body.dark-mode .db-panel {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .db-panel__header {
+    border-bottom-color: #334155 !important;
+}
+body.dark-mode .db-panel__title h2 {
+    color: #f1f5f9 !important;
+}
+body.dark-mode .db-panel__icon--amber {
+    background: #27211a !important;
+    color: #fbbf24 !important;
+}
+body.dark-mode .db-stat-card {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .db-stat-card:hover,
+body.dark-mode .db-stat-card.active {
+    box-shadow: 0 0 0 3px rgba(148,163,184,.15), var(--db-shadow-lg) !important;
+}
+body.dark-mode .db-stat-card__icon--amber {
+    background: #27211a !important;
+    color: #fbbf24 !important;
+}
+body.dark-mode .db-stat-card__icon--amber2 {
+    background: #27211a !important;
+    color: #d97706 !important;
+}
+body.dark-mode .db-stat-card__icon--sky {
+    background: #0c2a40 !important;
+    color: #38bdf8 !important;
+}
+body.dark-mode .db-stat-card__icon--success {
+    background: #052e16 !important;
+    color: #4ade80 !important;
+}
+body.dark-mode .db-stat-card__icon--muted {
+    background: #334155 !important;
+    color: #94a3b8 !important;
+    border-color: #475569 !important;
+}
+body.dark-mode .db-stat-card__label {
+    color: #64748b !important;
+}
+body.dark-mode .db-table thead tr {
+    background: linear-gradient(135deg, #0f172a, #1e293b) !important;
+}
+body.dark-mode .db-table thead th {
+    color: rgba(148,163,184,.9) !important;
+}
+body.dark-mode .db-table tbody tr {
+    border-bottom-color: #334155 !important;
+}
+body.dark-mode .db-table tbody tr:hover {
+    background: #1e3a5f !important;
+    box-shadow: inset 3px 0 0 #fbbf24 !important;
+}
+body.dark-mode .db-table tbody td {
+    color: #e2e8f0 !important;
+}
+body.dark-mode .db-text-sm {
+    color: #94a3b8 !important;
+}
+body.dark-mode .db-id {
+    color: #a5b4fc !important;
+}
+body.dark-mode .db-badge--amber {
+    background: #27211a !important;
+    color: #fbbf24 !important;
+}
+body.dark-mode .db-badge--sky {
+    background: #0c2a40 !important;
+    color: #38bdf8 !important;
+}
+body.dark-mode .db-badge--success {
+    background: #052e16 !important;
+    color: #4ade80 !important;
+}
+body.dark-mode .db-badge--muted {
+    background: #1e293b !important;
+    color: #94a3b8 !important;
+    border-color: #475569 !important;
+}
+body.dark-mode .db-alert--success {
+    background: #052e16 !important;
+    color: #86efac !important;
+    border-color: #4ade80 !important;
+}
+body.dark-mode .db-alert--error {
+    background: #2d1c1c !important;
+    color: #fca5a5 !important;
+    border-color: #ef4444 !important;
+}
+body.dark-mode .db-btn--ghost {
+    background: #1e293b !important;
+    color: #e2e8f0 !important;
+    border-color: #475569 !important;
+}
+body.dark-mode .db-btn--ghost:hover {
+    background: #334155 !important;
+}
+body.dark-mode .db-empty i {
+    color: #334155 !important;
+}
+body.dark-mode .db-empty p {
+    color: #64748b !important;
+}
+body.dark-mode .db-preview {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .db-preview__header {
+    border-bottom-color: #334155 !important;
+}
+body.dark-mode .db-preview__title {
+    color: #f1f5f9 !important;
+}
+body.dark-mode .db-preview__type,
+body.dark-mode .db-preview__msg,
+body.dark-mode .db-preview__footer {
+    color: #94a3b8 !important;
+}
 </style>
 
 <div class="rm-hero">

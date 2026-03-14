@@ -498,6 +498,188 @@ include '../../includes/header.php';
 html {
     scroll-behavior: smooth;
 }
+/* ══════════════════════════════════════
+   DARK MODE — vehicles admin pages
+══════════════════════════════════════ */
+body.dark-mode { background: #0f172a !important; color: #e2e8f0 !important; }
+
+/* Page heading */
+body.dark-mode h2.fw-bold,
+body.dark-mode h2 { color: #f1f5f9 !important; }
+body.dark-mode .text-muted { color: #94a3b8 !important; }
+
+/* Cards */
+body.dark-mode .card {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,.3) !important;
+}
+body.dark-mode .card:hover {
+    box-shadow: 0 4px 16px rgba(0,0,0,.4) !important;
+}
+body.dark-mode .card-header {
+    background: linear-gradient(135deg, #1e293b 0%, #243044 100%) !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .card-header h5,
+body.dark-mode .card-header h6 { color: #f1f5f9 !important; }
+body.dark-mode .card-body { background: #1e293b !important; color: #e2e8f0 !important; }
+
+/* Colored card headers (trip details page) */
+body.dark-mode .card-header.bg-primary { background: linear-gradient(135deg, #1e3a5f, #1e40af) !important; }
+body.dark-mode .card-header.bg-white { background: #1e293b !important; border-color: #334155 !important; }
+body.dark-mode .card-header.bg-white h6 { color: #f1f5f9 !important; }
+body.dark-mode .card-header.border-bottom { border-color: #334155 !important; }
+
+/* Stat cards */
+body.dark-mode .stat-card { background: #1e293b !important; }
+body.dark-mode .stat-card h3 { color: #f1f5f9 !important; }
+body.dark-mode .bg-primary.bg-opacity-10 { background: rgba(99,102,241,.18) !important; }
+body.dark-mode .bg-success.bg-opacity-10 { background: rgba(16,185,129,.18) !important; }
+body.dark-mode .bg-warning.bg-opacity-10 { background: rgba(245,158,11,.18) !important; }
+body.dark-mode .bg-info.bg-opacity-10    { background: rgba(14,165,233,.18) !important; }
+body.dark-mode .bg-danger.bg-opacity-10  { background: rgba(239,68,68,.18) !important; }
+
+/* Quick access outline buttons */
+body.dark-mode .btn-outline-primary {
+    color: #818cf8 !important;
+    border-color: #4f46e5 !important;
+    background: transparent !important;
+}
+body.dark-mode .btn-outline-primary:hover {
+    background: rgba(99,102,241,.18) !important;
+    color: #a5b4fc !important;
+    border-color: #818cf8 !important;
+}
+body.dark-mode .btn-outline-secondary {
+    color: #94a3b8 !important;
+    border-color: #475569 !important;
+    background: transparent !important;
+}
+body.dark-mode .btn-outline-secondary:hover {
+    background: #243044 !important;
+    color: #e2e8f0 !important;
+}
+
+/* Filter form */
+body.dark-mode .form-label { color: #cbd5e1 !important; }
+body.dark-mode .form-control,
+body.dark-mode .form-select {
+    background: #243044 !important;
+    border-color: #334155 !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .form-control:focus,
+body.dark-mode .form-select:focus {
+    background: #1e293b !important;
+    border-color: #6366f1 !important;
+    box-shadow: 0 0 0 4px rgba(99,102,241,.2) !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .form-control:disabled { background: #162032 !important; color: #64748b !important; }
+body.dark-mode .form-select option { background: #1e293b !important; color: #e2e8f0 !important; }
+body.dark-mode .form-control::placeholder { color: #64748b !important; }
+body.dark-mode textarea.form-control {
+    background: #243044 !important;
+    border-color: #334155 !important;
+    color: #e2e8f0 !important;
+}
+
+/* Secondary / reset button */
+body.dark-mode .btn-secondary {
+    background: #334155 !important;
+    border-color: #475569 !important;
+    color: #cbd5e1 !important;
+}
+body.dark-mode .btn-secondary:hover {
+    background: #475569 !important;
+    color: #e2e8f0 !important;
+}
+
+/* Table */
+body.dark-mode .table { color: #e2e8f0 !important; }
+body.dark-mode .table thead th {
+    background: linear-gradient(135deg, #1e293b 0%, #243044 100%) !important;
+    border-color: #334155 !important;
+    color: #94a3b8 !important;
+}
+body.dark-mode .table tbody tr { border-color: #334155 !important; }
+body.dark-mode .table tbody tr:hover {
+    background: linear-gradient(135deg, rgba(99,102,241,.07) 0%, rgba(99,102,241,.1) 100%) !important;
+}
+body.dark-mode .table tbody td { color: #e2e8f0 !important; }
+body.dark-mode .table tbody td strong { color: #f1f5f9 !important; }
+body.dark-mode .table tbody td small.text-muted { color: #64748b !important; }
+body.dark-mode .table tbody td i.text-muted { color: #64748b !important; }
+body.dark-mode .table tbody td span.text-muted { color: #64748b !important; }
+
+/* Route display (trip-log pages) */
+body.dark-mode .route-display .route-origin      { color: #34d399 !important; }
+body.dark-mode .route-display .route-destination { color: #f87171 !important; }
+body.dark-mode .route-display .route-arrow       { color: #475569 !important; }
+
+/* Empty state */
+body.dark-mode .empty-state { color: #64748b !important; }
+body.dark-mode .empty-state i { color: #334155 !important; opacity: 1 !important; }
+body.dark-mode .empty-state p { color: #64748b !important; }
+
+/* Alerts */
+body.dark-mode .alert-success {
+    background: linear-gradient(135deg, rgba(16,185,129,.15) 0%, rgba(16,185,129,.08) 100%) !important;
+    border-left-color: #10b981 !important;
+    color: #6ee7b7 !important;
+}
+body.dark-mode .alert-danger {
+    background: linear-gradient(135deg, rgba(239,68,68,.15) 0%, rgba(239,68,68,.08) 100%) !important;
+    border-left-color: #ef4444 !important;
+    color: #fca5a5 !important;
+}
+body.dark-mode .alert-warning {
+    background: linear-gradient(135deg, rgba(245,158,11,.15) 0%, rgba(245,158,11,.08) 100%) !important;
+    border-left-color: #f59e0b !important;
+    color: #fcd34d !important;
+}
+
+/* ── Modals ── */
+body.dark-mode .modal-content {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .modal-header {
+    background: linear-gradient(135deg, #1e293b 0%, #243044 100%) !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .modal-title { color: #f1f5f9 !important; }
+body.dark-mode .btn-close { filter: invert(1) brightness(0.7) !important; }
+body.dark-mode .modal-body { background: #1e293b !important; color: #e2e8f0 !important; }
+body.dark-mode .modal-footer {
+    background: #162032 !important;
+    border-color: #334155 !important;
+}
+
+/* Delete modal inline-style overrides */
+body.dark-mode .modal-body [style*="background: #f8f9fa"],
+body.dark-mode .modal-body [style*="background:#f8f9fa"] {
+    background: #162032 !important;
+    border-left-color: #ef4444 !important;
+}
+body.dark-mode .modal-body [style*="background: linear-gradient(135deg, #fee2e2"] {
+    background: rgba(239,68,68,.18) !important;
+}
+body.dark-mode .modal-body h5[style*="color: #212529"] { color: #f1f5f9 !important; }
+body.dark-mode .modal-body p[style*="color: #64748b"]  { color: #94a3b8 !important; }
+body.dark-mode .modal-body p[style*="color: #495057"]  { color: #cbd5e1 !important; }
+body.dark-mode .modal-body p[style*="color: #6c757d"]  { color: #94a3b8 !important; }
+
+/* Trip details page — detail label/value pairs */
+body.dark-mode label.text-muted.small { color: #64748b !important; }
+body.dark-mode p.fw-bold { color: #f1f5f9 !important; }
+body.dark-mode p.fw-bold small.text-muted { color: #64748b !important; }
+body.dark-mode hr { border-color: #334155 !important; opacity: 1 !important; }
+
+/* Trip summary sidebar */
+body.dark-mode .d-flex.justify-content-between span.text-muted { color: #94a3b8 !important; }
+body.dark-mode .d-flex.justify-content-between strong { color: #f1f5f9 !important; }
 </style>
 
 <div class="container-fluid py-4">

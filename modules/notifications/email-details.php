@@ -20,7 +20,7 @@ $stmt->close();
 
 $user_role = $current_user['role'] ?? '';
 
-if ($user_role !== 'Super Administrator') {
+if ($user_role !== 'Super Admin') {
     $_SESSION['error_message'] = 'Access denied. Super Administrator only.';
     header('Location: ../../dashboard.php');
     exit();
@@ -237,6 +237,131 @@ body{font-family:'Sora',sans-serif;background:var(--db-bg);color:var(--db-text);
 /* Two-col layout */
 .db-detail-grid{display:grid;grid-template-columns:1fr 320px;gap:18px;align-items:start;margin-bottom:18px;}
 @media(max-width:960px){.db-detail-grid{grid-template-columns:1fr;}.rm-hero{padding:20px;border-radius:0;}}
+/* ══════════════════════════════════════
+   DARK MODE — email-details.php
+══════════════════════════════════════ */
+body.dark-mode { background: #0f172a !important; color: #e2e8f0 !important; }
+
+/* Hero */
+body.dark-mode .rm-hero .db-btn--ghost {
+    background: rgba(255,255,255,.1) !important;
+    border-color: rgba(255,255,255,.2) !important;
+    color: rgba(255,255,255,.85) !important;
+}
+body.dark-mode .rm-hero .db-btn--ghost:hover {
+    background: rgba(255,255,255,.18) !important;
+    color: #fff !important;
+}
+body.dark-mode .rm-hero__chip {
+    background: rgba(255,255,255,.08) !important;
+    border-color: rgba(255,255,255,.14) !important;
+    color: rgba(255,255,255,.75) !important;
+}
+
+/* Stat cards */
+body.dark-mode .db-stat-card { background: #1e293b !important; border-color: #334155 !important; }
+body.dark-mode .db-stat-card:hover { background: #243044 !important; }
+body.dark-mode .db-stat-card__label { color: #94a3b8 !important; }
+
+/* Panels */
+body.dark-mode .db-panel { background: #1e293b !important; border-color: #334155 !important; }
+body.dark-mode .db-panel__header { border-color: #334155 !important; }
+body.dark-mode .db-panel__title h2 { color: #f1f5f9 !important; }
+
+/* Info rows */
+body.dark-mode .db-info-row { border-color: #334155 !important; }
+body.dark-mode .db-info-label { color: #64748b !important; }
+body.dark-mode .db-info-value { color: #e2e8f0 !important; }
+
+/* Message box */
+body.dark-mode .db-message-box {
+    background: #162032 !important;
+    border-color: #334155 !important;
+    color: #cbd5e1 !important;
+}
+
+/* Badges */
+body.dark-mode .db-badge--muted {
+    background: #243044 !important;
+    color: #94a3b8 !important;
+    border-color: #334155 !important;
+}
+
+/* Success rate display */
+body.dark-mode .db-rate-num { color: #a5b4fc !important; }
+body.dark-mode .db-rate-label { color: #64748b !important; }
+
+/* Progress bars */
+body.dark-mode .db-prog-wrap { background: #243044 !important; }
+
+/* Success/failure mini boxes inside sidebar */
+body.dark-mode [style*="background:var(--db-success-light)"] {
+    background: rgba(16,185,129,.15) !important;
+}
+body.dark-mode [style*="background:var(--db-danger-light)"] {
+    background: rgba(239,68,68,.15) !important;
+}
+
+/* Table */
+body.dark-mode .db-table tbody tr { border-color: #334155 !important; }
+body.dark-mode .db-table tbody tr:hover { background: #243044 !important; }
+body.dark-mode .db-table tbody td { color: #e2e8f0 !important; }
+body.dark-mode .db-table tbody td [style*="color:var(--db-muted)"],
+body.dark-mode .db-table tbody td span[style*="color:var(--db-muted)"] { color: #64748b !important; }
+body.dark-mode .db-table tbody td span[style*="color:var(--db-border)"] { color: #334155 !important; }
+body.dark-mode .db-table tbody td span[style*="color:var(--db-danger)"] { color: #fca5a5 !important; }
+
+/* Filter buttons */
+body.dark-mode .db-filter-btn {
+    background: #243044 !important;
+    border-color: #334155 !important;
+    color: #94a3b8 !important;
+}
+body.dark-mode .db-filter-btn:hover {
+    background: rgba(99,102,241,.15) !important;
+    border-color: var(--db-indigo) !important;
+    color: #a5b4fc !important;
+}
+body.dark-mode .db-filter-btn.active {
+    background: var(--db-navy-light) !important;
+    border-color: var(--db-navy-light) !important;
+    color: #fff !important;
+}
+body.dark-mode .db-filter-btn.active-success {
+    background: var(--db-success) !important;
+    border-color: var(--db-success) !important;
+    color: #fff !important;
+}
+body.dark-mode .db-filter-btn.active-amber {
+    background: var(--db-amber-dark) !important;
+    border-color: var(--db-amber-dark) !important;
+    color: #fff !important;
+}
+body.dark-mode .db-filter-btn.active-danger {
+    background: var(--db-danger) !important;
+    border-color: var(--db-danger) !important;
+    color: #fff !important;
+}
+
+/* Action URL link */
+body.dark-mode .db-link { color: #818cf8 !important; }
+body.dark-mode .db-link:hover { color: #a5b4fc !important; }
+
+/* Empty state */
+body.dark-mode .db-table + div i,
+body.dark-mode [style*="color:var(--db-border)"] { color: #334155 !important; }
+body.dark-mode [style*="color:var(--db-muted)"] { color: #64748b !important; }
+
+/* Ghost-dark button (quick actions) */
+body.dark-mode .db-btn--ghost-dark {
+    background: #243044 !important;
+    border-color: #334155 !important;
+    color: #cbd5e1 !important;
+}
+body.dark-mode .db-btn--ghost-dark:hover {
+    background: #2d3f58 !important;
+    color: #e2e8f0 !important;
+}
 </style>
 
 <!-- HERO -->

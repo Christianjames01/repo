@@ -253,6 +253,223 @@ body{font-family:'Sora',sans-serif;background:var(--db-bg);color:var(--db-text);
 .db-confirm-icon--success{background:var(--db-success-light);color:var(--db-success);}
 
 @media(max-width:768px){.rm-hero{padding:20px;border-radius:0;}.db-form-row,.db-form-row-3{grid-template-columns:1fr;}.db-table thead th,.db-table tbody td{padding:9px 10px;font-size:11.5px;}}
+/* ══════════════════════════════════════
+   DARK MODE OVERRIDES
+══════════════════════════════════════ */
+body.dark-mode { background: #0f172a !important; color: #e2e8f0 !important; }
+
+body.dark-mode .db-panel {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .db-panel__header {
+    border-bottom-color: #334155 !important;
+}
+body.dark-mode .db-panel__title h2 {
+    color: #f1f5f9 !important;
+}
+body.dark-mode .db-panel__icon--indigo {
+    background: #1e1b4b !important;
+    color: #a5b4fc !important;
+}
+body.dark-mode .db-stat-card {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .db-stat-card__label {
+    color: #64748b !important;
+}
+body.dark-mode .db-stat-card__icon--indigo {
+    background: #1e1b4b !important;
+    color: #a5b4fc !important;
+}
+body.dark-mode .db-stat-card__icon--success {
+    background: #052e16 !important;
+    color: #4ade80 !important;
+}
+body.dark-mode .db-stat-card__icon--rose {
+    background: #2d1c1c !important;
+    color: #fb7185 !important;
+}
+body.dark-mode .db-stat-card__icon--amber {
+    background: #27211a !important;
+    color: #fbbf24 !important;
+}
+body.dark-mode .db-input {
+    background: #334155 !important;
+    color: #e2e8f0 !important;
+    border-color: #475569 !important;
+}
+body.dark-mode .db-input:focus {
+    border-color: #60a5fa !important;
+    box-shadow: 0 0 0 3px rgba(96,165,250,.15) !important;
+}
+body.dark-mode .db-input option {
+    background: #334155 !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .db-search-wrap i {
+    color: #64748b !important;
+}
+body.dark-mode .db-table thead tr {
+    background: linear-gradient(135deg, #0f172a, #1e293b) !important;
+}
+body.dark-mode .db-table thead th {
+    color: rgba(148,163,184,.9) !important;
+}
+body.dark-mode .db-table tbody tr {
+    border-bottom-color: #334155 !important;
+}
+body.dark-mode .db-table tbody tr:hover {
+    background: #243044 !important;
+}
+body.dark-mode .db-table tbody td {
+    color: #e2e8f0 !important;
+}
+body.dark-mode .db-staff-info h4 {
+    color: #f1f5f9 !important;
+}
+body.dark-mode .db-staff-info p {
+    color: #94a3b8 !important;
+}
+body.dark-mode .db-badge--indigo {
+    background: #1e1b4b !important;
+    color: #a5b4fc !important;
+}
+body.dark-mode .db-badge--amber {
+    background: #27211a !important;
+    color: #fbbf24 !important;
+}
+body.dark-mode .db-badge--sky {
+    background: #0c2a40 !important;
+    color: #38bdf8 !important;
+}
+body.dark-mode .db-badge--rose {
+    background: #2d1c1c !important;
+    color: #fb7185 !important;
+}
+body.dark-mode .db-badge--success {
+    background: #052e16 !important;
+    color: #4ade80 !important;
+}
+body.dark-mode .db-badge--teal {
+    background: #0d2e2a !important;
+    color: #2dd4bf !important;
+}
+body.dark-mode .db-badge--muted {
+    background: #1e293b !important;
+    color: #94a3b8 !important;
+    border-color: #475569 !important;
+}
+body.dark-mode .db-icon-btn {
+    color: #94a3b8 !important;
+}
+body.dark-mode .db-icon-btn:hover {
+    background: #334155 !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .db-icon-btn.danger:hover {
+    background: #2d1c1c !important;
+    color: #fb7185 !important;
+}
+body.dark-mode .db-icon-btn.warn:hover {
+    background: #27211a !important;
+    color: #fbbf24 !important;
+}
+body.dark-mode .db-icon-btn.success:hover {
+    background: #052e16 !important;
+    color: #4ade80 !important;
+}
+body.dark-mode .db-alert--success {
+    background: #052e16 !important;
+    color: #86efac !important;
+    border-color: #4ade80 !important;
+}
+body.dark-mode .db-alert--error {
+    background: #2d1c1c !important;
+    color: #fca5a5 !important;
+    border-color: #ef4444 !important;
+}
+body.dark-mode .db-btn--ghost {
+    background: #1e293b !important;
+    color: #e2e8f0 !important;
+    border-color: #475569 !important;
+}
+body.dark-mode .db-btn--ghost:hover {
+    background: #334155 !important;
+}
+body.dark-mode .db-empty i {
+    color: #334155 !important;
+}
+body.dark-mode .db-empty p {
+    color: #64748b !important;
+}
+/* Modals */
+body.dark-mode .db-modal__box {
+    background: #1e293b !important;
+}
+body.dark-mode .db-modal__body {
+    background: #1e293b !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .db-section-title {
+    color: #93c5fd !important;
+    border-bottom-color: #334155 !important;
+}
+body.dark-mode .db-form-group label {
+    color: #94a3b8 !important;
+}
+body.dark-mode .db-form-group select {
+    background: #334155 !important;
+    color: #e2e8f0 !important;
+    border-color: #475569 !important;
+}
+body.dark-mode .db-form-group select:focus {
+    border-color: #60a5fa !important;
+    box-shadow: 0 0 0 3px rgba(96,165,250,.15) !important;
+}
+body.dark-mode .db-form-group select option {
+    background: #334155 !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .db-photo-upload {
+    border-color: #475569 !important;
+    color: #94a3b8 !important;
+}
+body.dark-mode .db-photo-upload:hover {
+    border-color: #60a5fa !important;
+    background: #243044 !important;
+}
+body.dark-mode .db-helper {
+    color: #64748b !important;
+}
+body.dark-mode .db-required {
+    color: #fb7185 !important;
+}
+/* Delete / status confirm modals */
+body.dark-mode .db-confirm-icon--rose {
+    background: #2d1c1c !important;
+    color: #fb7185 !important;
+}
+body.dark-mode .db-confirm-icon--amber {
+    background: #27211a !important;
+    color: #fbbf24 !important;
+}
+body.dark-mode .db-confirm-icon--success {
+    background: #052e16 !important;
+    color: #4ade80 !important;
+}
+body.dark-mode #delete_staff_name,
+body.dark-mode #status_staff_name {
+    color: #f1f5f9 !important;
+}
+body.dark-mode #status_question {
+    color: #f1f5f9 !important;
+}
+body.dark-mode #status_action_text,
+body.dark-mode #status_desc {
+    color: #94a3b8 !important;
+}
 </style>
 
 <div class="rm-hero">

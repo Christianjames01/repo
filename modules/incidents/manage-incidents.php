@@ -175,7 +175,155 @@ body{font-family:'Sora',sans-serif;background:var(--db-bg);color:var(--db-text);
 .db-preview__footer{font-size:.72rem;color:#adb5bd;display:flex;align-items:center;gap:8px;}
 
 @media(max-width:768px){.rm-hero{padding:20px;border-radius:0;}.rm-hero__title{font-size:18px;}.db-table thead th,.db-table tbody td{padding:9px 10px;font-size:11.5px;}.db-preview{display:none !important;}}
+/* ══════════════════════════════════════
+   DARK MODE — incidents pages
+══════════════════════════════════════ */
+body.dark-mode { background: #0f172a !important; color: #e2e8f0 !important; }
+
+/* Stat cards */
+body.dark-mode .db-stat-card {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .db-stat-card:hover { color: #e2e8f0 !important; }
+body.dark-mode .db-stat-card.active { border-color: #60a5fa !important; }
+body.dark-mode .db-stat-card__label { color: #94a3b8 !important; }
+body.dark-mode .db-stat-card__icon--rose    { background: rgba(225,29,72,.15)   !important; }
+body.dark-mode .db-stat-card__icon--amber   { background: rgba(245,158,11,.15)  !important; }
+body.dark-mode .db-stat-card__icon--sky     { background: rgba(14,165,233,.15)  !important; }
+body.dark-mode .db-stat-card__icon--indigo  { background: rgba(99,102,241,.15)  !important; }
+body.dark-mode .db-stat-card__icon--success { background: rgba(16,185,129,.15)  !important; }
+body.dark-mode .db-stat-card__icon--teal    { background: rgba(13,148,136,.15)  !important; }
+body.dark-mode .db-stat-card__icon--blue    { background: rgba(59,130,246,.15)  !important; }
+
+/* Panels */
+body.dark-mode .db-panel {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .db-panel__header { border-bottom-color: #334155 !important; }
+body.dark-mode .db-panel__title h2 { color: #f1f5f9 !important; }
+body.dark-mode .db-panel__icon--rose    { background: rgba(225,29,72,.15)  !important; }
+body.dark-mode .db-panel__icon--teal    { background: rgba(13,148,136,.15) !important; }
+body.dark-mode .db-panel__icon--amber   { background: rgba(245,158,11,.15) !important; }
+body.dark-mode .db-panel__icon--indigo  { background: rgba(99,102,241,.15) !important; }
+
+/* Mini stats (incident-reports.php) */
+body.dark-mode .db-mini-stat {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .db-mini-stat .lbl { color: #94a3b8 !important; }
+
+/* Chart cards (incident-reports.php) */
+body.dark-mode .db-chart-card {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .db-chart-card__header {
+    border-bottom-color: #334155 !important;
+}
+body.dark-mode .db-chart-card__header h3 { color: #f1f5f9 !important; }
+
+/* Tabs (incident-reports.php) */
+body.dark-mode .db-tab-nav { border-bottom-color: #334155 !important; }
+body.dark-mode .db-tab-btn { color: #94a3b8 !important; }
+body.dark-mode .db-tab-btn:hover { color: #e2e8f0 !important; }
+body.dark-mode .db-tab-btn.active {
+    color: #f1f5f9 !important;
+    border-bottom-color: #60a5fa !important;
+}
+
+/* Inputs & selects */
+body.dark-mode .db-input,
+body.dark-mode .db-select {
+    background: #334155 !important;
+    border-color: #475569 !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .db-input:focus,
+body.dark-mode .db-select:focus {
+    border-color: #60a5fa !important;
+    box-shadow: 0 0 0 3px rgba(96,165,250,.15) !important;
+}
+body.dark-mode .db-select option { background: #334155; color: #e2e8f0; }
+body.dark-mode .db-filter-label { color: #94a3b8 !important; }
+
+/* Buttons */
+body.dark-mode .db-btn--ghost {
+    background: #334155 !important;
+    border-color: #475569 !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .db-btn--ghost:hover {
+    background: #475569 !important;
+    color: #f1f5f9 !important;
+}
+
+/* Table */
+body.dark-mode .db-table tbody tr { border-bottom-color: #334155 !important; }
+body.dark-mode .db-table tbody tr:hover {
+    background: #243044 !important;
+    box-shadow: inset 3px 0 0 var(--db-rose) !important;
+}
+body.dark-mode .db-table tbody td { color: #e2e8f0 !important; }
+body.dark-mode .db-table tbody td strong { color: #f1f5f9 !important; }
+body.dark-mode .db-id     { color: #a5b4fc !important; }
+body.dark-mode .db-text-sm { color: #94a3b8 !important; }
+
+/* Badges */
+body.dark-mode .db-badge--rose    { background: rgba(225,29,72,.2)  !important; color: #fda4af !important; }
+body.dark-mode .db-badge--amber   { background: rgba(245,158,11,.2) !important; color: #fcd34d !important; }
+body.dark-mode .db-badge--sky     { background: rgba(14,165,233,.2) !important; color: #7dd3fc !important; }
+body.dark-mode .db-badge--indigo  { background: rgba(99,102,241,.2) !important; color: #a5b4fc !important; }
+body.dark-mode .db-badge--success { background: rgba(16,185,129,.2) !important; color: #6ee7b7 !important; }
+body.dark-mode .db-badge--teal    { background: rgba(13,148,136,.2) !important; color: #5eead4 !important; }
+body.dark-mode .db-badge--muted   { background: #334155 !important; color: #94a3b8 !important; border-color: #475569 !important; }
+body.dark-mode .db-badge--info    { background: rgba(59,130,246,.2) !important; color: #93c5fd !important; }
+
+/* Hover preview card */
+body.dark-mode .db-preview {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .db-preview__header { border-bottom-color: #334155 !important; }
+body.dark-mode .db-preview__title  { color: #f1f5f9 !important; }
+body.dark-mode .db-preview__type   { color: #94a3b8 !important; }
+body.dark-mode .db-preview__label  { color: #64748b !important; }
+body.dark-mode .db-preview__val    { color: #e2e8f0 !important; }
+body.dark-mode .db-preview__footer { color: #64748b !important; border-top-color: #334155 !important; }
+
+/* Pagination */
+body.dark-mode .db-page-btn {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .db-page-btn:hover,
+body.dark-mode .db-page-btn.active {
+    background: #3b82f6 !important;
+    border-color: #3b82f6 !important;
+    color: #fff !important;
+}
+
+/* Alerts */
+body.dark-mode .db-alert--success {
+    background: rgba(16,185,129,.15) !important;
+    color: #6ee7b7 !important;
+    border-color: #10b981 !important;
+}
+body.dark-mode .db-alert--error {
+    background: rgba(239,68,68,.15) !important;
+    color: #fca5a5 !important;
+    border-color: #ef4444 !important;
+}
+
+/* Empty state */
+body.dark-mode .db-empty i { color: #334155 !important; }
+body.dark-mode .db-empty p { color: #94a3b8 !important; }
 </style>
+
 
 <div class="rm-hero">
     <div class="rm-hero__ring rm-hero__ring--1"></div>

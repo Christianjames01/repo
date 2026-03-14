@@ -208,6 +208,228 @@ body{font-family:'Sora',sans-serif;background:var(--db-bg);color:var(--db-text);
 .db-preview__footer{font-size:.72rem;color:#adb5bd;display:flex;align-items:center;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid #f0f0f0;}
 @media print{.no-print{display:none !important}}
 @media(max-width:768px){.rm-hero{padding:20px;border-radius:0;}.db-preview{display:none !important;}}
+/* ══════════════════════════════════════
+   DARK MODE OVERRIDES
+══════════════════════════════════════ */
+body.dark-mode { background: #0f172a !important; color: #e2e8f0 !important; }
+
+body.dark-mode .db-panel {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .db-panel__header {
+    border-bottom-color: #334155 !important;
+}
+body.dark-mode .db-panel__title h2 {
+    color: #f1f5f9 !important;
+}
+body.dark-mode .db-panel__icon--teal {
+    background: #0d2e2a !important;
+    color: #2dd4bf !important;
+}
+body.dark-mode .db-stat-card {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .db-stat-card:hover,
+body.dark-mode .db-stat-card.active {
+    box-shadow: 0 0 0 3px rgba(148,163,184,.15), var(--db-shadow-lg) !important;
+}
+body.dark-mode .db-stat-card__icon--teal {
+    background: #0d2e2a !important;
+    color: #2dd4bf !important;
+}
+body.dark-mode .db-stat-card__icon--amber {
+    background: #27211a !important;
+    color: #fbbf24 !important;
+}
+body.dark-mode .db-stat-card__icon--sky {
+    background: #0c2a40 !important;
+    color: #38bdf8 !important;
+}
+body.dark-mode .db-stat-card__icon--success {
+    background: #052e16 !important;
+    color: #4ade80 !important;
+}
+body.dark-mode .db-stat-card__icon--rose {
+    background: #2d1c1c !important;
+    color: #fb7185 !important;
+}
+body.dark-mode .db-stat-card__icon--indigo {
+    background: #1e1b4b !important;
+    color: #a5b4fc !important;
+}
+body.dark-mode .db-stat-card__label {
+    color: #64748b !important;
+}
+body.dark-mode .db-tab-nav {
+    border-bottom-color: #334155 !important;
+}
+body.dark-mode .db-tab-btn {
+    color: #64748b !important;
+}
+body.dark-mode .db-tab-btn:hover,
+body.dark-mode .db-tab-btn.active {
+    color: #f1f5f9 !important;
+    border-bottom-color: #60a5fa !important;
+}
+body.dark-mode .db-input,
+body.dark-mode .db-select {
+    background: #334155 !important;
+    color: #e2e8f0 !important;
+    border-color: #475569 !important;
+}
+body.dark-mode .db-input:focus,
+body.dark-mode .db-select:focus {
+    border-color: #60a5fa !important;
+    box-shadow: 0 0 0 3px rgba(96,165,250,.15) !important;
+}
+body.dark-mode .db-input option,
+body.dark-mode .db-select option {
+    background: #334155 !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .db-filter-label {
+    color: #94a3b8 !important;
+}
+body.dark-mode .db-table thead tr {
+    background: linear-gradient(135deg, #0f172a, #1e293b) !important;
+}
+body.dark-mode .db-table thead th {
+    color: rgba(148,163,184,.9) !important;
+}
+body.dark-mode .db-table tbody tr {
+    border-bottom-color: #334155 !important;
+}
+body.dark-mode .db-table tbody tr.req-row:hover {
+    background: #1e293b !important;
+    box-shadow: inset 3px 0 0 #2dd4bf !important;
+}
+body.dark-mode .db-table tbody td {
+    color: #e2e8f0 !important;
+}
+body.dark-mode .db-text-sm {
+    color: #94a3b8 !important;
+}
+body.dark-mode .db-id {
+    color: #a5b4fc !important;
+}
+body.dark-mode .db-badge--teal {
+    background: #0d2e2a !important;
+    color: #2dd4bf !important;
+}
+body.dark-mode .db-badge--amber {
+    background: #27211a !important;
+    color: #fbbf24 !important;
+}
+body.dark-mode .db-badge--sky {
+    background: #0c2a40 !important;
+    color: #38bdf8 !important;
+}
+body.dark-mode .db-badge--success {
+    background: #052e16 !important;
+    color: #4ade80 !important;
+}
+body.dark-mode .db-badge--rose {
+    background: #2d1c1c !important;
+    color: #fb7185 !important;
+}
+body.dark-mode .db-badge--indigo {
+    background: #1e1b4b !important;
+    color: #a5b4fc !important;
+}
+body.dark-mode .db-badge--muted {
+    background: #1e293b !important;
+    color: #94a3b8 !important;
+    border-color: #475569 !important;
+}
+body.dark-mode .db-alert--success {
+    background: #052e16 !important;
+    color: #86efac !important;
+    border-color: #4ade80 !important;
+}
+body.dark-mode .db-alert--error {
+    background: #2d1c1c !important;
+    color: #fca5a5 !important;
+    border-color: #ef4444 !important;
+}
+body.dark-mode .db-alert--info {
+    background: #0c2a40 !important;
+    color: #93c5fd !important;
+    border-color: #3b82f6 !important;
+}
+body.dark-mode .db-btn--ghost {
+    background: #1e293b !important;
+    color: #e2e8f0 !important;
+    border-color: #475569 !important;
+}
+body.dark-mode .db-btn--ghost:hover {
+    background: #334155 !important;
+}
+body.dark-mode .db-empty i {
+    color: #334155 !important;
+}
+body.dark-mode .db-empty p {
+    color: #64748b !important;
+}
+/* Mini stats (reports tab) */
+body.dark-mode .db-mini-stat {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .db-mini-stat .lbl {
+    color: #64748b !important;
+}
+/* Chart cards (reports tab) */
+body.dark-mode .db-chart-card {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .db-chart-card__header {
+    border-bottom-color: #334155 !important;
+}
+body.dark-mode .db-chart-card__header h3 {
+    color: #f1f5f9 !important;
+}
+/* Hover preview */
+body.dark-mode .db-preview {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .db-preview__header {
+    border-bottom-color: #334155 !important;
+}
+body.dark-mode .db-preview__title {
+    color: #f1f5f9 !important;
+}
+body.dark-mode .db-preview__type,
+body.dark-mode .db-preview__msg,
+body.dark-mode .db-preview__label {
+    color: #94a3b8 !important;
+}
+body.dark-mode .db-preview__val {
+    color: #e2e8f0 !important;
+}
+body.dark-mode .db-preview__footer {
+    border-top-color: #334155 !important;
+    color: #64748b !important;
+}
+/* Modals */
+body.dark-mode .db-modal__box {
+    background: #1e293b !important;
+}
+body.dark-mode .db-modal__body {
+    background: #1e293b !important;
+}
+body.dark-mode .db-notice--success {
+    background: #052e16 !important;
+    color: #86efac !important;
+}
+body.dark-mode .db-notice--amber {
+    background: #27211a !important;
+    color: #fbbf24 !important;
+}
 </style>
 
 <div class="rm-hero">

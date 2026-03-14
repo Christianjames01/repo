@@ -244,6 +244,231 @@ include '../../../includes/header.php';
 ?>
 
 <style>
+    /* ══════════════════════════════════════
+   PAYSLIP DARK MODE OVERRIDES
+══════════════════════════════════════ */
+
+/* Filter bar */
+body.dark-mode .ps-filter {
+    background: #1e293b;
+    border-color: #334155;
+}
+body.dark-mode .ps-filter__field label {
+    color: #94a3b8;
+}
+body.dark-mode .ps-filter__field select,
+body.dark-mode .ps-filter__field input[type="month"] {
+    background: #334155;
+    color: #e2e8f0;
+    border-color: #475569;
+}
+
+/* Stat cards */
+body.dark-mode .ps-stat-card {
+    background: #1e293b;
+    border-color: #334155;
+}
+body.dark-mode .ps-stat-card__label {
+    color: #94a3b8;
+}
+body.dark-mode .ps-stat-card__sub {
+    color: #64748b;
+}
+
+/* Salary form panel */
+body.dark-mode .ps-salary-fields {
+    background: #1e293b;
+}
+body.dark-mode .ps-field label {
+    color: #94a3b8;
+}
+body.dark-mode .ps-field-hint {
+    color: #64748b;
+}
+body.dark-mode .ps-input-group {
+    border-color: #475569;
+}
+body.dark-mode .ps-input-group:focus-within {
+    border-color: #60a5fa;
+    box-shadow: 0 0 0 3px rgba(96,165,250,.15);
+}
+body.dark-mode .ps-input-group__prefix,
+body.dark-mode .ps-input-group__suffix {
+    background: #243044;
+    border-color: #475569;
+    color: #64748b;
+}
+body.dark-mode .ps-input-group input {
+    background: #1e293b;
+    color: #e2e8f0;
+}
+
+/* Info note */
+body.dark-mode .ps-note {
+    background: #0c1f4a;
+    border-color: #1e3a5f;
+    border-left-color: #3b82f6;
+    color: #93c5fd;
+}
+
+/* Payslip summary panel */
+body.dark-mode .ps-summary__row {
+    border-color: #334155;
+}
+body.dark-mode .ps-summary__label {
+    color: #e2e8f0;
+}
+body.dark-mode .ps-summary__sub {
+    color: #64748b;
+}
+body.dark-mode .ps-summary__value {
+    color: #e2e8f0;
+}
+body.dark-mode .ps-summary__section-head {
+    background: #243044;
+    color: #64748b;
+}
+body.dark-mode .ps-summary__row--deduct {
+    background: #2a1015 !important;
+}
+body.dark-mode .ps-summary__row--gross {
+    background: #052e1c !important;
+}
+/* Gross total row */
+body.dark-mode .ps-summary__row[style*="background:#f8fafc"] {
+    background: #243044 !important;
+}
+body.dark-mode .ps-summary__row[style*="background:#fff1f2"] {
+    background: #2a1015 !important;
+}
+/* Net pay row stays navy — fine as-is */
+
+/* Other deductions inline input */
+body.dark-mode .ps-summary__inline-input {
+    background: #334155;
+    color: #e2e8f0;
+    border-color: #475569;
+}
+body.dark-mode .ps-summary__inline-input:focus {
+    border-color: #60a5fa;
+    box-shadow: 0 0 0 3px rgba(96,165,250,.15);
+}
+
+/* Action bar */
+body.dark-mode .ps-action-bar {
+    background: #243044;
+    border-color: #334155;
+}
+body.dark-mode .ps-action-bar div {
+    color: #94a3b8;
+}
+
+/* Attendance detail table */
+body.dark-mode .ps-att-table tbody tr:hover {
+    background: #243044;
+}
+body.dark-mode .ps-att-table tbody td {
+    color: #e2e8f0;
+}
+body.dark-mode .ps-att-table tfoot td {
+    background: #243044;
+    border-color: #334155;
+    color: #e2e8f0;
+}
+
+/* Empty state */
+body.dark-mode .ps-empty h3 {
+    color: #e2e8f0;
+}
+body.dark-mode .ps-empty p {
+    color: #64748b;
+}
+body.dark-mode .ps-empty i {
+    color: #334155;
+}
+
+/* Confirm modal table */
+body.dark-mode .ps-confirm-table td {
+    border-color: #334155;
+    color: #e2e8f0;
+}
+body.dark-mode .ps-confirm-table .total-row td {
+    background: #052e1c;
+    color: #6ee7b7;
+}
+
+/* Modal body inline hardcoded bg */
+body.dark-mode #confirmGenerationModal .db-modal__body div[style*="background:var(--db-surf2)"] {
+    background: #243044 !important;
+    border-color: #334155 !important;
+}
+
+/* Page header */
+body.dark-mode .ps-header__title {
+    color: #e2e8f0;
+}
+body.dark-mode .ps-header__sub {
+    color: #94a3b8;
+}
+/* ── Payslip Summary row fixes ── */
+
+/* Overtime Pay row */
+body.dark-mode .ps-summary__row[style*="background:#f0fdf4"] {
+    background: #052e1c !important;
+}
+body.dark-mode #display_overtime {
+    color: #6ee7b7 !important;
+}
+
+/* Gross Pay row */
+body.dark-mode .ps-summary__row[style*="background:#f8fafc"] {
+    background: #1e293b !important;
+    border-top-color: #334155 !important;
+}
+body.dark-mode .ps-summary__row[style*="background:#f8fafc"] .ps-summary__label {
+    color: #e2e8f0 !important;
+}
+body.dark-mode #display_gross {
+    color: #e2e8f0 !important;
+}
+
+/* Late Deductions row */
+body.dark-mode .ps-summary__row[style*="background:#fff8f8"] {
+    background: #2a1015 !important;
+}
+body.dark-mode .ps-summary__row[style*="background:#fff8f8"] .ps-summary__label {
+    color: #fca5a5 !important;
+}
+body.dark-mode .ps-summary__row[style*="background:#fff8f8"] .ps-summary__sub {
+    color: #94a3b8 !important;
+}
+
+/* Other Deductions inline input — fix the dark-on-dark */
+body.dark-mode .ps-summary__inline-input {
+    background: #334155 !important;
+    color: #e2e8f0 !important;
+    border-color: #60a5fa !important;
+}
+
+/* Total Deductions row */
+body.dark-mode .ps-summary__row[style*="background:#fff1f2"] {
+    background: #3b0a12 !important;
+    border-top-color: #7f1d1d !important;
+}
+body.dark-mode .ps-summary__row[style*="background:#fff1f2"] .ps-summary__label {
+    color: #fca5a5 !important;
+}
+body.dark-mode #display_total_deductions {
+    color: #fca5a5 !important;
+}
+
+/* Action bar status text */
+body.dark-mode .ps-action-bar div {
+    color: #94a3b8 !important;
+}
+body.dark-mode .ps-action-bar strong {
+    color: #6ee7b7 !important;
+}
 /* ── Page-level overrides / additions ── */
 .ps-page { padding: 0 0 40px; }
 

@@ -205,7 +205,158 @@ include '../../includes/header.php';
     <i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($error_message); ?>
 </div>
 <?php endif; ?>
+<style>
+    /* ══════════════════════════════════════
+   MANAGE OFFICIALS DARK MODE OVERRIDES
+══════════════════════════════════════ */
 
+/* Page header */
+body.dark-mode .page-header {
+    background: #1e293b;
+    border-color: #334155;
+}
+body.dark-mode .page-header h1,
+body.dark-mode .page-header p {
+    color: #e2e8f0;
+}
+
+/* Table container */
+body.dark-mode .table-container {
+    background: #1e293b;
+    border-color: #334155;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+}
+body.dark-mode .table-container table {
+    background: #1e293b;
+}
+body.dark-mode .table-container thead th {
+    background: #0f172a;
+    color: #94a3b8;
+    border-color: #334155;
+}
+body.dark-mode .table-container tbody td {
+    border-color: #334155;
+    color: #e2e8f0;
+}
+body.dark-mode .table-container tbody tr:hover {
+    background: #243044;
+}
+body.dark-mode .table-container tbody tr.inactive {
+    background: #1a2030;
+    opacity: 0.7;
+}
+
+/* Avatar initials */
+body.dark-mode .avatar {
+    background: #334155;
+    border-color: #475569;
+}
+body.dark-mode .avatar span {
+    color: #e2e8f0;
+}
+
+/* Status badges */
+body.dark-mode .status.active {
+    background: #064e3b;
+    color: #34d399;
+}
+body.dark-mode .status.inactive {
+    background: #1f2937;
+    color: #94a3b8;
+}
+
+/* Action buttons */
+body.dark-mode .btn-icon {
+    background: #334155;
+    border-color: #475569;
+    color: #94a3b8;
+}
+body.dark-mode .btn-icon:hover {
+    background: #475569;
+    color: #e2e8f0;
+}
+body.dark-mode .btn-icon.delete:hover {
+    background: #7f1d1d;
+    color: #fca5a5;
+    border-color: #991b1b;
+}
+
+/* Modals */
+body.dark-mode .modal-content {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .modal-header {
+    background: #0f172a;
+    border-bottom-color: #334155 !important;
+}
+body.dark-mode .modal-header h2 {
+    color: #e2e8f0;
+}
+body.dark-mode .close-btn {
+    background: #334155;
+    color: #94a3b8;
+    border: none;
+}
+body.dark-mode .close-btn:hover {
+    background: #475569;
+    color: #e2e8f0;
+}
+
+/* Form elements inside modals */
+body.dark-mode .form-group label {
+    color: #e2e8f0;
+}
+body.dark-mode .form-group small {
+    color: #64748b;
+}
+body.dark-mode .modal-content input[type="text"],
+body.dark-mode .modal-content input[type="date"],
+body.dark-mode .modal-content input[type="file"],
+body.dark-mode .modal-content select {
+    background: #334155 !important;
+    color: #e2e8f0 !important;
+    border-color: #475569 !important;
+}
+body.dark-mode .modal-content input::placeholder {
+    color: #64748b !important;
+}
+
+/* Delete modal hardcoded inline styles — override */
+body.dark-mode #deleteModal .modal-header {
+    background-color: #3b0000 !important;
+    border-bottom-color: #dc3545 !important;
+}
+body.dark-mode #deleteModal div[style*="background-color: #fff3cd"] {
+    background-color: #2a1f00 !important;
+    border-color: #854d0e !important;
+}
+body.dark-mode #deleteModal strong {
+    color: #fcd34d !important;
+}
+
+/* Alert messages */
+body.dark-mode .alert.alert-success {
+    background: #064e3b;
+    border-color: #065f46;
+    color: #34d399;
+}
+body.dark-mode .alert.alert-error {
+    background: #3b0000;
+    border-color: #7f1d1d;
+    color: #fca5a5;
+}
+
+/* Toggle modal message text */
+body.dark-mode #toggleMessage {
+    color: #e2e8f0;
+}
+body.dark-mode #toggleModal div[style*="padding: 20px"],
+body.dark-mode #deleteModal div[style*="padding: 20px"] {
+    color: #e2e8f0;
+}
+</style>
 <div class="table-container">
     <table>
         <thead>

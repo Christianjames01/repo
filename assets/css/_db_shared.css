@@ -1578,3 +1578,430 @@ body {
 html {
     scroll-behavior: smooth;
 }
+
+<style>
+
+/* ══════════════════════════════════════
+   DARK MODE OVERRIDES — view-request.php
+══════════════════════════════════════ */
+body.dark-mode {
+    background: #0f172a !important;
+    color: #e2e8f0 !important;
+}
+
+body.dark-mode .db-panel {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+
+body.dark-mode .db-panel__header {
+    border-bottom-color: #334155 !important;
+}
+
+body.dark-mode .db-panel__title h2 {
+    color: #f1f5f9 !important;
+}
+
+body.dark-mode .db-panel__icon--purple {
+    background: #1e1b4b !important;
+    color: #a5b4fc !important;
+}
+
+body.dark-mode .db-panel__icon--sky {
+    background: #0c2a40 !important;
+    color: #38bdf8 !important;
+}
+
+body.dark-mode .db-panel__icon--amber {
+    background: #27211a !important;
+    color: #fbbf24 !important;
+}
+
+body.dark-mode .db-panel__icon--navy {
+    background: #1e3a5f !important;
+    color: #93c5fd !important;
+}
+
+body.dark-mode .db-panel__icon--muted {
+    background: #334155 !important;
+    color: #94a3b8 !important;
+}
+
+body.dark-mode .db-info-item {
+    background: #243044 !important;
+    border-color: #334155 !important;
+}
+
+body.dark-mode .db-info-item:hover {
+    background: #1e3a5f !important;
+}
+
+body.dark-mode .db-info-label {
+    color: #64748b !important;
+}
+
+body.dark-mode .db-info-value {
+    color: #e2e8f0 !important;
+}
+
+body.dark-mode .db-info-value--block {
+    color: #94a3b8 !important;
+}
+
+/* Purpose block */
+body.dark-mode .db-info-value--block[style*="border-left"] {
+    background: #243044 !important;
+    color: #e2e8f0 !important;
+}
+
+body.dark-mode .db-badge--amber {
+    background: #27211a !important;
+    color: #fbbf24 !important;
+}
+
+body.dark-mode .db-badge--sky {
+    background: #0c2a40 !important;
+    color: #38bdf8 !important;
+}
+
+body.dark-mode .db-badge--success {
+    background: #052e16 !important;
+    color: #4ade80 !important;
+}
+
+body.dark-mode .db-badge--rose,
+body.dark-mode .db-badge--danger {
+    background: #2d1c1c !important;
+    color: #fb7185 !important;
+}
+
+body.dark-mode .db-badge--muted {
+    background: #1e293b !important;
+    color: #94a3b8 !important;
+    border-color: #475569 !important;
+}
+
+body.dark-mode .db-fee {
+    color: #4ade80 !important;
+}
+
+/* Admin action box */
+body.dark-mode .db-action-box {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+
+body.dark-mode .db-action-box__title {
+    color: #f1f5f9 !important;
+}
+
+body.dark-mode .db-divider {
+    border-color: #334155 !important;
+}
+
+body.dark-mode .db-form-label {
+    color: #94a3b8 !important;
+}
+
+body.dark-mode .db-form-control,
+body.dark-mode .db-form-select,
+body.dark-mode .db-form-textarea {
+    background: #334155 !important;
+    color: #e2e8f0 !important;
+    border-color: #475569 !important;
+}
+
+body.dark-mode .db-form-control:focus,
+body.dark-mode .db-form-select:focus,
+body.dark-mode .db-form-textarea:focus {
+    border-color: #60a5fa !important;
+    box-shadow: 0 0 0 3px rgba(96, 165, 250, .15) !important;
+}
+
+body.dark-mode .db-form-control option,
+body.dark-mode .db-form-select option {
+    background: #334155 !important;
+    color: #e2e8f0 !important;
+}
+
+/* Chat / remarks thread */
+body.dark-mode .db-chat {
+    background: #1e293b !important;
+}
+
+body.dark-mode .db-chat-bubble--remark {
+    background: #243044 !important;
+    border-color: #334155 !important;
+    color: #e2e8f0 !important;
+}
+
+body.dark-mode .db-chat-bubble--admin {
+    background: #0c2a40 !important;
+    color: #e2e8f0 !important;
+}
+
+body.dark-mode .db-chat-bubble--resident {
+    background: #1e1b4b !important;
+    color: #e2e8f0 !important;
+}
+
+body.dark-mode .db-chat-meta {
+    color: #64748b !important;
+}
+
+/* Reply input area */
+body.dark-mode [style*="background:var(--db-surf2)"][style*="border-top"] {
+    background: #243044 !important;
+    border-top-color: #334155 !important;
+}
+
+/* Requirements cards */
+body.dark-mode .db-req-card {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+
+body.dark-mode .db-req-card [style*="border-bottom"] {
+    border-bottom-color: #334155 !important;
+}
+
+body.dark-mode .db-req-card__body {
+    border-top-color: #334155 !important;
+}
+
+body.dark-mode .db-req-card__pdf {
+    background: #243044 !important;
+}
+
+/* Status panel */
+body.dark-mode .db-status-panel {
+    background: #243044 !important;
+    border-color: #334155 !important;
+}
+
+/* Timeline */
+body.dark-mode .db-timeline-item {
+    border-left-color: #334155 !important;
+}
+
+body.dark-mode .db-timeline-card {
+    background: #243044 !important;
+    border-color: #334155 !important;
+}
+
+body.dark-mode .db-timeline-card:hover {
+    background: #1e3a5f !important;
+}
+
+body.dark-mode .db-timeline-author {
+    color: #f1f5f9 !important;
+}
+
+body.dark-mode .db-timeline-date {
+    color: #94a3b8 !important;
+}
+
+body.dark-mode .db-alert--success {
+    background: #052e16 !important;
+    color: #86efac !important;
+    border-color: #4ade80 !important;
+}
+
+body.dark-mode .db-alert--error {
+    background: #2d1c1c !important;
+    color: #fca5a5 !important;
+    border-color: #ef4444 !important;
+}
+
+body.dark-mode .db-alert--info {
+    background: #0c2a40 !important;
+    color: #93c5fd !important;
+    border-color: #3b82f6 !important;
+}
+
+body.dark-mode .db-btn--ghost {
+    background: #1e293b !important;
+    color: #e2e8f0 !important;
+    border-color: #475569 !important;
+}
+
+body.dark-mode .db-btn--ghost:hover {
+    background: #334155 !important;
+}
+
+/* Image preview modal */
+body.dark-mode .modal-content {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+    color: #e2e8f0 !important;
+}
+
+body.dark-mode .modal-header {
+    border-bottom-color: #334155 !important;
+}
+
+body.dark-mode .modal-body[style*="background:var(--db-surf2)"] {
+    background: #243044 !important;
+}
+
+/* ── Panel header gradient fix ── */
+body.dark-mode .db-panel__header {
+    background: #1e293b !important;
+    border-bottom-color: #334155 !important;
+}
+
+body.dark-mode .db-panel__title h2,
+body.dark-mode .db-panel__title h2 * {
+    color: #f1f5f9 !important;
+}
+
+/* ── Attachment / req card header text ── */
+body.dark-mode .db-req-card [style*="border-bottom"] span,
+body.dark-mode .db-req-card [style*="border-bottom"] strong,
+body.dark-mode .db-req-card [style*="border-bottom"] {
+    color: #f1f5f9 !important;
+    border-bottom-color: #334155 !important;
+}
+
+/* ── Side card header text ── */
+body.dark-mode .db-side-card__header {
+    background: #243044 !important;
+    border-bottom-color: #334155 !important;
+}
+
+body.dark-mode .db-side-card__header span,
+body.dark-mode .db-side-card__header * {
+    color: #f1f5f9 !important;
+}
+
+body.dark-mode .db-side-card {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+
+body.dark-mode .db-side-card__body {
+    background: #1e293b !important;
+    color: #e2e8f0 !important;
+}
+
+/* ── Checklist ── */
+body.dark-mode .db-checklist li {
+    border-bottom-color: #334155 !important;
+    color: #e2e8f0 !important;
+}
+
+/* ── Reply area text ── */
+body.dark-mode .db-chat p,
+body.dark-mode .db-chat span:not(.db-chat-meta) {
+    color: #e2e8f0 !important;
+}
+
+/* ── "No remarks or replies yet" text ── */
+body.dark-mode .db-chat>p {
+    color: #94a3b8 !important;
+}
+
+/* ── Reply label ── */
+body.dark-mode [style*="background:var(--db-surf2)"][style*="border-top"] label,
+body.dark-mode [style*="background:var(--db-surf2)"][style*="border-top"] .db-form-label {
+    color: #94a3b8 !important;
+}
+
+/* ── Processing table ── */
+body.dark-mode .db-proc-table tr {
+    border-bottom-color: #334155 !important;
+}
+
+body.dark-mode .db-proc-table td {
+    color: #e2e8f0 !important;
+}
+
+/* ── Action box title ── */
+body.dark-mode .db-action-box__title,
+body.dark-mode .db-action-box__title * {
+    color: #f1f5f9 !important;
+}
+
+/* ── Fee banner ── */
+body.dark-mode .db-fee-banner {
+    background: #27211a !important;
+    border-color: #92400e !important;
+}
+
+/* ── Info box variants ── */
+body.dark-mode .db-info-box {
+    background: #0c2a40 !important;
+    color: #93c5fd !important;
+    border-left-color: #3b82f6 !important;
+}
+
+body.dark-mode .db-info-box--warning {
+    background: #27211a !important;
+    color: #fbbf24 !important;
+    border-left-color: #f59e0b !important;
+}
+
+body.dark-mode .db-info-box--success {
+    background: #052e16 !important;
+    color: #86efac !important;
+    border-left-color: #10b981 !important;
+}
+
+/* ── Upload zone ── */
+body.dark-mode .db-upload-zone {
+    background: #243044 !important;
+    border-color: #475569 !important;
+    color: #94a3b8 !important;
+}
+
+body.dark-mode .db-upload-zone:hover {
+    border-color: #60a5fa !important;
+    background: #1e3a5f !important;
+}
+
+body.dark-mode .db-req-item {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+
+body.dark-mode .db-req-item__name {
+    color: #f1f5f9 !important;
+}
+
+body.dark-mode .db-preview-container {
+    background: #243044 !important;
+    border-color: #334155 !important;
+}
+
+/* ── Req item mandatory/optional left border — keep colors ── */
+body.dark-mode .db-req-item--mandatory {
+    border-left-color: #fb7185 !important;
+}
+
+body.dark-mode .db-req-item--optional {
+    border-left-color: #64748b !important;
+}
+
+/* ── Summary items ── */
+body.dark-mode .db-summary-item label {
+    color: #94a3b8 !important;
+}
+
+body.dark-mode .db-summary-item strong {
+    color: #f1f5f9 !important;
+}
+
+/* ── Loading box ── */
+body.dark-mode .db-loading-box {
+    background: #1e293b !important;
+    color: #e2e8f0 !important;
+}
+
+body.dark-mode .db-loading-box .spinner {
+    border-color: #334155 !important;
+    border-top-color: #60a5fa !important;
+}
+
+body.dark-mode .db-loading-box p {
+    color: #94a3b8 !important;
+}

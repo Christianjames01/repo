@@ -50,6 +50,7 @@ $user_summary = fetchAll($conn,
         u.user_id,
         CONCAT(r.first_name,' ',r.last_name) as full_name,
         u.username, u.role,
+        r.profile_photo,
         COUNT(*) as total_days,
         SUM(CASE WHEN a.status='Present'  THEN 1 ELSE 0 END) as present_days,
         SUM(CASE WHEN a.status='Late'     THEN 1 ELSE 0 END) as late_days,
@@ -64,7 +65,7 @@ $user_summary = fetchAll($conn,
     LEFT JOIN tbl_residents r ON u.resident_id=r.resident_id
     LEFT JOIN tbl_attendance a ON u.user_id=a.user_id AND a.attendance_date BETWEEN ? AND ?
     WHERE u.role IN ('Admin','Staff','Tanod','Driver')
-    GROUP BY u.user_id
+    GROUP BY u.user_id, r.profile_photo
     ORDER BY attendance_percentage DESC",
     [$first_day, $last_day, $first_day, $last_day], 'ssss'
 );
@@ -83,6 +84,7 @@ $daily_trend = fetchAll($conn,
 
 $top_performers = fetchAll($conn,
     "SELECT u.user_id, CONCAT(r.first_name,' ',r.last_name) as full_name, u.role,
+        r.profile_photo,
         COUNT(*) as total_days,
         SUM(CASE WHEN a.status IN ('Present','Late') THEN 1 ELSE 0 END) as attended_days,
         ROUND((SUM(CASE WHEN a.status IN ('Present','Late') THEN 1 ELSE 0 END)/COUNT(*))*100,2) as rate
@@ -90,7 +92,7 @@ $top_performers = fetchAll($conn,
     LEFT JOIN tbl_residents r ON u.resident_id=r.resident_id
     LEFT JOIN tbl_attendance a ON u.user_id=a.user_id AND a.attendance_date BETWEEN ? AND ?
     WHERE u.role IN ('Admin','Staff','Tanod','Driver')
-    GROUP BY u.user_id HAVING attended_days>0
+    GROUP BY u.user_id, r.profile_photo HAVING attended_days>0
     ORDER BY rate DESC LIMIT 5",
     [$first_day, $last_day], 'ss'
 );
@@ -140,6 +142,147 @@ include '../../../includes/header.php';
      INLINE STYLES — mirrors index.php tokens
      ══════════════════════════════════════════════════════════════════════ -->
 <style>
+    /* ══════════════════════════════════════
+   ATTENDANCE REPORTS DARK MODE OVERRIDES
+══════════════════════════════════════ */
+
+/* Filter card */
+body.dark-mode .att-filter-card {
+    background: #1e293b;
+    border-color: #334155;
+}
+body.dark-mode .att-filter-group label {
+    color: #94a3b8;
+}
+
+/* Role pills */
+body.dark-mode .role-pill--admin   { background: #3b0000; color: #fca5a5; }
+body.dark-mode .role-pill--staff   { background: #2a1f00; color: #fcd34d; }
+body.dark-mode .role-pill--tanod   { background: #0c1f4a; color: #93c5fd; }
+body.dark-mode .role-pill--driver  { background: #052e1c; color: #6ee7b7; }
+
+/* Staff name */
+body.dark-mode .staff-name {
+    color: #e2e8f0 !important;
+}
+
+/* Payslip stat cards */
+body.dark-mode .pay-stat {
+    background: #1e293b;
+    border-color: #334155;
+}
+body.dark-mode .pay-stat__lbl { color: #64748b; }
+body.dark-mode .pay-stat__val { color: #e2e8f0; }
+body.dark-mode .pay-stat__sub { color: #64748b; }
+
+/* Quick action cards */
+body.dark-mode .rpt-action-card {
+    background: #1e293b;
+    border-color: #334155;
+}
+body.dark-mode .rpt-action-card h5 {
+    color: #e2e8f0;
+}
+body.dark-mode .rpt-action-card p {
+    color: #94a3b8;
+}
+
+/* Top performers */
+body.dark-mode .perf-item {
+    border-color: #334155;
+}
+body.dark-mode .perf-name {
+    color: #e2e8f0;
+}
+body.dark-mode .perf-role {
+    color: #64748b;
+}
+body.dark-mode .perf-rank--2 {
+    background: #334155;
+    color: #94a3b8;
+}
+
+/* Progress bar background */
+body.dark-mode .rpt-bar {
+    background: #334155;
+}
+
+/* Generation progress counters */
+body.dark-mode .gen-counter {
+    background: #243044;
+    border-color: #334155;
+}
+body.dark-mode .gen-counter__lbl {
+    color: #64748b;
+}
+
+/* Progress section text */
+body.dark-mode div[style*="Generation Progress"] {
+    color: #94a3b8 !important;
+}
+body.dark-mode div[style*="Generation Progress"] + div span {
+    color: #e2e8f0 !important;
+}
+
+/* Pending alert */
+body.dark-mode .rpt-pending-alert {
+    background: #2a1f00;
+    border-color: #854d0e;
+}
+body.dark-mode .rpt-pending-alert h6 {
+    color: #fcd34d;
+}
+body.dark-mode .rpt-pending-alert p {
+    color: #fcd34d;
+}
+body.dark-mode .rpt-pending-alert__icon {
+    color: #f59e0b;
+}
+
+/* Table search input */
+body.dark-mode #rpt-search {
+    background: #334155;
+    color: #e2e8f0;
+    border-color: #475569;
+}
+body.dark-mode #rpt-search:focus {
+    border-color: #60a5fa;
+    box-shadow: 0 0 0 3px rgba(96,165,250,.15);
+    background: #3d4f68;
+}
+body.dark-mode #rpt-search::placeholder {
+    color: #64748b;
+}
+
+/* Table total hours */
+body.dark-mode span[style*="color:#475569"] {
+    color: #94a3b8 !important;
+}
+
+/* Chart legend labels — update chart border color on dark mode */
+body.dark-mode canvas {
+    filter: none;
+}
+
+/* Progress percent label */
+body.dark-mode div[style*="font-weight:800;font-family:'DM Mono'"] {
+    color: #e2e8f0 !important;
+}
+
+/* Complete label inside progress bar */
+body.dark-mode .rpt-bar__fill strong {
+    color: #fff;
+}
+
+/* Payslip progress complete label */
+body.dark-mode span[style*="color:#10b981;font-family:'DM Mono'"] {
+    color: #34d399 !important;
+}
+
+/* Section heading text inside panels */
+body.dark-mode div[style*="color:#64748b;font-weight:600"] {
+    color: #94a3b8 !important;
+}
 /* ── Reuse index att-badge palette ────────────────────────────────────────── */
 .att-badge {
     display: inline-flex; align-items: center; gap: 4px;
@@ -539,6 +682,13 @@ include '../../../includes/header.php';
                     <div class="perf-rank <?php echo $idx === 0 ? 'perf-rank--1' : ($idx === 1 ? 'perf-rank--2' : 'perf-rank--n'); ?>">
                         <?php echo $idx === 0 ? '<i class="fas fa-trophy"></i>' : ($idx + 1); ?>
                     </div>
+                    <div class="staff-avatar" style="flex-shrink:0;">
+                        <?php if (!empty($p['profile_photo']) && file_exists('../../../uploads/profiles/' . $p['profile_photo'])): ?>
+                            <img src="../../../uploads/profiles/<?php echo htmlspecialchars($p['profile_photo']); ?>" alt="">
+                        <?php else: ?>
+                            <?php echo strtoupper(substr($p['full_name'], 0, 1)); ?>
+                        <?php endif; ?>
+                    </div>
                     <div>
                         <div class="perf-name"><?php echo htmlspecialchars($p['full_name']); ?></div>
                         <div class="perf-role"><?php echo htmlspecialchars($p['role']); ?></div>
@@ -692,7 +842,13 @@ include '../../../includes/header.php';
                 <tr>
                     <td>
                         <div class="staff-info">
-                            <div class="staff-avatar"><?php echo $initials; ?></div>
+                          <div class="staff-avatar">
+    <?php if (!empty($u['profile_photo']) && file_exists('../../../uploads/profiles/' . $u['profile_photo'])): ?>
+        <img src="../../../uploads/profiles/<?php echo htmlspecialchars($u['profile_photo']); ?>" alt="">
+    <?php else: ?>
+        <?php echo $initials; ?>
+    <?php endif; ?>
+</div>
                             <div>
                                 <div class="staff-name"><?php echo htmlspecialchars($displayName); ?></div>
                                 <div style="font-size:11px;color:#94a3b8;font-family:'DM Mono',monospace;">#<?php echo str_pad($u['user_id'],4,'0',STR_PAD_LEFT); ?></div>

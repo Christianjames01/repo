@@ -234,6 +234,75 @@ $extra_css = '<link rel="stylesheet" href="../../assets/css/officials.css">
             display: none;
         }
     }
+        /* ══════════════════════════════════════
+   OFFICIALS DARK MODE OVERRIDES
+══════════════════════════════════════ */
+body.dark-mode .officials-page {
+    background: #0f172a;
+}
+
+body.dark-mode .page-header {
+    /* already uses navy gradient — fine as-is */
+}
+
+body.dark-mode .two-column-layout {
+    background: #1e293b;
+    border-color: #334155;
+}
+
+body.dark-mode .other-officials-section {
+    background: #1e293b;
+    border-color: #334155;
+}
+
+body.dark-mode .section-title {
+    color: #e2e8f0 !important;
+    border-bottom-color: #334155 !important;
+}
+
+body.dark-mode .vertical-divider {
+    background: #334155;
+}
+
+body.dark-mode .official-box {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+}
+
+body.dark-mode .official-box:hover {
+    background: #243044 !important;
+    box-shadow: 0 8px 12px rgba(0,0,0,0.4);
+}
+
+body.dark-mode .official-box.captain {
+    border-top-color: #3b82f6 !important;
+}
+
+body.dark-mode .official-box.sk-captain {
+    border-top-color: #10b981 !important;
+}
+
+body.dark-mode .official-box h3 {
+    color: #e2e8f0 !important;
+}
+
+body.dark-mode .official-box .position {
+    color: #60a5fa !important;
+}
+
+body.dark-mode .official-box .term {
+    color: #94a3b8 !important;
+}
+
+body.dark-mode .official-box .photo {
+    border-color: #334155 !important;
+}
+
+body.dark-mode .connector {
+    background: linear-gradient(to bottom, #3b82f6, transparent);
+    opacity: 0.5;
+}
 </style>';
 include '../../includes/header.php';
 ?>
