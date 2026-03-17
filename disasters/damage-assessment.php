@@ -1,1070 +1,334 @@
 <?php
 /**
- * Damage Assessment Management - COMPLETE VERSION WITH PRINT
+ * Damage Assessment Management
  * Path: barangaylink/disasters/damage-assessment.php
  */
-
 require_once __DIR__ . '/../config/config.php';
-
-if (!isLoggedIn()) {
-    header('Location: ' . APP_URL . '/modules/auth/login.php');
-    exit();
-}
-
+if (!isLoggedIn()) { header('Location: ' . APP_URL . '/modules/auth/login.php'); exit(); }
 $user_role = $_SESSION['role_name'] ?? $_SESSION['role'] ?? '';
-if (!in_array($user_role, ['Admin', 'Super Admin','Staff', 'Secretary'])) {
-    header('Location: ' . APP_URL . '/modules/dashboard/index.php');
-    exit();
-}
-
+if (!in_array($user_role, ['Admin','Super Admin','Staff','Secretary'])) { header('Location: ' . APP_URL . '/modules/dashboard/index.php'); exit(); }
 $page_title = 'Damage Assessment';
 
-// Handle form submissions
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (isset($_POST['action'])) {
-        switch ($_POST['action']) {
-            case 'add_assessment':
-                $resident_id = sanitizeInput($_POST['resident_id']);
-                $disaster_type = sanitizeInput($_POST['disaster_type']);
-                $assessment_date = sanitizeInput($_POST['assessment_date']);
-                $location = sanitizeInput($_POST['location']);
-                $damage_type = sanitizeInput($_POST['damage_type']);
-                $severity = sanitizeInput($_POST['severity']);
-                $estimated_cost = sanitizeInput($_POST['estimated_cost']);
-                $description = sanitizeInput($_POST['description']);
-                $status = sanitizeInput($_POST['status']);
-                
-                // Validate resident exists
-                $resident_check = fetchOne($conn, "SELECT resident_id FROM tbl_residents WHERE resident_id = ?", [$resident_id], 'i');
-                if (!$resident_check) {
-                    setMessage('Invalid resident selected', 'error');
-                    header('Location: damage-assessment.php');
-                    exit();
-                }
-                
-                $sql = "INSERT INTO tbl_damage_assessments 
-                        (resident_id, disaster_type, assessment_date, location, damage_type, 
-                         severity, estimated_cost, description, status, assessed_by, created_at) 
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
-                
-                if (executeQuery($conn, $sql, 
-                    [$resident_id, $disaster_type, $assessment_date, $location, $damage_type, 
-                     $severity, $estimated_cost, $description, $status, getCurrentUserId()],
-                    'isssssdssi')) {
-                    
-                    logActivity($conn, getCurrentUserId(), "Added damage assessment for resident ID: $resident_id");
-                    setMessage('Damage assessment added successfully', 'success');
-                } else {
-                    setMessage('Failed to add damage assessment', 'error');
-                }
-                break;
-                
-            case 'update_assessment':
-                $assessment_id = sanitizeInput($_POST['assessment_id']);
-                $disaster_type = sanitizeInput($_POST['disaster_type']);
-                $assessment_date = sanitizeInput($_POST['assessment_date']);
-                $location = sanitizeInput($_POST['location']);
-                $damage_type = sanitizeInput($_POST['damage_type']);
-                $severity = sanitizeInput($_POST['severity']);
-                $estimated_cost = sanitizeInput($_POST['estimated_cost']);
-                $description = sanitizeInput($_POST['description']);
-                $status = sanitizeInput($_POST['status']);
-                
-                if ($user_role === 'Super Admin' && isset($_POST['assessed_by']) && !empty($_POST['assessed_by'])) {
-                    $assessed_by = sanitizeInput($_POST['assessed_by']);
-                    
-                    $user_check = null;
-                    $test_query = "SELECT user_id FROM tbl_users WHERE user_id = ? AND status = 'Active' LIMIT 1";
-                    $test_result = fetchOne($conn, $test_query, [$assessed_by], 'i');
-                    
-                    if ($test_result) {
-                        $role_check_queries = [
-                            "SELECT u.user_id FROM tbl_users u LEFT JOIN tbl_roles r ON u.role_id = r.role_id WHERE u.user_id = ? AND u.status = 'Active' AND (r.role_name = 'Tanod' OR r.role_name = 'Staff')",
-                            "SELECT user_id FROM tbl_users WHERE user_id = ? AND status = 'Active' AND (role = 'Tanod' OR role = 'Staff')",
-                            "SELECT user_id FROM tbl_users WHERE user_id = ? AND status = 'Active' AND (role_name = 'Tanod' OR role_name = 'Staff')"
-                        ];
-                        
-                        foreach ($role_check_queries as $query) {
-                            try {
-                                $user_check = fetchOne($conn, $query, [$assessed_by], 'i');
-                                if ($user_check) break;
-                            } catch (Exception $e) {
-                                continue;
-                            }
-                        }
-                    }
-                    
-                    if (!$user_check) {
-                        $assessed_by = getCurrentUserId();
-                        setMessage('Invalid user selected. Only Tanod or Staff can be assigned. Assessment updated with your account.', 'warning');
-                    }
-                    
-                    $sql = "UPDATE tbl_damage_assessments 
-                            SET disaster_type = ?, assessment_date = ?, location = ?, damage_type = ?,
-                                severity = ?, estimated_cost = ?, description = ?, status = ?, assessed_by = ?
-                            WHERE assessment_id = ?";
-                    
-                    if (executeQuery($conn, $sql, 
-                        [$disaster_type, $assessment_date, $location, $damage_type, 
-                         $severity, $estimated_cost, $description, $status, $assessed_by, $assessment_id],
-                        'sssssdssii')) {
-                        
-                        logActivity($conn, getCurrentUserId(), "Updated damage assessment ID: $assessment_id");
-                        if (!isset($user_check)) {
-                            // Don't override the warning message
-                        } else {
-                            setMessage('Damage assessment updated successfully', 'success');
-                        }
-                    } else {
-                        setMessage('Failed to update damage assessment', 'error');
-                    }
-                } else {
-                    $sql = "UPDATE tbl_damage_assessments 
-                            SET disaster_type = ?, assessment_date = ?, location = ?, damage_type = ?,
-                                severity = ?, estimated_cost = ?, description = ?, status = ?
-                            WHERE assessment_id = ?";
-                    
-                    if (executeQuery($conn, $sql, 
-                        [$disaster_type, $assessment_date, $location, $damage_type, 
-                         $severity, $estimated_cost, $description, $status, $assessment_id],
-                        'sssssdssi')) {
-                        
-                        logActivity($conn, getCurrentUserId(), "Updated damage assessment ID: $assessment_id");
-                        setMessage('Damage assessment updated successfully', 'success');
-                    } else {
-                        setMessage('Failed to update damage assessment', 'error');
-                    }
-                }
-                break;
-                
-            case 'delete_assessment':
-                $assessment_id = sanitizeInput($_POST['assessment_id']);
-                $sql = "DELETE FROM tbl_damage_assessments WHERE assessment_id = ?";
-                
-                if (executeQuery($conn, $sql, [$assessment_id], 'i')) {
-                    logActivity($conn, getCurrentUserId(), "Deleted damage assessment ID: $assessment_id");
-                    setMessage('Damage assessment deleted successfully', 'success');
-                } else {
-                    setMessage('Failed to delete damage assessment', 'error');
-                }
-                break;
-        }
-        header('Location: damage-assessment.php');
-        exit();
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    switch ($_POST['action']) {
+        case 'add_assessment':
+            $resident_id=sanitizeInput($_POST['resident_id']);$disaster_type=sanitizeInput($_POST['disaster_type']);$assessment_date=sanitizeInput($_POST['assessment_date']);$location=sanitizeInput($_POST['location']);$damage_type=sanitizeInput($_POST['damage_type']);$severity=sanitizeInput($_POST['severity']);$estimated_cost=sanitizeInput($_POST['estimated_cost']);$description=sanitizeInput($_POST['description']);$status=sanitizeInput($_POST['status']);
+            $rc=fetchOne($conn,"SELECT resident_id FROM tbl_residents WHERE resident_id=?",[$resident_id],'i');
+            if(!$rc){setMessage('Invalid resident selected','error');header('Location: damage-assessment.php');exit();}
+            $sql="INSERT INTO tbl_damage_assessments (resident_id,disaster_type,assessment_date,location,damage_type,severity,estimated_cost,description,status,assessed_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,NOW())";
+            if(executeQuery($conn,$sql,[$resident_id,$disaster_type,$assessment_date,$location,$damage_type,$severity,$estimated_cost,$description,$status,getCurrentUserId()],'isssssdssi')){logActivity($conn,getCurrentUserId(),"Added damage assessment for resident ID: $resident_id");setMessage('Damage assessment added successfully','success');}else{setMessage('Failed to add damage assessment','error');}
+            break;
+        case 'update_assessment':
+            $assessment_id=sanitizeInput($_POST['assessment_id']);$disaster_type=sanitizeInput($_POST['disaster_type']);$assessment_date=sanitizeInput($_POST['assessment_date']);$location=sanitizeInput($_POST['location']);$damage_type=sanitizeInput($_POST['damage_type']);$severity=sanitizeInput($_POST['severity']);$estimated_cost=sanitizeInput($_POST['estimated_cost']);$description=sanitizeInput($_POST['description']);$status=sanitizeInput($_POST['status']);
+            if($user_role==='Super Admin'&&isset($_POST['assessed_by'])&&!empty($_POST['assessed_by'])){
+                $assessed_by=sanitizeInput($_POST['assessed_by']);$user_check=null;$test=fetchOne($conn,"SELECT user_id FROM tbl_users WHERE user_id=? AND status='Active' LIMIT 1",[$assessed_by],'i');
+                if($test){foreach(["SELECT u.user_id FROM tbl_users u LEFT JOIN tbl_roles r ON u.role_id=r.role_id WHERE u.user_id=? AND u.status='Active' AND (r.role_name='Tanod' OR r.role_name='Staff')","SELECT user_id FROM tbl_users WHERE user_id=? AND status='Active' AND (role='Tanod' OR role='Staff')","SELECT user_id FROM tbl_users WHERE user_id=? AND status='Active' AND (role_name='Tanod' OR role_name='Staff')"] as $q){try{$user_check=fetchOne($conn,$q,[$assessed_by],'i');if($user_check)break;}catch(Exception $e){continue;}}}
+                if(!$user_check){$assessed_by=getCurrentUserId();setMessage('Invalid user selected. Only Tanod or Staff can be assigned. Assessment updated with your account.','warning');}
+                $sql="UPDATE tbl_damage_assessments SET disaster_type=?,assessment_date=?,location=?,damage_type=?,severity=?,estimated_cost=?,description=?,status=?,assessed_by=? WHERE assessment_id=?";
+                if(executeQuery($conn,$sql,[$disaster_type,$assessment_date,$location,$damage_type,$severity,$estimated_cost,$description,$status,$assessed_by,$assessment_id],'sssssdssii')){logActivity($conn,getCurrentUserId(),"Updated damage assessment ID: $assessment_id");if(isset($user_check))setMessage('Damage assessment updated successfully','success');}else{setMessage('Failed to update damage assessment','error');}
+            }else{
+                $sql="UPDATE tbl_damage_assessments SET disaster_type=?,assessment_date=?,location=?,damage_type=?,severity=?,estimated_cost=?,description=?,status=? WHERE assessment_id=?";
+                if(executeQuery($conn,$sql,[$disaster_type,$assessment_date,$location,$damage_type,$severity,$estimated_cost,$description,$status,$assessment_id],'sssssdssi')){logActivity($conn,getCurrentUserId(),"Updated damage assessment ID: $assessment_id");setMessage('Damage assessment updated successfully','success');}else{setMessage('Failed to update damage assessment','error');}
+            }
+            break;
+        case 'delete_assessment':
+            $assessment_id=sanitizeInput($_POST['assessment_id']);
+            if(executeQuery($conn,"DELETE FROM tbl_damage_assessments WHERE assessment_id=?",[$assessment_id],'i')){logActivity($conn,getCurrentUserId(),"Deleted damage assessment ID: $assessment_id");setMessage('Damage assessment deleted successfully','success');}else{setMessage('Failed to delete damage assessment','error');}
+            break;
     }
+    header('Location: damage-assessment.php'); exit();
 }
 
-// Fetch all assessments
-$sql = "SELECT da.*, 
-        CONCAT(r.first_name, ' ', r.last_name) as resident_name,
-        r.address,
-        r.contact_number,
-        r.email,
-        u.username as assessed_by_name
-        FROM tbl_damage_assessments da
-        LEFT JOIN tbl_residents r ON da.resident_id = r.resident_id
-        LEFT JOIN tbl_users u ON da.assessed_by = u.user_id
-        ORDER BY da.assessment_date DESC, da.created_at DESC";
-
-$assessments = fetchAll($conn, $sql);
-
-// Fetch users for Super Admin - Only Tanod and Staff
-$users = [];
-if ($user_role === 'Super Admin') {
-    $user_columns_result = $conn->query("SHOW COLUMNS FROM tbl_users");
-    $user_columns = [];
-    while ($row = $user_columns_result->fetch_assoc()) {
-        $user_columns[] = $row['Field'];
-    }
-    
-    $role_column = null;
-    $use_role_join = false;
-    
-    if (in_array('role_name', $user_columns)) {
-        $role_column = 'role_name';
-    } elseif (in_array('role', $user_columns)) {
-        $role_column = 'role';
-    } elseif (in_array('role_id', $user_columns)) {
-        $use_role_join = true;
-    }
-    
-    if ($use_role_join) {
-        if (in_array('first_name', $user_columns) && in_array('last_name', $user_columns)) {
-            $users = fetchAll($conn, "SELECT u.user_id, CONCAT(u.first_name, ' ', u.last_name) as full_name, r.role_name 
-                FROM tbl_users u 
-                LEFT JOIN tbl_roles r ON u.role_id = r.role_id 
-                WHERE u.status = 'Active' AND (r.role_name = 'Tanod' OR r.role_name = 'Staff') 
-                ORDER BY u.last_name, u.first_name");
-        } else {
-            $users = fetchAll($conn, "SELECT u.user_id, u.username as full_name, r.role_name 
-                FROM tbl_users u 
-                LEFT JOIN tbl_roles r ON u.role_id = r.role_id 
-                WHERE u.status = 'Active' AND (r.role_name = 'Tanod' OR r.role_name = 'Staff') 
-                ORDER BY u.username");
-        }
-    } elseif ($role_column) {
-        if (in_array('first_name', $user_columns) && in_array('last_name', $user_columns)) {
-            $users = fetchAll($conn, "SELECT user_id, CONCAT(first_name, ' ', last_name) as full_name, $role_column as role_name 
-                FROM tbl_users 
-                WHERE status = 'Active' AND ($role_column = 'Tanod' OR $role_column = 'Staff') 
-                ORDER BY last_name, first_name");
-        } elseif (in_array('username', $user_columns)) {
-            $users = fetchAll($conn, "SELECT user_id, username as full_name, $role_column as role_name 
-                FROM tbl_users 
-                WHERE status = 'Active' AND ($role_column = 'Tanod' OR $role_column = 'Staff') 
-                ORDER BY username");
-        }
-    }
+$assessments=fetchAll($conn,"SELECT da.*,CONCAT(r.first_name,' ',r.last_name) as resident_name,r.address,r.contact_number,r.email,u.username as assessed_by_name FROM tbl_damage_assessments da LEFT JOIN tbl_residents r ON da.resident_id=r.resident_id LEFT JOIN tbl_users u ON da.assessed_by=u.user_id ORDER BY da.assessment_date DESC,da.created_at DESC");
+$users=[];
+if($user_role==='Super Admin'){
+    $uc=$conn->query("SHOW COLUMNS FROM tbl_users");$ucols=[];while($row=$uc->fetch_assoc())$ucols[]=$row['Field'];
+    $rc2=null;$urj=false;
+    if(in_array('role_name',$ucols))$rc2='role_name';elseif(in_array('role',$ucols))$rc2='role';elseif(in_array('role_id',$ucols))$urj=true;
+    if($urj){if(in_array('first_name',$ucols)&&in_array('last_name',$ucols))$users=fetchAll($conn,"SELECT u.user_id,CONCAT(u.first_name,' ',u.last_name) as full_name,r.role_name FROM tbl_users u LEFT JOIN tbl_roles r ON u.role_id=r.role_id WHERE u.status='Active' AND (r.role_name='Tanod' OR r.role_name='Staff') ORDER BY u.last_name,u.first_name");
+    else $users=fetchAll($conn,"SELECT u.user_id,u.username as full_name,r.role_name FROM tbl_users u LEFT JOIN tbl_roles r ON u.role_id=r.role_id WHERE u.status='Active' AND (r.role_name='Tanod' OR r.role_name='Staff') ORDER BY u.username");}
+    elseif($rc2){if(in_array('first_name',$ucols)&&in_array('last_name',$ucols))$users=fetchAll($conn,"SELECT user_id,CONCAT(first_name,' ',last_name) as full_name,$rc2 as role_name FROM tbl_users WHERE status='Active' AND ($rc2='Tanod' OR $rc2='Staff') ORDER BY last_name,first_name");
+    elseif(in_array('username',$ucols))$users=fetchAll($conn,"SELECT user_id,username as full_name,$rc2 as role_name FROM tbl_users WHERE status='Active' AND ($rc2='Tanod' OR $rc2='Staff') ORDER BY username");}
 }
-
-// Fetch all residents
-$residents = fetchAll($conn, "SELECT resident_id, CONCAT(first_name, ' ', last_name) as full_name, address FROM tbl_residents ORDER BY last_name, first_name");
-
-// Calculate statistics
-$total_assessments = count($assessments);
-$pending_count = count(array_filter($assessments, fn($a) => $a['status'] === 'Pending'));
-$completed_count = count(array_filter($assessments, fn($a) => $a['status'] === 'Completed'));
-$total_cost = array_sum(array_column($assessments, 'estimated_cost'));
-
+$residents=fetchAll($conn,"SELECT resident_id,CONCAT(first_name,' ',last_name) as full_name,address FROM tbl_residents ORDER BY last_name,first_name");
+$total_assessments=count($assessments);$pending_count=count(array_filter($assessments,fn($a)=>$a['status']==='Pending'));$completed_count=count(array_filter($assessments,fn($a)=>$a['status']==='Completed'));$total_cost=array_sum(array_column($assessments,'estimated_cost'));
 include __DIR__ . '/../includes/header.php';
 ?>
-
 <style>
-.info-row {
-    padding: 0.75rem 0;
-    border-bottom: 1px solid #e9ecef;
-}
-.info-row:last-child {
-    border-bottom: none;
-}
-.info-label {
-    font-weight: 600;
-    color: #6c757d;
-    font-size: 0.875rem;
-    margin-bottom: 0.25rem;
-}
-.info-value {
-    color: #2d3748;
-    font-size: 1rem;
-}
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=DM+Mono:wght@300;400;500&display=swap');
+:root{--db-navy:#0d1b36;--db-navy-light:#1c3461;--db-amber:#f59e0b;--db-amber-light:#fef3c7;--db-amber-dark:#b45309;--db-teal:#0d9488;--db-teal-light:#ccfbf1;--db-rose:#e11d48;--db-rose-light:#ffe4e6;--db-sky:#0ea5e9;--db-sky-light:#e0f2fe;--db-indigo:#6366f1;--db-indigo-light:#e0e7ff;--db-success:#10b981;--db-success-light:#d1fae5;--db-violet:#7c3aed;--db-violet-light:#ede9fe;--db-bg:#eef2f7;--db-surf:#ffffff;--db-surf2:#f8fafc;--db-border:#e2e8f0;--db-text:#0f172a;--db-muted:#64748b;--db-radius:14px;--db-radius-sm:8px;--db-radius-lg:20px;--db-shadow:0 1px 3px rgba(13,27,54,.06),0 4px 16px rgba(13,27,54,.07);--db-shadow-lg:0 8px 40px rgba(13,27,54,.14);}
+*,*::before,*::after{box-sizing:border-box;}body{font-family:'Sora',sans-serif;background:var(--db-bg);color:var(--db-text);font-size:13.5px;}
+.fm-hero{background:linear-gradient(135deg,var(--db-navy) 0%,var(--db-navy-light) 60%,#7f1d1d 100%);padding:28px 36px;margin-bottom:24px;border-radius:0 0 var(--db-radius-lg) var(--db-radius-lg);position:relative;overflow:hidden;}
+.fm-hero__ring{position:absolute;border-radius:50%;border:1px solid rgba(255,255,255,.06);pointer-events:none;}.fm-hero__ring--1{width:300px;height:300px;top:-130px;right:-60px;}.fm-hero__ring--2{width:180px;height:180px;top:-50px;right:70px;border-color:rgba(225,29,72,.12);}.fm-hero__ring--3{width:100px;height:100px;bottom:-40px;left:40%;border-color:rgba(245,158,11,.14);}
+.fm-hero__inner{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}.fm-hero__left{display:flex;align-items:center;gap:16px;}
+.fm-hero__icon{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#9f1239,var(--db-rose));display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff;box-shadow:0 4px 16px rgba(225,29,72,.4);flex-shrink:0;}
+.fm-hero__title{font-size:22px;font-weight:800;color:#fff;letter-spacing:-.4px;margin-bottom:3px;}.fm-hero__sub{font-size:13px;color:rgba(255,255,255,.55);}
+.db-alert{display:flex;align-items:center;gap:12px;padding:14px 18px;border-radius:var(--db-radius);margin-bottom:16px;font-weight:500;font-size:13.5px;border-left:4px solid;}.db-alert--success{background:var(--db-success-light);color:#065f46;border-color:var(--db-success);}.db-alert--error{background:var(--db-rose-light);color:#7f1d1d;border-color:var(--db-rose);}.db-alert__close{margin-left:auto;background:none;border:none;cursor:pointer;font-size:18px;opacity:.6;}
+.db-stats-row{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:24px;}
+.db-stat-card{flex:1 1 150px;background:var(--db-surf);border-radius:var(--db-radius);padding:16px 14px 12px;display:flex;flex-direction:column;gap:9px;box-shadow:var(--db-shadow);border:1px solid var(--db-border);transition:transform .2s,box-shadow .2s;}.db-stat-card:hover{transform:translateY(-3px);box-shadow:var(--db-shadow-lg);}
+.db-stat-card__icon{width:38px;height:38px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:15px;}.db-stat-card__icon--sky{background:var(--db-sky-light);color:var(--db-sky);}.db-stat-card__icon--amber{background:var(--db-amber-light);color:var(--db-amber-dark);}.db-stat-card__icon--success{background:var(--db-success-light);color:var(--db-success);}.db-stat-card__icon--rose{background:var(--db-rose-light);color:var(--db-rose);}
+.db-stat-card__num{font-size:20px;font-weight:800;line-height:1;letter-spacing:-.8px;font-family:'DM Mono',monospace;}.db-stat-card__label{font-size:10px;color:var(--db-muted);font-weight:500;text-transform:uppercase;letter-spacing:.5px;}
+.db-stat-card__bar{height:3px;border-radius:2px;opacity:.4;}.db-stat-card__bar--sky{background:linear-gradient(90deg,var(--db-sky),transparent);}.db-stat-card__bar--amber{background:linear-gradient(90deg,var(--db-amber),transparent);}.db-stat-card__bar--success{background:linear-gradient(90deg,var(--db-success),transparent);}.db-stat-card__bar--rose{background:linear-gradient(90deg,var(--db-rose),transparent);}
+.db-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:var(--db-radius-sm);font-family:'Sora',sans-serif;font-size:13px;font-weight:600;cursor:pointer;border:1px solid transparent;text-decoration:none;transition:all .18s;white-space:nowrap;}.db-btn--sm{padding:6px 12px;font-size:12px;}
+.db-btn--rose{background:linear-gradient(135deg,#9f1239,var(--db-rose));color:#fff;}.db-btn--rose:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(225,29,72,.3);color:#fff;}
+.db-btn--amber{background:linear-gradient(135deg,var(--db-amber-dark),var(--db-amber));color:#fff;}.db-btn--amber:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(245,158,11,.3);color:#fff;}
+.db-btn--sky{background:linear-gradient(135deg,#0c4a6e,var(--db-sky));color:#fff;}.db-btn--sky:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(14,165,233,.3);color:#fff;}
+.db-btn--teal{background:linear-gradient(135deg,#065f46,var(--db-teal));color:#fff;}.db-btn--teal:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(13,148,136,.3);color:#fff;}
+.db-btn--ghost{background:var(--db-surf2);color:var(--db-text);border-color:var(--db-border);}.db-btn--ghost:hover{background:var(--db-border);}
+.db-btn--ghost-white{background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.25);}.db-btn--ghost-white:hover{background:rgba(255,255,255,.22);}
+.db-panel{background:var(--db-surf);border-radius:var(--db-radius-lg);border:1px solid var(--db-border);box-shadow:var(--db-shadow);margin-bottom:18px;overflow:hidden;animation:dbFadeUp .35s ease both;}
+@keyframes dbFadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.db-panel__header{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid var(--db-border);gap:10px;flex-wrap:wrap;}
+.db-panel__title{display:flex;align-items:center;gap:10px;}.db-panel__title h2{font-size:15px;font-weight:700;}
+.db-panel__icon{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:14px;}.db-panel__icon--rose{background:var(--db-rose-light);color:var(--db-rose);}
+.db-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:20px;font-family:'DM Mono',monospace;font-size:10px;font-weight:500;letter-spacing:.3px;white-space:nowrap;}
+.db-badge--success{background:var(--db-success-light);color:#065f46;}.db-badge--rose{background:var(--db-rose-light);color:#9f1239;}.db-badge--amber{background:var(--db-amber-light);color:#92400e;}.db-badge--sky{background:var(--db-sky-light);color:#0369a1;}.db-badge--muted{background:var(--db-surf2);color:var(--db-muted);border:1px solid var(--db-border);}.db-badge--indigo{background:var(--db-indigo-light);color:#4338ca;}
+.db-table-wrap{overflow-x:auto;}.db-table{width:100%;border-collapse:collapse;font-size:12.5px;}.db-table thead tr{background:linear-gradient(135deg,var(--db-navy),var(--db-navy-light));}.db-table thead th{color:rgba(255,255,255,.8);font-family:'DM Mono',monospace;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.8px;padding:11px 16px;white-space:nowrap;border:none;}.db-table tbody tr{border-bottom:1px solid var(--db-border);transition:background .12s;}.db-table tbody tr:last-child{border-bottom:none;}.db-table tbody tr:hover{background:#f5f8ff;}.db-table tbody td{padding:11px 16px;vertical-align:middle;}
+.db-text-sm{font-size:11.5px;color:var(--db-muted);}
+.db-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:56px 24px;text-align:center;gap:12px;}.db-empty i{font-size:44px;color:var(--db-border);}.db-empty p{font-size:14px;color:var(--db-muted);}
+.db-icon-btn{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:7px;border:none;cursor:pointer;font-size:12px;transition:all .15s;}
+.db-icon-btn--default{background:var(--db-surf2);color:var(--db-muted);border:1px solid var(--db-border);}.db-icon-btn--default:hover{background:var(--db-border);color:var(--db-text);}
+.db-icon-btn--sky{background:var(--db-sky-light);color:#0369a1;}.db-icon-btn--sky:hover{background:#bae6fd;}.db-icon-btn--amber{background:var(--db-amber-light);color:#92400e;}.db-icon-btn--amber:hover{background:#fde68a;}.db-icon-btn--rose{background:var(--db-rose-light);color:#9f1239;}.db-icon-btn--rose:hover{background:#fecaca;}
+.db-modal{display:none;position:fixed;inset:0;background:rgba(13,27,54,.55);backdrop-filter:blur(5px);z-index:9999;align-items:center;justify-content:center;padding:20px;}.db-modal--open{display:flex;}
+.db-modal__box{background:var(--db-surf);border-radius:var(--db-radius-lg);width:100%;max-width:660px;max-height:92vh;overflow-y:auto;box-shadow:var(--db-shadow-lg);animation:dbModalIn .28s cubic-bezier(.34,1.56,.64,1);}.db-modal__box--sm{max-width:440px;}.db-modal__box--lg{max-width:780px;}
+@keyframes dbModalIn{from{opacity:0;transform:scale(.9) translateY(16px)}to{opacity:1;transform:scale(1) translateY(0)}}
+.db-modal__header{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;}.db-modal__header--rose{background:linear-gradient(135deg,#9f1239,var(--db-rose));}.db-modal__header--amber{background:linear-gradient(135deg,var(--db-amber-dark),var(--db-amber));}.db-modal__header--sky{background:linear-gradient(135deg,#0c4a6e,var(--db-sky));}.db-modal__header--teal{background:linear-gradient(135deg,#065f46,var(--db-teal));}
+.db-modal__header h3{color:#fff;font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px;}.db-modal__close{background:rgba(255,255,255,.15);border:none;color:rgba(255,255,255,.85);width:30px;height:30px;border-radius:7px;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;}.db-modal__close:hover{background:rgba(255,255,255,.28);}
+.db-modal__body{padding:22px;}.db-modal__footer{display:flex;gap:10px;margin-top:18px;}.db-modal__footer .db-btn{flex:1;justify-content:center;}
+.db-form-group{margin-bottom:14px;}.db-form-label{font-size:11px;font-weight:600;color:var(--db-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px;display:block;}.db-form-label--req::after{content:' *';color:var(--db-rose);}
+.db-input,.db-select,.db-textarea{width:100%;padding:9px 13px;border:1.5px solid var(--db-border);border-radius:var(--db-radius-sm);font-family:'Sora',sans-serif;font-size:13px;color:var(--db-text);background:var(--db-surf);outline:none;transition:border-color .18s,box-shadow .18s;}.db-input:focus,.db-select:focus,.db-textarea:focus{border-color:var(--db-navy-light);box-shadow:0 0 0 3px rgba(28,52,97,.1);}
+.db-textarea{resize:vertical;min-height:70px;}.db-form-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;}.db-form-grid .full{grid-column:1/-1;}
+.db-confirm-grid{background:var(--db-surf2);border-radius:var(--db-radius-sm);border:1px solid var(--db-border);overflow:hidden;margin-bottom:14px;}.db-confirm-row{display:flex;justify-content:space-between;align-items:flex-start;padding:9px 14px;border-bottom:1px solid var(--db-border);font-size:12.5px;gap:10px;}.db-confirm-row:last-child{border-bottom:none;}.db-confirm-row .lbl{color:var(--db-muted);font-weight:600;white-space:nowrap;flex-shrink:0;}.db-confirm-row .val{font-weight:600;color:var(--db-text);text-align:right;}
+.db-notice--rose{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:var(--db-radius-sm);font-size:12.5px;background:var(--db-rose-light);color:#9f1239;margin-bottom:14px;}
+.db-section-head{font-size:11px;font-weight:700;color:var(--db-muted);text-transform:uppercase;letter-spacing:.6px;padding:0 0 6px;border-bottom:1px solid var(--db-border);margin:16px 0 10px;display:flex;align-items:center;gap:6px;}.db-section-head:first-child{margin-top:0;}
+.db-desc-block{background:var(--db-surf2);border:1px solid var(--db-border);border-radius:var(--db-radius-sm);padding:12px 14px;font-size:13px;line-height:1.6;white-space:pre-wrap;}
+.db-radio-group{display:flex;flex-direction:column;gap:8px;margin-bottom:14px;}.db-radio-item{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;}.db-radio-item input{accent-color:var(--db-navy-light);}
+/* dark mode */
+body.dark-mode{background:#0f172a!important;color:#e2e8f0!important;}
+body.dark-mode .db-panel,body.dark-mode .db-modal__box{background:#1e293b!important;border-color:#334155!important;}body.dark-mode .db-panel__header{border-bottom-color:#334155!important;}body.dark-mode .db-panel__title h2{color:#f1f5f9!important;}
+body.dark-mode .db-stat-card{background:#1e293b!important;border-color:#334155!important;color:#e2e8f0!important;}body.dark-mode .db-stat-card__label{color:#64748b!important;}
+body.dark-mode .db-table thead tr{background:linear-gradient(135deg,#0f172a,#1e293b)!important;}body.dark-mode .db-table thead th{color:rgba(148,163,184,.9)!important;}
+body.dark-mode .db-table tbody tr{border-bottom-color:#334155!important;}body.dark-mode .db-table tbody tr:hover{background:#162032!important;}body.dark-mode .db-table tbody td{color:#e2e8f0!important;}
+body.dark-mode .db-text-sm{color:#94a3b8!important;}body.dark-mode .db-btn--ghost{background:#1e293b!important;color:#e2e8f0!important;border-color:#475569!important;}
+body.dark-mode .db-input,body.dark-mode .db-select,body.dark-mode .db-textarea{background:#334155!important;color:#e2e8f0!important;border-color:#475569!important;}body.dark-mode .db-form-label{color:#94a3b8!important;}
+body.dark-mode .db-confirm-grid,body.dark-mode .db-desc-block{background:#162032!important;border-color:#334155!important;}body.dark-mode .db-confirm-row{border-bottom-color:#334155!important;}body.dark-mode .db-confirm-row .lbl{color:#64748b!important;}body.dark-mode .db-confirm-row .val{color:#e2e8f0!important;}
+body.dark-mode .db-icon-btn--default{background:#1e293b!important;color:#94a3b8!important;border-color:#475569!important;}body.dark-mode .db-empty i{color:#334155!important;}body.dark-mode .db-empty p{color:#64748b!important;}
+body.dark-mode .db-section-head{color:#64748b!important;border-bottom-color:#334155!important;}
+@media(max-width:768px){.fm-hero{padding:20px;border-radius:0;}.db-form-grid{grid-template-columns:1fr;}.db-form-grid .full{grid-column:1/1;}}
 </style>
 
-<div class="container-fluid px-4 py-4">
-    <!-- Page Header -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h1 class="h3 mb-1"><i class="fas fa-house-damage text-danger me-2"></i>Damage Assessment</h1>
-            <p class="text-muted">Manage and track property damage assessments</p>
+<div class="fm-hero">
+    <div class="fm-hero__ring fm-hero__ring--1"></div><div class="fm-hero__ring fm-hero__ring--2"></div><div class="fm-hero__ring fm-hero__ring--3"></div>
+    <div class="fm-hero__inner">
+        <div class="fm-hero__left">
+            <div class="fm-hero__icon"><i class="fas fa-house-damage"></i></div>
+            <div><div class="fm-hero__title">Damage Assessment</div><div class="fm-hero__sub">Manage and track property damage assessments</div></div>
         </div>
-        <div>
-            <button class="btn btn-success me-2" onclick="showPrintAllModal()">
-                <i class="fas fa-print me-2"></i>Print All
-            </button>
-            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addAssessmentModal">
-                <i class="fas fa-plus me-2"></i>Add Assessment
-            </button>
-        </div>
-    </div>
-
-    <?php echo displayMessage(); ?>
-
-    <!-- Statistics Cards -->
-    <div class="row g-3 mb-4">
-        <div class="col-md-3">
-            <div class="card border-0 shadow-sm">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <p class="text-muted mb-1">Total Assessments</p>
-                            <h3 class="mb-0"><?php echo $total_assessments; ?></h3>
-                        </div>
-                        <div class="fs-1 text-primary"><i class="fas fa-clipboard-list"></i></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card border-0 shadow-sm">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <p class="text-muted mb-1">Pending</p>
-                            <h3 class="mb-0"><?php echo $pending_count; ?></h3>
-                        </div>
-                        <div class="fs-1 text-warning"><i class="fas fa-clock"></i></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card border-0 shadow-sm">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <p class="text-muted mb-1">Completed</p>
-                            <h3 class="mb-0"><?php echo $completed_count; ?></h3>
-                        </div>
-                        <div class="fs-1 text-success"><i class="fas fa-check-circle"></i></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card border-0 shadow-sm">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <p class="text-muted mb-1">Total Est. Cost</p>
-                            <h3 class="mb-0">₱<?php echo number_format($total_cost, 2); ?></h3>
-                        </div>
-                        <div class="fs-1 text-info"><i class="fas fa-peso-sign"></i></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Assessments Table -->
-    <div class="card border-0 shadow-sm">
-        <div class="card-header bg-white py-3">
-            <h5 class="mb-0">Damage Assessments</h5>
-        </div>
-        <div class="card-body">
-            <div class="table-responsive">
-                <table class="table table-hover" id="assessmentsTable">
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Resident</th>
-                            <th>Location</th>
-                            <th>Disaster Type</th>
-                            <th>Damage Type</th>
-                            <th>Severity</th>
-                            <th>Est. Cost</th>
-                            <th>Status</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($assessments as $assessment): ?>
-                        <tr>
-                            <td><?php echo formatDate($assessment['assessment_date']); ?></td>
-                            <td>
-                                <strong><?php echo htmlspecialchars($assessment['resident_name']); ?></strong><br>
-                                <small class="text-muted"><?php echo htmlspecialchars($assessment['address']); ?></small>
-                            </td>
-                            <td><?php echo htmlspecialchars($assessment['location']); ?></td>
-                            <td><span class="badge bg-secondary"><?php echo htmlspecialchars($assessment['disaster_type']); ?></span></td>
-                            <td><?php echo htmlspecialchars($assessment['damage_type']); ?></td>
-                            <td>
-                                <?php 
-                                $severity = trim($assessment['severity'] ?? '');
-                                if (!empty($severity)) {
-                                    echo getSeverityBadge($severity);
-                                } else {
-                                    echo '<span class="badge bg-secondary">Not Set</span>';
-                                }
-                                ?>
-                            </td>
-                            <td>₱<?php echo number_format($assessment['estimated_cost'], 2); ?></td>
-                            <td><?php echo getStatusBadge($assessment['status']); ?></td>
-                            <td>
-                                <div class="btn-group" role="group">
-                                    <button class="btn btn-sm btn-info" onclick="viewAssessment(<?php echo $assessment['assessment_id']; ?>)" title="View Details">
-                                        <i class="fas fa-eye"></i>
-                                    </button>
-                                    <button class="btn btn-sm btn-success" onclick="printAssessmentDirect(<?php echo $assessment['assessment_id']; ?>)" title="Print">
-                                        <i class="fas fa-print"></i>
-                                    </button>
-                                    <button class="btn btn-sm btn-warning" onclick="editAssessment(<?php echo $assessment['assessment_id']; ?>)" title="Edit">
-                                        <i class="fas fa-edit"></i>
-                                    </button>
-                                    <button class="btn btn-sm btn-danger" onclick="deleteAssessment(<?php echo $assessment['assessment_id']; ?>)" title="Delete">
-                                        <i class="fas fa-trash"></i>
-                                    </button>
-                                </div>
-                            </td>
-                        </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <button class="db-btn db-btn--ghost-white" onclick="openModal('printAllModal')"><i class="fas fa-print"></i> Print All</button>
+            <button class="db-btn db-btn--rose" onclick="openModal('addModal')"><i class="fas fa-plus"></i> Add Assessment</button>
         </div>
     </div>
 </div>
 
-<!-- View Assessment Modal -->
-<div class="modal fade" id="viewAssessmentModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header bg-info text-white">
-                <h5 class="modal-title">
-                    <i class="fas fa-eye me-2"></i>
-                    Assessment Details
-                </h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            
-            <div class="modal-body">
-                <div class="row">
-                    <!-- Left Column -->
-                    <div class="col-md-6">
-                        <h6 class="text-primary mb-3"><i class="fas fa-user me-2"></i>Resident Information</h6>
-                        <div class="info-row">
-                            <div class="info-label">Name</div>
-                            <div class="info-value" id="view_resident_name"></div>
-                        </div>
-                        <div class="info-row">
-                            <div class="info-label">Address</div>
-                            <div class="info-value" id="view_resident_address"></div>
-                        </div>
-                        <div class="info-row">
-                            <div class="info-label">Contact Number</div>
-                            <div class="info-value" id="view_resident_contact"></div>
-                        </div>
-                        <div class="info-row">
-                            <div class="info-label">Email</div>
-                            <div class="info-value" id="view_resident_email"></div>
-                        </div>
-                    </div>
+<div style="padding:0 24px 24px;">
+<?php echo displayMessage(); ?>
 
-                    <!-- Right Column -->
-                    <div class="col-md-6">
-                        <h6 class="text-primary mb-3"><i class="fas fa-house-damage me-2"></i>Assessment Information</h6>
-                        <div class="info-row">
-                            <div class="info-label">Assessment Date</div>
-                            <div class="info-value" id="view_assessment_date"></div>
-                        </div>
-                        <div class="info-row">
-                            <div class="info-label">Disaster Type</div>
-                            <div class="info-value" id="view_disaster_type"></div>
-                        </div>
-                        <div class="info-row">
-                            <div class="info-label">Location</div>
-                            <div class="info-value" id="view_location"></div>
-                        </div>
-                        <div class="info-row">
-                            <div class="info-label">Damage Type</div>
-                            <div class="info-value" id="view_damage_type"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <hr class="my-4">
-
-                <div class="row">
-                    <div class="col-md-4">
-                        <div class="info-row">
-                            <div class="info-label"><i class="fas fa-exclamation-triangle text-warning me-1"></i>Severity</div>
-                            <div class="info-value" id="view_severity"></div>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="info-row">
-                            <div class="info-label"><i class="fas fa-peso-sign text-success me-1"></i>Estimated Cost</div>
-                            <div class="info-value" id="view_estimated_cost"></div>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="info-row">
-                            <div class="info-label"><i class="fas fa-info-circle text-info me-1"></i>Status</div>
-                            <div class="info-value" id="view_status"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <hr class="my-4">
-
-                <div class="row">
-                    <div class="col-12">
-                        <h6 class="text-primary mb-3"><i class="fas fa-file-alt me-2"></i>Description</h6>
-                        <div class="alert alert-light" id="view_description">
-                            No description provided
-                        </div>
-                    </div>
-                </div>
-
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="info-row">
-                            <div class="info-label"><i class="fas fa-user-check text-primary me-1"></i>Assessed By</div>
-                            <div class="info-value" id="view_assessed_by"></div>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="info-row">
-                            <div class="info-label"><i class="fas fa-calendar-plus text-muted me-1"></i>Created At</div>
-                            <div class="info-value" id="view_created_at"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                    <i class="fas fa-times me-1"></i> Close
-                </button>
-                <button type="button" class="btn btn-success" onclick="printFromView()">
-                    <i class="fas fa-print me-1"></i> Print
-                </button>
-                <button type="button" class="btn btn-warning" onclick="editFromView()">
-                    <i class="fas fa-edit me-1"></i> Edit
-                </button>
-            </div>
-        </div>
-    </div>
+<div class="db-stats-row">
+    <div class="db-stat-card"><div class="db-stat-card__icon db-stat-card__icon--sky"><i class="fas fa-clipboard-list"></i></div><div><div class="db-stat-card__num" style="color:var(--db-sky)"><?php echo $total_assessments; ?></div><div class="db-stat-card__label">Total Assessments</div></div><div class="db-stat-card__bar db-stat-card__bar--sky"></div></div>
+    <div class="db-stat-card"><div class="db-stat-card__icon db-stat-card__icon--amber"><i class="fas fa-clock"></i></div><div><div class="db-stat-card__num" style="color:var(--db-amber-dark)"><?php echo $pending_count; ?></div><div class="db-stat-card__label">Pending</div></div><div class="db-stat-card__bar db-stat-card__bar--amber"></div></div>
+    <div class="db-stat-card"><div class="db-stat-card__icon db-stat-card__icon--success"><i class="fas fa-check-circle"></i></div><div><div class="db-stat-card__num" style="color:var(--db-success)"><?php echo $completed_count; ?></div><div class="db-stat-card__label">Completed</div></div><div class="db-stat-card__bar db-stat-card__bar--success"></div></div>
+    <div class="db-stat-card"><div class="db-stat-card__icon db-stat-card__icon--rose"><i class="fas fa-peso-sign"></i></div><div><div class="db-stat-card__num" style="color:var(--db-rose);font-size:16px;">₱<?php echo number_format($total_cost,2); ?></div><div class="db-stat-card__label">Est. Total Cost</div></div><div class="db-stat-card__bar db-stat-card__bar--rose"></div></div>
 </div>
 
-<!-- Add Assessment Modal -->
-<div class="modal fade" id="addAssessmentModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <form method="POST" action="damage-assessment.php">
-                <input type="hidden" name="action" value="add_assessment">
-                
-                <div class="modal-header">
-                    <h5 class="modal-title">
-                        <i class="fas fa-plus-circle text-primary me-2"></i>
-                        Add Damage Assessment
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                
-                <div class="modal-body">
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <label for="resident_id" class="form-label">Resident *</label>
-                            <select class="form-select" id="resident_id" name="resident_id" required>
-                                <option value="">Select Resident</option>
-                                <?php foreach ($residents as $resident): ?>
-                                <option value="<?php echo $resident['resident_id']; ?>">
-                                    <?php echo htmlspecialchars($resident['full_name']); ?> - 
-                                    <?php echo htmlspecialchars($resident['address']); ?>
-                                </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        
-                        <div class="col-md-6">
-                            <label for="assessment_date" class="form-label">Assessment Date *</label>
-                            <input type="date" class="form-control" id="assessment_date" 
-                                   name="assessment_date" required value="<?php echo date('Y-m-d'); ?>">
-                        </div>
-                        
-                        <div class="col-md-6">
-                            <label for="disaster_type" class="form-label">Disaster Type *</label>
-                            <select class="form-select" id="disaster_type" name="disaster_type" required>
-                                <option value="">Select Type</option>
-                                <option value="Flood">Flood</option>
-                                <option value="Fire">Fire</option>
-                                <option value="Earthquake">Earthquake</option>
-                                <option value="Typhoon">Typhoon</option>
-                                <option value="Landslide">Landslide</option>
-                                <option value="Storm">Storm</option>
-                                <option value="Other">Other</option>
-                            </select>
-                        </div>
-                        
-                        <div class="col-md-6">
-                            <label for="location" class="form-label">Specific Location *</label>
-                            <input type="text" class="form-control" id="location" 
-                                   name="location" required placeholder="e.g., Zone 1, Street Name">
-                        </div>
-                        
-                        <div class="col-md-6">
-                            <label for="damage_type" class="form-label">Damage Type *</label>
-                            <select class="form-select" id="damage_type" name="damage_type" required>
-                                <option value="">Select Damage Type</option>
-                                <option value="Structural">Structural</option>
-                                <option value="Property">Property</option>
-                                <option value="Agricultural">Agricultural</option>
-                                <option value="Infrastructure">Infrastructure</option>
-                                <option value="Personal Belongings">Personal Belongings</option>
-                                <option value="Livelihood">Livelihood</option>
-                                <option value="Other">Other</option>
-                            </select>
-                        </div>
-                        
-                        <div class="col-md-6">
-                            <label for="severity" class="form-label">Severity *</label>
-                            <select class="form-select" id="severity" name="severity" required>
-                                <option value="">Select Severity</option>
-                                <option value="Minor">Minor - Low impact</option>
-                                <option value="Moderate">Moderate - Significant damage</option>
-                                <option value="Severe">Severe - Major damage</option>
-                                <option value="Critical">Critical - Catastrophic</option>
-                            </select>
-                        </div>
-                        
-                        <div class="col-md-6">
-                            <label for="estimated_cost" class="form-label">Estimated Cost (₱) *</label>
-                            <input type="number" class="form-control" id="estimated_cost" 
-                                   name="estimated_cost" required min="0" step="0.01" value="0">
-                        </div>
-                        
-                        <div class="col-md-6">
-                            <label for="status" class="form-label">Status *</label>
-                            <select class="form-select" id="status" name="status" required>
-                                <option value="Pending">Pending</option>
-                                <option value="In Progress">In Progress</option>
-                                <option value="Completed">Completed</option>
-                            </select>
-                        </div>
-                        
-                        <div class="col-12">
-                            <label for="description" class="form-label">Description</label>
-                            <textarea class="form-control" id="description" name="description" 
-                                      rows="3" placeholder="Detailed description of the damage..."></textarea>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                        <i class="fas fa-times me-1"></i> Cancel
-                    </button>
-                    <button type="submit" class="btn btn-primary">
-                        <i class="fas fa-save me-1"></i> Save Assessment
-                    </button>
-                </div>
-            </form>
-        </div>
+<div class="db-panel">
+    <div class="db-panel__header">
+        <div class="db-panel__title"><div class="db-panel__icon db-panel__icon--rose"><i class="fas fa-list"></i></div><h2>Damage Assessments</h2><span class="db-badge db-badge--rose"><?php echo $total_assessments; ?></span></div>
+        <button class="db-btn db-btn--rose db-btn--sm" onclick="openModal('addModal')"><i class="fas fa-plus"></i> Add Assessment</button>
     </div>
+    <div class="db-table-wrap"><table class="db-table">
+        <thead><tr><th>Date</th><th>Resident</th><th>Location</th><th>Disaster Type</th><th>Damage Type</th><th>Severity</th><th>Est. Cost</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody>
+        <?php if(empty($assessments)): ?><tr><td colspan="9"><div class="db-empty"><i class="fas fa-house-damage"></i><p>No damage assessments found</p><button class="db-btn db-btn--rose db-btn--sm" onclick="openModal('addModal')"><i class="fas fa-plus"></i> Add First</button></div></td></tr>
+        <?php else: foreach($assessments as $a):
+            $sv=['Minor'=>'sky','Moderate'=>'amber','Severe'=>'rose','Critical'=>'rose'];
+            $ss=['Pending'=>'amber','In Progress'=>'sky','Completed'=>'success','Cancelled'=>'muted'];
+            $svb=$sv[trim($a['severity']??'')]??'muted'; $ssb=$ss[$a['status']]??'muted';
+        ?>
+        <tr>
+            <td><span class="db-text-sm"><?php echo formatDate($a['assessment_date']); ?></span></td>
+            <td><strong><?php echo htmlspecialchars($a['resident_name']); ?></strong><br><span class="db-text-sm"><?php echo htmlspecialchars($a['address']); ?></span></td>
+            <td><span class="db-text-sm"><?php echo htmlspecialchars($a['location']); ?></span></td>
+            <td><span class="db-badge db-badge--muted"><?php echo htmlspecialchars($a['disaster_type']); ?></span></td>
+            <td><span class="db-text-sm"><?php echo htmlspecialchars($a['damage_type']); ?></span></td>
+            <td><span class="db-badge db-badge--<?php echo $svb; ?>"><?php echo !empty(trim($a['severity']??''))?$a['severity']:'Not Set'; ?></span></td>
+            <td><span style="font-family:'DM Mono',monospace;font-size:12px;font-weight:700;">₱<?php echo number_format($a['estimated_cost'],2); ?></span></td>
+            <td><span class="db-badge db-badge--<?php echo $ssb; ?>"><?php echo $a['status']; ?></span></td>
+            <td><div style="display:flex;gap:4px;">
+                <button class="db-icon-btn db-icon-btn--default" onclick="viewAssessment(<?php echo $a['assessment_id']; ?>)" title="View"><i class="fas fa-eye"></i></button>
+                <button class="db-icon-btn db-icon-btn--sky" onclick="printAssessmentDirect(<?php echo $a['assessment_id']; ?>)" title="Print"><i class="fas fa-print"></i></button>
+                <button class="db-icon-btn db-icon-btn--amber" onclick="editAssessment(<?php echo $a['assessment_id']; ?>)" title="Edit"><i class="fas fa-edit"></i></button>
+                <button class="db-icon-btn db-icon-btn--rose" onclick="deleteAssessment(<?php echo $a['assessment_id']; ?>)" title="Delete"><i class="fas fa-trash"></i></button>
+            </div></td>
+        </tr>
+        <?php endforeach; endif; ?>
+        </tbody>
+    </table></div>
+</div>
 </div>
 
-<!-- Edit Assessment Modal -->
-<div class="modal fade" id="editAssessmentModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <form method="POST" action="damage-assessment.php" id="editAssessmentForm">
-                <input type="hidden" name="action" value="update_assessment">
-                <input type="hidden" name="assessment_id" id="edit_assessment_id">
-                
-                <div class="modal-header">
-                    <h5 class="modal-title">
-                        <i class="fas fa-edit text-warning me-2"></i>
-                        Edit Damage Assessment
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                
-                <div class="modal-body">
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <label for="edit_disaster_type" class="form-label">Disaster Type *</label>
-                            <select class="form-select" id="edit_disaster_type" name="disaster_type" required>
-                                <option value="Flood">Flood</option>
-                                <option value="Fire">Fire</option>
-                                <option value="Earthquake">Earthquake</option>
-                                <option value="Typhoon">Typhoon</option>
-                                <option value="Landslide">Landslide</option>
-                                <option value="Storm">Storm</option>
-                                <option value="Other">Other</option>
-                            </select>
-                        </div>
-                        
-                        <div class="col-md-6">
-                            <label for="edit_assessment_date" class="form-label">Assessment Date *</label>
-                            <input type="date" class="form-control" id="edit_assessment_date" 
-                                   name="assessment_date" required>
-                        </div>
-                        
-                        <div class="col-md-6">
-                            <label for="edit_location" class="form-label">Location *</label>
-                            <input type="text" class="form-control" id="edit_location" 
-                                   name="location" required>
-                        </div>
-                        
-                        <div class="col-md-6">
-                            <label for="edit_damage_type" class="form-label">Damage Type *</label>
-                            <select class="form-select" id="edit_damage_type" name="damage_type" required>
-                                <option value="Structural">Structural</option>
-                                <option value="Property">Property</option>
-                                <option value="Agricultural">Agricultural</option>
-                                <option value="Infrastructure">Infrastructure</option>
-                                <option value="Personal Belongings">Personal Belongings</option>
-                                <option value="Livelihood">Livelihood</option>
-                                <option value="Other">Other</option>
-                            </select>
-                        </div>
-                        
-                        <div class="col-md-6">
-                            <label for="edit_severity" class="form-label">Severity *</label>
-                            <select class="form-select" id="edit_severity" name="severity" required>
-                                <option value="Minor">Minor</option>
-                                <option value="Moderate">Moderate</option>
-                                <option value="Severe">Severe</option>
-                                <option value="Critical">Critical</option>
-                            </select>
-                        </div>
-                        
-                        <div class="col-md-6">
-                            <label for="edit_estimated_cost" class="form-label">Estimated Cost (₱) *</label>
-                            <input type="number" class="form-control" id="edit_estimated_cost" 
-                                   name="estimated_cost" required min="0" step="0.01">
-                        </div>
-                        
-                        <div class="col-md-6">
-                            <label for="edit_status" class="form-label">Status *</label>
-                            <select class="form-select" id="edit_status" name="status" required>
-                                <option value="Pending">Pending</option>
-                                <option value="In Progress">In Progress</option>
-                                <option value="Completed">Completed</option>
-                                <option value="Cancelled">Cancelled</option>
-                            </select>
-                        </div>
-                        
-                        <?php if ($user_role === 'Super Admin'): ?>
-                        <div class="col-md-6">
-                            <label for="edit_assessed_by" class="form-label">Assessed By</label>
-                            <select class="form-select" id="edit_assessed_by" name="assessed_by">
-                                <option value="">-- Keep Current --</option>
-                                <?php foreach ($users as $user): ?>
-                                <option value="<?php echo $user['user_id']; ?>">
-                                    <?php echo htmlspecialchars($user['full_name']); ?>
-                                    <?php if (isset($user['role_name'])): ?>
-                                        (<?php echo htmlspecialchars($user['role_name']); ?>)
-                                    <?php endif; ?>
-                                </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <?php endif; ?>
-                        
-                        <div class="col-12">
-                            <label for="edit_description" class="form-label">Description</label>
-                            <textarea class="form-control" id="edit_description" name="description" rows="3"></textarea>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                        <i class="fas fa-times me-1"></i> Cancel
-                    </button>
-                    <button type="submit" class="btn btn-warning">
-                        <i class="fas fa-save me-1"></i> Update Assessment
-                    </button>
-                </div>
-            </form>
+<!-- ADD -->
+<div id="addModal" class="db-modal"><div class="db-modal__box db-modal__box--lg">
+    <div class="db-modal__header db-modal__header--rose"><h3><i class="fas fa-plus-circle"></i> Add Damage Assessment</h3><button class="db-modal__close" onclick="closeModal('addModal')">×</button></div>
+    <div class="db-modal__body"><form method="POST"><input type="hidden" name="action" value="add_assessment">
+        <div class="db-form-grid">
+            <div class="db-form-group"><label class="db-form-label db-form-label--req">Resident</label><select name="resident_id" class="db-select" required><option value="">Select Resident</option><?php foreach($residents as $r): ?><option value="<?php echo $r['resident_id']; ?>"><?php echo htmlspecialchars($r['full_name'].' — '.$r['address']); ?></option><?php endforeach; ?></select></div>
+            <div class="db-form-group"><label class="db-form-label db-form-label--req">Assessment Date</label><input type="date" name="assessment_date" class="db-input" required value="<?php echo date('Y-m-d'); ?>"></div>
+            <div class="db-form-group"><label class="db-form-label db-form-label--req">Disaster Type</label><select name="disaster_type" class="db-select" required><option value="">Select Type</option><?php foreach(['Flood','Fire','Earthquake','Typhoon','Landslide','Storm','Other'] as $t): ?><option><?php echo $t; ?></option><?php endforeach; ?></select></div>
+            <div class="db-form-group"><label class="db-form-label db-form-label--req">Specific Location</label><input type="text" name="location" class="db-input" required placeholder="e.g., Zone 1, Street Name"></div>
+            <div class="db-form-group"><label class="db-form-label db-form-label--req">Damage Type</label><select name="damage_type" class="db-select" required><option value="">Select Damage Type</option><?php foreach(['Structural','Property','Agricultural','Infrastructure','Personal Belongings','Livelihood','Other'] as $t): ?><option><?php echo $t; ?></option><?php endforeach; ?></select></div>
+            <div class="db-form-group"><label class="db-form-label db-form-label--req">Severity</label><select name="severity" class="db-select" required><option value="">Select Severity</option><option value="Minor">Minor — Low impact</option><option value="Moderate">Moderate — Significant damage</option><option value="Severe">Severe — Major damage</option><option value="Critical">Critical — Catastrophic</option></select></div>
+            <div class="db-form-group"><label class="db-form-label db-form-label--req">Estimated Cost (₱)</label><input type="number" name="estimated_cost" class="db-input" required min="0" step="0.01" value="0"></div>
+            <div class="db-form-group"><label class="db-form-label db-form-label--req">Status</label><select name="status" class="db-select" required><option value="Pending">Pending</option><option value="In Progress">In Progress</option><option value="Completed">Completed</option></select></div>
+            <div class="db-form-group full"><label class="db-form-label">Description</label><textarea name="description" class="db-textarea" placeholder="Detailed description of the damage..."></textarea></div>
+        </div>
+        <div class="db-modal__footer"><button type="button" class="db-btn db-btn--ghost" onclick="closeModal('addModal')"><i class="fas fa-times"></i> Cancel</button><button type="submit" class="db-btn db-btn--rose"><i class="fas fa-save"></i> Save Assessment</button></div>
+    </form></div>
+</div></div>
+
+<!-- EDIT -->
+<div id="editModal" class="db-modal"><div class="db-modal__box db-modal__box--lg">
+    <div class="db-modal__header db-modal__header--amber"><h3><i class="fas fa-edit"></i> Edit Damage Assessment</h3><button class="db-modal__close" onclick="closeModal('editModal')">×</button></div>
+    <div class="db-modal__body"><form method="POST"><input type="hidden" name="action" value="update_assessment"><input type="hidden" name="assessment_id" id="edit_assessment_id">
+        <div class="db-form-grid">
+            <div class="db-form-group"><label class="db-form-label db-form-label--req">Disaster Type</label><select name="disaster_type" id="edit_disaster_type" class="db-select" required><?php foreach(['Flood','Fire','Earthquake','Typhoon','Landslide','Storm','Other'] as $t): ?><option><?php echo $t; ?></option><?php endforeach; ?></select></div>
+            <div class="db-form-group"><label class="db-form-label db-form-label--req">Assessment Date</label><input type="date" name="assessment_date" id="edit_assessment_date" class="db-input" required></div>
+            <div class="db-form-group"><label class="db-form-label db-form-label--req">Location</label><input type="text" name="location" id="edit_location" class="db-input" required></div>
+            <div class="db-form-group"><label class="db-form-label db-form-label--req">Damage Type</label><select name="damage_type" id="edit_damage_type" class="db-select" required><?php foreach(['Structural','Property','Agricultural','Infrastructure','Personal Belongings','Livelihood','Other'] as $t): ?><option><?php echo $t; ?></option><?php endforeach; ?></select></div>
+            <div class="db-form-group"><label class="db-form-label db-form-label--req">Severity</label><select name="severity" id="edit_severity" class="db-select" required><option value="Minor">Minor</option><option value="Moderate">Moderate</option><option value="Severe">Severe</option><option value="Critical">Critical</option></select></div>
+            <div class="db-form-group"><label class="db-form-label db-form-label--req">Estimated Cost (₱)</label><input type="number" name="estimated_cost" id="edit_estimated_cost" class="db-input" required min="0" step="0.01"></div>
+            <div class="db-form-group"><label class="db-form-label db-form-label--req">Status</label><select name="status" id="edit_status" class="db-select" required><option value="Pending">Pending</option><option value="In Progress">In Progress</option><option value="Completed">Completed</option><option value="Cancelled">Cancelled</option></select></div>
+            <?php if($user_role==='Super Admin'): ?>
+            <div class="db-form-group"><label class="db-form-label">Assessed By (Tanod/Staff)</label><select name="assessed_by" id="edit_assessed_by" class="db-select"><option value="">-- Keep Current --</option><?php foreach($users as $u): ?><option value="<?php echo $u['user_id']; ?>"><?php echo htmlspecialchars($u['full_name']); ?><?php if(isset($u['role_name'])): ?> (<?php echo htmlspecialchars($u['role_name']); ?>)<?php endif; ?></option><?php endforeach; ?></select></div>
+            <?php endif; ?>
+            <div class="db-form-group full"><label class="db-form-label">Description</label><textarea name="description" id="edit_description" class="db-textarea"></textarea></div>
+        </div>
+        <div class="db-modal__footer"><button type="button" class="db-btn db-btn--ghost" onclick="closeModal('editModal')"><i class="fas fa-times"></i> Cancel</button><button type="submit" class="db-btn db-btn--amber" style="color:#fff"><i class="fas fa-save"></i> Update Assessment</button></div>
+    </form></div>
+</div></div>
+
+<!-- VIEW -->
+<div id="viewModal" class="db-modal"><div class="db-modal__box db-modal__box--lg">
+    <div class="db-modal__header db-modal__header--sky"><h3><i class="fas fa-eye"></i> Assessment Details</h3><button class="db-modal__close" onclick="closeModal('viewModal')">×</button></div>
+    <div class="db-modal__body"><div id="viewContent"></div>
+        <div class="db-modal__footer">
+            <button type="button" class="db-btn db-btn--ghost" onclick="closeModal('viewModal')"><i class="fas fa-times"></i> Close</button>
+            <button type="button" class="db-btn db-btn--sky" onclick="printFromView()"><i class="fas fa-print"></i> Print</button>
+            <button type="button" class="db-btn db-btn--amber" style="color:#fff" onclick="editFromView()"><i class="fas fa-edit"></i> Edit</button>
         </div>
     </div>
-</div>
+</div></div>
 
-<!-- Delete Confirmation Modal -->
-<div class="modal fade" id="deleteAssessmentModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header bg-danger text-white">
-                <h5 class="modal-title">
-                    <i class="fas fa-exclamation-triangle me-2"></i>
-                    Confirm Deletion
-                </h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+<!-- DELETE -->
+<div id="deleteModal" class="db-modal"><div class="db-modal__box db-modal__box--sm">
+    <div class="db-modal__header db-modal__header--rose"><h3><i class="fas fa-trash-alt"></i> Confirm Deletion</h3><button class="db-modal__close" onclick="closeModal('deleteModal')">×</button></div>
+    <div class="db-modal__body"><form method="POST"><input type="hidden" name="action" value="delete_assessment"><input type="hidden" name="assessment_id" id="del_id">
+        <div class="db-confirm-grid">
+            <div class="db-confirm-row"><span class="lbl">Resident</span><span class="val" id="del_res"></span></div>
+            <div class="db-confirm-row"><span class="lbl">Location</span><span class="val" id="del_loc"></span></div>
+            <div class="db-confirm-row"><span class="lbl">Disaster Type</span><span class="val" id="del_dis"></span></div>
+            <div class="db-confirm-row"><span class="lbl">Est. Cost</span><span class="val" id="del_cst"></span></div>
+        </div>
+        <div class="db-notice--rose"><i class="fas fa-exclamation-triangle" style="flex-shrink:0;margin-top:1px;"></i><span>This action <strong>cannot be undone</strong>. All data will be permanently deleted.</span></div>
+        <div class="db-modal__footer"><button type="button" class="db-btn db-btn--ghost" onclick="closeModal('deleteModal')"><i class="fas fa-times"></i> Cancel</button><button type="submit" class="db-btn db-btn--rose"><i class="fas fa-trash"></i> Yes, Delete</button></div>
+    </form></div>
+</div></div>
+
+<!-- PRINT ALL -->
+<div id="printAllModal" class="db-modal"><div class="db-modal__box db-modal__box--sm">
+    <div class="db-modal__header db-modal__header--teal"><h3><i class="fas fa-print"></i> Print Assessment Reports</h3><button class="db-modal__close" onclick="closeModal('printAllModal')">×</button></div>
+    <div class="db-modal__body"><form action="print-all-assessments.php" method="POST" target="_blank">
+        <div class="db-form-group"><label class="db-form-label">Filter Options</label>
+            <div class="db-radio-group">
+                <label class="db-radio-item"><input type="radio" name="filter_type" value="all" checked> Print All Assessments</label>
+                <label class="db-radio-item"><input type="radio" name="filter_type" value="status"> Filter by Status</label>
+                <label class="db-radio-item"><input type="radio" name="filter_type" value="severity"> Filter by Severity</label>
+                <label class="db-radio-item"><input type="radio" name="filter_type" value="date"> Filter by Date Range</label>
             </div>
-            
-            <form method="POST" action="damage-assessment.php" id="deleteAssessmentForm">
-                <input type="hidden" name="action" value="delete_assessment">
-                <input type="hidden" name="assessment_id" id="delete_assessment_id">
-                
-                <div class="modal-body">
-                    <div class="text-center mb-3">
-                        <i class="fas fa-trash-alt text-danger" style="font-size: 3rem;"></i>
-                    </div>
-                    
-                    <h6 class="text-center mb-3">Are you sure you want to delete this damage assessment?</h6>
-                    
-                    <div class="alert alert-danger">
-                        <h6 class="mb-2"><strong>Assessment Details:</strong></h6>
-                        <div class="row">
-                            <div class="col-6">
-                                <small class="text-muted">Resident:</small><br>
-                                <strong id="delete_resident_name"></strong>
-                            </div>
-                            <div class="col-6">
-                                <small class="text-muted">Location:</small><br>
-                                <strong id="delete_location"></strong>
-                            </div>
-                        </div>
-                        <hr class="my-2">
-                        <div class="row">
-                            <div class="col-6">
-                                <small class="text-muted">Disaster Type:</small><br>
-                                <strong id="delete_disaster_type"></strong>
-                            </div>
-                            <div class="col-6">
-                                <small class="text-muted">Estimated Cost:</small><br>
-                                <strong id="delete_estimated_cost"></strong>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="alert alert-warning">
-                        <i class="fas fa-info-circle me-2"></i>
-                        <strong>Warning:</strong> This action cannot be undone. All data associated with this assessment will be permanently deleted.
-                    </div>
-                </div>
-                
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                        <i class="fas fa-times me-1"></i> Cancel
-                    </button>
-                    <button type="submit" class="btn btn-danger">
-                        <i class="fas fa-trash me-1"></i> Yes, Delete Assessment
-                    </button>
-                </div>
-            </form>
         </div>
-    </div>
-</div>
-
-<!-- Print All Modal -->
-<div class="modal fade" id="printAllModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">
-                    <i class="fas fa-print text-success me-2"></i>
-                    Print Assessment Reports
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <form id="printAllForm" action="print-all-assessments.php" method="POST" target="_blank">
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label">Filter Options</label>
-                        
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="radio" name="filter_type" id="filter_all" value="all" checked>
-                            <label class="form-check-label" for="filter_all">
-                                Print All Assessments
-                            </label>
-                        </div>
-                        
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="radio" name="filter_type" id="filter_status" value="status">
-                            <label class="form-check-label" for="filter_status">
-                                Filter by Status
-                            </label>
-                        </div>
-                        
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="radio" name="filter_type" id="filter_severity" value="severity">
-                            <label class="form-check-label" for="filter_severity">
-                                Filter by Severity
-                            </label>
-                        </div>
-                        
-                        <div class="form-check">
-                            <input class="form-check-input" type="radio" name="filter_type" id="filter_date" value="date">
-                            <label class="form-check-label" for="filter_date">
-                                Filter by Date Range
-                            </label>
-                        </div>
-                    </div>
-
-                    <div id="status_filter" class="filter-option" style="display: none;">
-                        <label class="form-label">Select Status</label>
-                        <select class="form-select" name="status">
-                            <option value="Pending">Pending</option>
-                            <option value="In Progress">In Progress</option>
-                            <option value="Completed">Completed</option>
-                            <option value="Cancelled">Cancelled</option>
-                        </select>
-                    </div>
-
-                    <div id="severity_filter" class="filter-option" style="display: none;">
-                        <label class="form-label">Select Severity</label>
-                        <select class="form-select" name="severity">
-                            <option value="Minor">Minor</option>
-                            <option value="Moderate">Moderate</option>
-                            <option value="Severe">Severe</option>
-                            <option value="Critical">Critical</option>
-                        </select>
-                    </div>
-
-                    <div id="date_filter" class="filter-option" style="display: none;">
-                        <div class="row">
-                            <div class="col-md-6 mb-2">
-                                <label class="form-label">From Date</label>
-                                <input type="date" class="form-control" name="date_from">
-                            </div>
-                            <div class="col-md-6 mb-2">
-                                <label class="form-label">To Date</label>
-                                <input type="date" class="form-control" name="date_to">
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                        <i class="fas fa-times me-1"></i> Cancel
-                    </button>
-                    <button type="submit" class="btn btn-success">
-                        <i class="fas fa-print me-1"></i> Generate Report
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
+        <div id="pf_status" style="display:none;" class="db-form-group"><label class="db-form-label">Status</label><select name="status" class="db-select"><option value="Pending">Pending</option><option value="In Progress">In Progress</option><option value="Completed">Completed</option><option value="Cancelled">Cancelled</option></select></div>
+        <div id="pf_severity" style="display:none;" class="db-form-group"><label class="db-form-label">Severity</label><select name="severity" class="db-select"><option value="Minor">Minor</option><option value="Moderate">Moderate</option><option value="Severe">Severe</option><option value="Critical">Critical</option></select></div>
+        <div id="pf_date" style="display:none;"><div class="db-form-grid"><div class="db-form-group"><label class="db-form-label">From</label><input type="date" name="date_from" class="db-input"></div><div class="db-form-group"><label class="db-form-label">To</label><input type="date" name="date_to" class="db-input"></div></div></div>
+        <div class="db-modal__footer"><button type="button" class="db-btn db-btn--ghost" onclick="closeModal('printAllModal')"><i class="fas fa-times"></i> Cancel</button><button type="submit" class="db-btn db-btn--teal"><i class="fas fa-print"></i> Generate Report</button></div>
+    </form></div>
+</div></div>
 
 <script>
 const assessmentsData = <?php echo json_encode($assessments); ?>;
 let currentViewingId = null;
+function openModal(id){document.getElementById(id).classList.add('db-modal--open');document.body.style.overflow='hidden';}
+function closeModal(id){document.getElementById(id).classList.remove('db-modal--open');document.body.style.overflow='';}
+window.addEventListener('click',e=>{if(e.target.classList.contains('db-modal'))closeModal(e.target.id);});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelectorAll('.db-modal--open').forEach(m=>closeModal(m.id));});
+function esc(t){if(!t)return'';const d=document.createElement('div');d.textContent=t;return d.innerHTML;}
+const svBadge={Minor:'db-badge--sky',Moderate:'db-badge--amber',Severe:'db-badge--rose',Critical:'db-badge--rose'};
+const stBadge={Pending:'db-badge--amber','In Progress':'db-badge--sky',Completed:'db-badge--success',Cancelled:'db-badge--muted'};
+function mkBadge(cls,txt){return`<span class="db-badge ${cls}">${txt||'—'}</span>`;}
+function fmtCost(v){return'₱'+Number(v).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});}
 
-function viewAssessment(assessmentId) {
-    const assessment = assessmentsData.find(a => a.assessment_id == assessmentId);
-    if (!assessment) return;
-    
-    currentViewingId = assessmentId;
-    
-    // Populate resident information
-    document.getElementById('view_resident_name').textContent = assessment.resident_name || 'N/A';
-    document.getElementById('view_resident_address').textContent = assessment.address || 'N/A';
-    document.getElementById('view_resident_contact').textContent = assessment.contact_number || 'N/A';
-    document.getElementById('view_resident_email').textContent = assessment.email || 'N/A';
-    
-    // Populate assessment information
-    document.getElementById('view_assessment_date').textContent = formatDateDisplay(assessment.assessment_date);
-    document.getElementById('view_disaster_type').innerHTML = '<span class="badge bg-secondary">' + assessment.disaster_type + '</span>';
-    document.getElementById('view_location').textContent = assessment.location;
-    document.getElementById('view_damage_type').textContent = assessment.damage_type;
-    
-    // Populate severity, cost, and status
-    document.getElementById('view_severity').innerHTML = getSeverityBadgeHTML(assessment.severity);
-    document.getElementById('view_estimated_cost').innerHTML = '<strong>₱' + Number(assessment.estimated_cost).toLocaleString('en-PH', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + '</strong>';
-    document.getElementById('view_status').innerHTML = getStatusBadgeHTML(assessment.status);
-    
-    // Populate description
-    const descDiv = document.getElementById('view_description');
-    if (assessment.description && assessment.description.trim() !== '') {
-        descDiv.textContent = assessment.description;
-        descDiv.className = 'alert alert-light';
-    } else {
-        descDiv.textContent = 'No description provided';
-        descDiv.className = 'alert alert-light text-muted fst-italic';
-    }
-    
-    // Populate assessed by and created at
-    document.getElementById('view_assessed_by').textContent = assessment.assessed_by_name || 'N/A';
-    document.getElementById('view_created_at').textContent = formatDateTimeDisplay(assessment.created_at);
-    
-    // Show modal
-    new bootstrap.Modal(document.getElementById('viewAssessmentModal')).show();
+function viewAssessment(id){
+    const a=assessmentsData.find(x=>x.assessment_id==id);if(!a)return;
+    currentViewingId=id;
+    document.getElementById('viewContent').innerHTML=`
+        <div class="db-section-head"><i class="fas fa-user" style="color:var(--db-sky)"></i> Resident Information</div>
+        <div class="db-confirm-grid">
+            <div class="db-confirm-row"><span class="lbl">Name</span><span class="val">${esc(a.resident_name)||'N/A'}</span></div>
+            <div class="db-confirm-row"><span class="lbl">Address</span><span class="val">${esc(a.address)||'N/A'}</span></div>
+            <div class="db-confirm-row"><span class="lbl">Contact</span><span class="val">${esc(a.contact_number)||'N/A'}</span></div>
+            <div class="db-confirm-row"><span class="lbl">Email</span><span class="val">${esc(a.email)||'N/A'}</span></div>
+        </div>
+        <div class="db-section-head"><i class="fas fa-house-damage" style="color:var(--db-rose)"></i> Assessment Details</div>
+        <div class="db-confirm-grid">
+            <div class="db-confirm-row"><span class="lbl">Date</span><span class="val">${a.assessment_date}</span></div>
+            <div class="db-confirm-row"><span class="lbl">Disaster Type</span><span class="val">${mkBadge('db-badge--muted',esc(a.disaster_type))}</span></div>
+            <div class="db-confirm-row"><span class="lbl">Location</span><span class="val">${esc(a.location)}</span></div>
+            <div class="db-confirm-row"><span class="lbl">Damage Type</span><span class="val">${esc(a.damage_type)}</span></div>
+            <div class="db-confirm-row"><span class="lbl">Severity</span><span class="val">${mkBadge(svBadge[a.severity]||'db-badge--muted',a.severity||'Not Set')}</span></div>
+            <div class="db-confirm-row"><span class="lbl">Est. Cost</span><span class="val" style="font-family:'DM Mono',monospace;color:var(--db-rose)">${fmtCost(a.estimated_cost)}</span></div>
+            <div class="db-confirm-row"><span class="lbl">Status</span><span class="val">${mkBadge(stBadge[a.status]||'db-badge--muted',a.status)}</span></div>
+            <div class="db-confirm-row"><span class="lbl">Assessed By</span><span class="val">${esc(a.assessed_by_name)||'N/A'}</span></div>
+            <div class="db-confirm-row"><span class="lbl">Created At</span><span class="val">${a.created_at||'N/A'}</span></div>
+        </div>
+        ${a.description&&a.description.trim()?`<div class="db-section-head"><i class="fas fa-file-alt" style="color:var(--db-indigo)"></i> Description</div><div class="db-desc-block">${esc(a.description)}</div>`:''}`;
+    openModal('viewModal');
 }
-
-function editAssessment(assessmentId) {
-    const assessment = assessmentsData.find(a => a.assessment_id == assessmentId);
-    if (!assessment) return;
-    
-    document.getElementById('edit_assessment_id').value = assessment.assessment_id;
-    document.getElementById('edit_disaster_type').value = assessment.disaster_type;
-    document.getElementById('edit_assessment_date').value = assessment.assessment_date;
-    document.getElementById('edit_location').value = assessment.location;
-    document.getElementById('edit_damage_type').value = assessment.damage_type;
-    document.getElementById('edit_severity').value = assessment.severity || 'Minor';
-    document.getElementById('edit_estimated_cost').value = assessment.estimated_cost;
-    document.getElementById('edit_status').value = assessment.status;
-    document.getElementById('edit_description').value = assessment.description || '';
-    
-    <?php if ($user_role === 'Super Admin'): ?>
-    if (document.getElementById('edit_assessed_by')) {
-        document.getElementById('edit_assessed_by').value = assessment.assessed_by || '';
-    }
-    <?php endif; ?>
-    
-    new bootstrap.Modal(document.getElementById('editAssessmentModal')).show();
+function editAssessment(id){
+    const a=assessmentsData.find(x=>x.assessment_id==id);if(!a)return;
+    document.getElementById('edit_assessment_id').value=a.assessment_id;
+    document.getElementById('edit_disaster_type').value=a.disaster_type;
+    document.getElementById('edit_assessment_date').value=a.assessment_date;
+    document.getElementById('edit_location').value=a.location;
+    document.getElementById('edit_damage_type').value=a.damage_type;
+    document.getElementById('edit_severity').value=a.severity||'Minor';
+    document.getElementById('edit_estimated_cost').value=a.estimated_cost;
+    document.getElementById('edit_status').value=a.status;
+    document.getElementById('edit_description').value=a.description||'';
+    <?php if($user_role==='Super Admin'): ?>if(document.getElementById('edit_assessed_by'))document.getElementById('edit_assessed_by').value=a.assessed_by||'';<?php endif; ?>
+    openModal('editModal');
 }
-
-function deleteAssessment(assessmentId) {
-    const assessment = assessmentsData.find(a => a.assessment_id == assessmentId);
-    if (!assessment) return;
-    
-    // Populate delete confirmation modal
-    document.getElementById('delete_assessment_id').value = assessmentId;
-    document.getElementById('delete_resident_name').textContent = assessment.resident_name || 'N/A';
-    document.getElementById('delete_location').textContent = assessment.location || 'N/A';
-    document.getElementById('delete_disaster_type').textContent = assessment.disaster_type || 'N/A';
-    document.getElementById('delete_estimated_cost').textContent = '₱' + Number(assessment.estimated_cost).toLocaleString('en-PH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-    
-    // Show delete modal
-    new bootstrap.Modal(document.getElementById('deleteAssessmentModal')).show();
+function deleteAssessment(id){
+    const a=assessmentsData.find(x=>x.assessment_id==id);if(!a)return;
+    document.getElementById('del_id').value=id;
+    document.getElementById('del_res').textContent=a.resident_name||'N/A';
+    document.getElementById('del_loc').textContent=a.location||'N/A';
+    document.getElementById('del_dis').textContent=a.disaster_type||'N/A';
+    document.getElementById('del_cst').textContent=fmtCost(a.estimated_cost);
+    openModal('deleteModal');
 }
-
-function printAssessmentDirect(assessmentId) {
-    window.open('print-assessment.php?id=' + assessmentId, '_blank');
-}
-
-function printFromView() {
-    if (currentViewingId) {
-        printAssessmentDirect(currentViewingId);
-    }
-}
-
-function editFromView() {
-    if (currentViewingId) {
-        // Close view modal
-        bootstrap.Modal.getInstance(document.getElementById('viewAssessmentModal')).hide();
-        // Open edit modal
-        setTimeout(() => editAssessment(currentViewingId), 300);
-    }
-}
-
-function showPrintAllModal() {
-    new bootstrap.Modal(document.getElementById('printAllModal')).show();
-}
-
-function formatDateDisplay(dateString) {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-}
-
-function formatDateTimeDisplay(dateString) {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) + 
-           ' at ' + date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-}
-
-function getSeverityBadgeHTML(severity) {
-    const badges = {
-        'Minor': '<span class="badge bg-info">Minor</span>',
-        'Moderate': '<span class="badge bg-warning">Moderate</span>',
-        'Severe': '<span class="badge bg-danger">Severe</span>',
-        'Critical': '<span class="badge bg-dark">Critical</span>'
-    };
-    return badges[severity] || '<span class="badge bg-secondary">Not Set</span>';
-}
-
-function getStatusBadgeHTML(status) {
-    const badges = {
-        'Pending': '<span class="badge bg-warning">Pending</span>',
-        'In Progress': '<span class="badge bg-info">In Progress</span>',
-        'Completed': '<span class="badge bg-success">Completed</span>',
-        'Cancelled': '<span class="badge bg-secondary">Cancelled</span>'
-    };
-    return badges[status] || '<span class="badge bg-secondary">' + status + '</span>';
-}
-
-// Handle filter option display
-document.querySelectorAll('input[name="filter_type"]').forEach(radio => {
-    radio.addEventListener('change', function() {
-        document.querySelectorAll('.filter-option').forEach(option => {
-            option.style.display = 'none';
-        });
-        
-        if (this.value === 'status') {
-            document.getElementById('status_filter').style.display = 'block';
-        } else if (this.value === 'severity') {
-            document.getElementById('severity_filter').style.display = 'block';
-        } else if (this.value === 'date') {
-            document.getElementById('date_filter').style.display = 'block';
-        }
-    });
-});
+function printAssessmentDirect(id){window.open('print-assessment.php?id='+id,'_blank');}
+function printFromView(){if(currentViewingId)printAssessmentDirect(currentViewingId);}
+function editFromView(){if(currentViewingId){closeModal('viewModal');setTimeout(()=>editAssessment(currentViewingId),300);}}
+document.querySelectorAll('input[name="filter_type"]').forEach(r=>r.addEventListener('change',function(){['pf_status','pf_severity','pf_date'].forEach(i=>document.getElementById(i).style.display='none');if(this.value==='status')document.getElementById('pf_status').style.display='block';else if(this.value==='severity')document.getElementById('pf_severity').style.display='block';else if(this.value==='date')document.getElementById('pf_date').style.display='block';}));
+setTimeout(()=>document.querySelectorAll('.db-alert').forEach(a=>{a.style.transition='opacity .4s';a.style.opacity='0';setTimeout(()=>a.remove(),400);}),5000);
 </script>
-
 <?php include __DIR__ . '/../includes/footer.php'; ?>

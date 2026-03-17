@@ -7,10 +7,8 @@ requireRole(['Admin', 'Staff', 'Super Admin']);
 
 $page_title = 'Manage Announcements';
 
-// Get filter parameters
 $search = isset($_GET['search']) ? trim($_GET['search']) : '';
 
-// Build query
 $where_conditions = [];
 $params = [];
 $types = '';
@@ -25,7 +23,6 @@ if (!empty($search)) {
 
 $where_clause = !empty($where_conditions) ? 'WHERE ' . implode(' AND ', $where_conditions) : '';
 
-// Get announcements
 $query = "
     SELECT *
     FROM tbl_announcements
@@ -40,7 +37,6 @@ if (!empty($params)) {
 $stmt->execute();
 $announcements = $stmt->get_result();
 
-// Get statistics
 $stats_query = "
     SELECT 
         COUNT(*) as total_announcements,
@@ -56,731 +52,425 @@ include '../../../includes/header.php';
 ?>
 
 <style>
-    * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-    }
-    
-    body {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-        background: #f8f9fa;
-        color: #1a1a1a;
-    }
-    
-    .page-header {
-        background: white;
-        padding: 2rem;
-        margin-bottom: 2rem;
-        border-bottom: 1px solid #e5e7eb;
-    }
-    
-    .page-header h1 {
-        font-size: 1.75rem;
-        font-weight: 600;
-        margin-bottom: 0.5rem;
-        color: #1a1a1a;
-    }
-    
-    .breadcrumb {
-        font-size: 0.875rem;
-        color: #6b7280;
-    }
-    
-    .breadcrumb a {
-        color: #3b82f6;
-        text-decoration: none;
-    }
-    
-    .stats-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-        gap: 1.5rem;
-        margin-bottom: 2rem;
-    }
-    
-    .stat-card {
-        background: white;
-        padding: 1.5rem;
-        border-radius: 8px;
-        border: 1px solid #e5e7eb;
-    }
-    
-    .stat-label {
-        font-size: 0.875rem;
-        color: #6b7280;
-        margin-bottom: 0.5rem;
-    }
-    
-    .stat-value {
-        font-size: 2rem;
-        font-weight: 600;
-        color: #1a1a1a;
-    }
-    
-    .filters-section {
-        background: white;
-        padding: 1.5rem;
-        border-radius: 8px;
-        border: 1px solid #e5e7eb;
-        margin-bottom: 2rem;
-    }
-    
-    .filters-grid {
-        display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 1rem;
-        margin-top: 1rem;
-    }
-    
-    .form-group label {
-        display: block;
-        font-size: 0.875rem;
-        font-weight: 500;
-        margin-bottom: 0.5rem;
-        color: #374151;
-    }
-    
-    .form-control {
-        width: 100%;
-        padding: 0.625rem 0.875rem;
-        font-size: 0.875rem;
-        border: 1px solid #d1d5db;
-        border-radius: 6px;
-        background: white;
-        transition: all 0.15s;
-    }
-    
-    .form-control:focus {
-        outline: none;
-        border-color: #3b82f6;
-        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-    }
-    
-    .btn {
-        padding: 0.625rem 1.25rem;
-        font-size: 0.875rem;
-        font-weight: 500;
-        border-radius: 6px;
-        border: none;
-        cursor: pointer;
-        transition: all 0.15s;
-        text-decoration: none;
-        display: inline-block;
-    }
-    
-    .btn-primary {
-        background: #3b82f6;
-        color: white;
-    }
-    
-    .btn-primary:hover {
-        background: #2563eb;
-    }
-    
-    .btn-success {
-        background: #10b981;
-        color: white;
-    }
-    
-    .btn-success:hover {
-        background: #059669;
-    }
-    
-    .btn-secondary {
-        background: #6b7280;
-        color: white;
-    }
-    
-    .btn-secondary:hover {
-        background: #4b5563;
-    }
-    
-    .btn-danger {
-        background: #ef4444;
-        color: white;
-    }
-    
-    .btn-danger:hover {
-        background: #dc2626;
-    }
-    
-    .btn-sm {
-        padding: 0.375rem 0.75rem;
-        font-size: 0.8125rem;
-    }
-    
-    .action-bar {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 1.5rem;
-    }
-    
-    .announcements-list {
-        background: white;
-        border-radius: 8px;
-        border: 1px solid #e5e7eb;
-        overflow: hidden;
-    }
-    
-    .announcement-item {
-        padding: 1.5rem;
-        border-bottom: 1px solid #e5e7eb;
-    }
-    
-    .announcement-item:last-child {
-        border-bottom: none;
-    }
-    
-    .announcement-header {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        margin-bottom: 1rem;
-    }
-    
-    .author-avatar {
-        width: 40px;
-        height: 40px;
-        border-radius: 50%;
-        background: #e5e7eb;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 600;
-        color: #6b7280;
-    }
-    
-    .announcement-meta {
-        flex: 1;
-    }
-    
-    .author-name {
-        font-weight: 500;
-        color: #1a1a1a;
-        font-size: 0.875rem;
-    }
-    
-    .post-date {
-        font-size: 0.75rem;
-        color: #6b7280;
-    }
-    
-    .announcement-title {
-        font-size: 1.125rem;
-        font-weight: 600;
-        margin-bottom: 0.5rem;
-        color: #1a1a1a;
-    }
-    
-    .announcement-content {
-        color: #4b5563;
-        line-height: 1.6;
-        margin-bottom: 1rem;
-    }
-    
-    .announcement-footer {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        flex-wrap: wrap;
-        gap: 1rem;
-    }
-    
-    .announcement-actions {
-        display: flex;
-        gap: 0.5rem;
-    }
-    
-    .empty-state {
-        text-align: center;
-        padding: 3rem;
-        color: #6b7280;
-    }
-    
-    .empty-state i {
-        font-size: 3rem;
-        margin-bottom: 1rem;
-        opacity: 0.5;
-    }
-    
-    /* Modal Styles */
-    .modal {
-        display: none;
-        position: fixed;
-        z-index: 1000;
-        left: 0;
-        top: 0;
-        width: 100%;
-        height: 100%;
-        background-color: rgba(0, 0, 0, 0.5);
-        animation: fadeIn 0.3s;
-    }
-    
-    @keyframes fadeIn {
-        from { opacity: 0; }
-        to { opacity: 1; }
-    }
-    
-    .modal-content {
-        background-color: white;
-        margin: 5% auto;
-        padding: 0;
-        border-radius: 8px;
-        width: 90%;
-        max-width: 600px;
-        max-height: 80vh;
-        overflow: hidden;
-        animation: slideDown 0.3s;
-    }
-    
-    @keyframes slideDown {
-        from {
-            transform: translateY(-50px);
-            opacity: 0;
-        }
-        to {
-            transform: translateY(0);
-            opacity: 1;
-        }
-    }
-    
-    .modal-header {
-        padding: 1.5rem;
-        border-bottom: 1px solid #e5e7eb;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-    
-    .modal-header h2 {
-        font-size: 1.25rem;
-        font-weight: 600;
-        color: #1a1a1a;
-    }
-    
-    .close {
-        color: #6b7280;
-        font-size: 1.5rem;
-        font-weight: 400;
-        cursor: pointer;
-        border: none;
-        background: none;
-        width: 32px;
-        height: 32px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 4px;
-        transition: all 0.15s;
-    }
-    
-    .close:hover {
-        background: #f3f4f6;
-        color: #1a1a1a;
-    }
-    
-    .modal-body {
-        padding: 1.5rem;
-        max-height: 60vh;
-        overflow-y: auto;
-    }
-    
-    .modal-footer {
-        padding: 1rem 1.5rem;
-        border-top: 1px solid #e5e7eb;
-        display: flex;
-        justify-content: flex-end;
-        gap: 0.75rem;
-    }
-    
-    .detail-row {
-        margin-bottom: 1.5rem;
-    }
-    
-    .detail-label {
-        font-size: 0.75rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        color: #6b7280;
-        margin-bottom: 0.5rem;
-        letter-spacing: 0.025em;
-    }
-    
-    .detail-value {
-        color: #1a1a1a;
-        line-height: 1.6;
-    }
-    
-    .form-group-modal {
-        margin-bottom: 1.25rem;
-    }
-    
-    .form-group-modal label {
-        display: block;
-        font-size: 0.875rem;
-        font-weight: 500;
-        margin-bottom: 0.5rem;
-        color: #374151;
-    }
-    
-    .form-group-modal input,
-    .form-group-modal textarea {
-        width: 100%;
-        padding: 0.625rem 0.875rem;
-        font-size: 0.875rem;
-        border: 1px solid #d1d5db;
-        border-radius: 6px;
-        background: white;
-        transition: all 0.15s;
-    }
-    
-    .form-group-modal textarea {
-        min-height: 150px;
-        resize: vertical;
-        font-family: inherit;
-    }
-    
-    .form-group-modal input:focus,
-    .form-group-modal textarea:focus {
-        outline: none;
-        border-color: #3b82f6;
-        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-    }
-    
-    .btn-outline {
-        background: white;
-        border: 1px solid #d1d5db;
-        color: #374151;
-    }
-    
-    .btn-outline:hover {
-        background: #f9fafb;
-        border-color: #9ca3af;
-    }
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=DM+Mono:wght@300;400;500&display=swap');
+:root{
+    --db-navy:#0d1b36;--db-navy-mid:#152849;--db-navy-light:#1c3461;
+    --db-amber:#f59e0b;--db-amber-light:#fef3c7;--db-amber-dark:#b45309;
+    --db-teal:#0d9488;--db-teal-light:#ccfbf1;
+    --db-rose:#e11d48;--db-rose-light:#ffe4e6;
+    --db-sky:#0ea5e9;--db-sky-light:#e0f2fe;
+    --db-indigo:#6366f1;--db-indigo-light:#e0e7ff;
+    --db-success:#10b981;--db-success-light:#d1fae5;
+    --db-bg:#eef2f7;--db-surf:#ffffff;--db-surf2:#f8fafc;
+    --db-border:#e2e8f0;--db-text:#0f172a;--db-muted:#64748b;
+    --db-radius:14px;--db-radius-sm:8px;--db-radius-lg:20px;
+    --db-shadow:0 1px 3px rgba(13,27,54,.06),0 4px 16px rgba(13,27,54,.07);
+    --db-shadow-lg:0 8px 40px rgba(13,27,54,.14),0 2px 8px rgba(13,27,54,.06);
+}
+*,*::before,*::after{box-sizing:border-box;}
+body{font-family:'Sora',sans-serif;background:var(--db-bg);color:var(--db-text);font-size:13.5px;}
+
+/* Hero */
+.rm-hero{background:linear-gradient(135deg,var(--db-navy) 0%,var(--db-navy-light) 65%,#224090 100%);padding:28px 36px;margin-bottom:24px;border-radius:0 0 var(--db-radius-lg) var(--db-radius-lg);position:relative;overflow:hidden;}
+.rm-hero__ring{position:absolute;border-radius:50%;border:1px solid rgba(255,255,255,.06);pointer-events:none;}
+.rm-hero__ring--1{width:300px;height:300px;top:-130px;right:-60px;}
+.rm-hero__ring--2{width:180px;height:180px;top:-50px;right:70px;border-color:rgba(245,158,11,.12);}
+.rm-hero__ring--3{width:100px;height:100px;bottom:-40px;left:40%;border-color:rgba(13,148,136,.14);}
+.rm-hero__inner{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+.rm-hero__left{display:flex;align-items:center;gap:16px;}
+.rm-hero__icon{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,var(--db-amber-dark),var(--db-amber));display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff;box-shadow:0 4px 16px rgba(245,158,11,.4);flex-shrink:0;}
+.rm-hero__title{font-size:22px;font-weight:800;color:#fff;letter-spacing:-.4px;margin-bottom:3px;}
+.rm-hero__sub{font-size:13px;color:rgba(255,255,255,.55);}
+
+/* Stats */
+.db-stats-row{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:24px;}
+.db-stat-card{flex:1 1 140px;background:var(--db-surf);border-radius:var(--db-radius);padding:16px 14px 12px;display:flex;flex-direction:column;gap:9px;box-shadow:var(--db-shadow);border:1px solid var(--db-border);transition:transform .2s,box-shadow .2s;}
+.db-stat-card:hover{transform:translateY(-3px);box-shadow:var(--db-shadow-lg);}
+.db-stat-card__icon{width:38px;height:38px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:15px;}
+.db-stat-card__icon--amber{background:var(--db-amber-light);color:var(--db-amber-dark);}
+.db-stat-card__icon--teal{background:var(--db-teal-light);color:var(--db-teal);}
+.db-stat-card__icon--sky{background:var(--db-sky-light);color:var(--db-sky);}
+.db-stat-card__icon--indigo{background:var(--db-indigo-light);color:var(--db-indigo);}
+.db-stat-card__num{font-size:26px;font-weight:800;line-height:1;letter-spacing:-1px;}
+.db-stat-card__label{font-size:10px;color:var(--db-muted);font-weight:500;text-transform:uppercase;letter-spacing:.5px;}
+.db-stat-card__bar{height:3px;border-radius:2px;opacity:.4;}
+.db-stat-card__bar--amber{background:linear-gradient(90deg,var(--db-amber),transparent);}
+.db-stat-card__bar--teal{background:linear-gradient(90deg,var(--db-teal),transparent);}
+.db-stat-card__bar--sky{background:linear-gradient(90deg,var(--db-sky),transparent);}
+.db-stat-card__bar--indigo{background:linear-gradient(90deg,var(--db-indigo),transparent);}
+
+/* Panel */
+.db-panel{background:var(--db-surf);border-radius:var(--db-radius-lg);border:1px solid var(--db-border);box-shadow:var(--db-shadow);margin-bottom:18px;overflow:hidden;animation:dbFadeUp .35s ease both;}
+@keyframes dbFadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.db-panel__header{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid var(--db-border);gap:10px;flex-wrap:wrap;}
+.db-panel__title{display:flex;align-items:center;gap:10px;}
+.db-panel__title h2{font-size:15px;font-weight:700;}
+.db-panel__icon{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:14px;}
+.db-panel__icon--amber{background:var(--db-amber-light);color:var(--db-amber-dark);}
+.db-panel__icon--teal{background:var(--db-teal-light);color:var(--db-teal);}
+.db-panel__body{padding:20px 22px;}
+
+/* Buttons */
+.db-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:var(--db-radius-sm);font-family:'Sora',sans-serif;font-size:13px;font-weight:600;cursor:pointer;border:1px solid transparent;text-decoration:none;transition:all .18s;white-space:nowrap;}
+.db-btn--sm{padding:6px 12px;font-size:12px;}
+.db-btn--primary{background:linear-gradient(135deg,var(--db-navy),var(--db-navy-light));color:#fff;}
+.db-btn--primary:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(13,27,54,.25);color:#fff;}
+.db-btn--success{background:linear-gradient(135deg,#065f46,var(--db-success));color:#fff;}
+.db-btn--success:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(16,185,129,.3);color:#fff;}
+.db-btn--ghost{background:var(--db-surf2);color:var(--db-text);border-color:var(--db-border);}
+.db-btn--ghost:hover{background:var(--db-border);}
+.db-btn--danger{background:linear-gradient(135deg,#7f1d1d,var(--db-rose));color:#fff;}
+.db-btn--danger:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(225,29,72,.3);color:#fff;}
+.db-btn--warning{background:linear-gradient(135deg,var(--db-amber-dark),var(--db-amber));color:#fff;}
+.db-btn--warning:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(245,158,11,.35);color:#fff;}
+
+/* Form */
+.db-form-row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;}
+.db-input,.db-select{padding:9px 13px;border:1.5px solid var(--db-border);border-radius:var(--db-radius-sm);font-family:'Sora',sans-serif;font-size:13px;color:var(--db-text);background:var(--db-surf);outline:none;transition:border-color .18s,box-shadow .18s;}
+.db-input:focus,.db-select:focus{border-color:var(--db-navy-light);box-shadow:0 0 0 3px rgba(28,52,97,.1);}
+.db-filter-label{font-size:11px;font-weight:600;color:var(--db-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;display:block;}
+
+/* Badges */
+.db-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:20px;font-family:'DM Mono',monospace;font-size:10px;font-weight:500;letter-spacing:.3px;white-space:nowrap;}
+.db-badge--amber{background:var(--db-amber-light);color:#92400e;}
+.db-badge--teal{background:var(--db-teal-light);color:#0f766e;}
+
+/* Announcements List */
+.ann-list{display:flex;flex-direction:column;gap:0;}
+.ann-item{padding:20px 22px;border-bottom:1px solid var(--db-border);transition:background .12s;}
+.ann-item:last-child{border-bottom:none;}
+.ann-item:hover{background:var(--db-surf2);}
+.ann-header{display:flex;align-items:center;gap:12px;margin-bottom:12px;}
+.ann-avatar{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,var(--db-navy),var(--db-navy-light));display:flex;align-items:center;justify-content:center;font-size:15px;color:rgba(255,255,255,.8);flex-shrink:0;}
+.ann-meta{flex:1;}
+.ann-author{font-weight:600;font-size:13px;color:var(--db-text);}
+.ann-date{font-size:11px;color:var(--db-muted);font-family:'DM Mono',monospace;}
+.ann-title{font-size:15px;font-weight:700;color:var(--db-text);margin-bottom:6px;line-height:1.4;}
+.ann-content{color:var(--db-muted);line-height:1.7;font-size:13px;margin-bottom:14px;}
+.ann-footer{display:flex;align-items:center;justify-content:flex-end;gap:8px;}
+.ann-id{font-family:'DM Mono',monospace;font-size:10px;color:var(--db-indigo);font-weight:500;margin-right:auto;}
+
+/* Empty state */
+.db-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:56px 24px;text-align:center;gap:12px;}
+.db-empty i{font-size:44px;color:var(--db-border);}
+.db-empty p{font-size:14px;color:var(--db-muted);}
+
+/* Alert */
+.db-alert{display:flex;align-items:center;gap:12px;padding:14px 18px;border-radius:var(--db-radius);margin-bottom:16px;font-weight:500;font-size:13.5px;border-left:4px solid;}
+.db-alert--success{background:var(--db-success-light);color:#065f46;border-color:var(--db-success);}
+.db-alert--error{background:#fee2e2;color:#7f1d1d;border-color:var(--db-rose);}
+.db-alert__close{margin-left:auto;background:none;border:none;cursor:pointer;font-size:18px;opacity:.6;}
+
+/* Modal */
+.db-modal{display:none;position:fixed;inset:0;background:rgba(13,27,54,.55);backdrop-filter:blur(5px);z-index:9999;align-items:center;justify-content:center;padding:20px;}
+.db-modal--open{display:flex;}
+.db-modal__box{background:var(--db-surf);border-radius:var(--db-radius-lg);width:100%;max-width:560px;max-height:92vh;overflow-y:auto;box-shadow:var(--db-shadow-lg);animation:dbModalIn .28s cubic-bezier(.34,1.56,.64,1);}
+@keyframes dbModalIn{from{opacity:0;transform:scale(.9) translateY(16px)}to{opacity:1;transform:scale(1) translateY(0)}}
+.db-modal__header{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-radius:var(--db-radius-lg) var(--db-radius-lg) 0 0;}
+.db-modal__header--teal{background:linear-gradient(135deg,#065f46,var(--db-teal));}
+.db-modal__header--amber{background:linear-gradient(135deg,var(--db-amber-dark),var(--db-amber));}
+.db-modal__header--rose{background:linear-gradient(135deg,#7f1d1d,var(--db-rose));}
+.db-modal__header--navy{background:linear-gradient(135deg,var(--db-navy),var(--db-navy-light));}
+.db-modal__header h3{color:#fff;font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px;}
+.db-modal__close{background:rgba(255,255,255,.15);border:none;color:rgba(255,255,255,.85);width:30px;height:30px;border-radius:7px;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;transition:background .15s;}
+.db-modal__close:hover{background:rgba(255,255,255,.28);color:#fff;}
+.db-modal__body{padding:22px;}
+.db-modal__footer{display:flex;gap:10px;margin-top:18px;}
+.db-modal__footer .db-btn{flex:1;justify-content:center;}
+
+.db-field{margin-bottom:16px;}
+.db-field label{display:block;font-size:11px;font-weight:600;color:var(--db-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px;}
+.db-field input,.db-field textarea{width:100%;padding:9px 13px;border:1.5px solid var(--db-border);border-radius:var(--db-radius-sm);font-family:'Sora',sans-serif;font-size:13px;color:var(--db-text);background:var(--db-surf);outline:none;transition:border-color .18s,box-shadow .18s;}
+.db-field textarea{min-height:140px;resize:vertical;}
+.db-field input:focus,.db-field textarea:focus{border-color:var(--db-navy-light);box-shadow:0 0 0 3px rgba(28,52,97,.1);}
+.db-detail-row{margin-bottom:14px;}
+.db-detail-label{font-size:10px;font-weight:600;text-transform:uppercase;color:var(--db-muted);letter-spacing:.5px;margin-bottom:4px;}
+.db-detail-value{font-size:13.5px;color:var(--db-text);line-height:1.6;}
+.db-detail-value.large{font-size:15px;font-weight:700;}
+
+/* Dark mode */
+body.dark-mode{background:#0f172a !important;color:#e2e8f0 !important;}
+body.dark-mode .db-panel,body.dark-mode .db-modal__box{background:#1e293b !important;border-color:#334155 !important;}
+body.dark-mode .db-panel__header{border-bottom-color:#334155 !important;}
+body.dark-mode .db-stat-card{background:#1e293b !important;border-color:#334155 !important;color:#e2e8f0 !important;}
+body.dark-mode .db-input,body.dark-mode .db-select,body.dark-mode .db-field input,body.dark-mode .db-field textarea{background:#334155 !important;color:#e2e8f0 !important;border-color:#475569 !important;}
+body.dark-mode .ann-item:hover{background:#1e293b !important;}
+body.dark-mode .ann-title{color:#f1f5f9 !important;}
+body.dark-mode .ann-content{color:#94a3b8 !important;}
+body.dark-mode .db-btn--ghost{background:#1e293b !important;color:#e2e8f0 !important;border-color:#475569 !important;}
+body.dark-mode .db-detail-value{color:#e2e8f0 !important;}
 </style>
 
-<div class="page-header">
-    <h1>Manage Announcements</h1>
-    <div class="breadcrumb">
-        <a href="<?php echo $base_url; ?>/modules/dashboard/index.php">Dashboard</a> / 
-        <span>Announcements Management</span>
+<!-- Hero -->
+<div class="rm-hero">
+    <div class="rm-hero__ring rm-hero__ring--1"></div>
+    <div class="rm-hero__ring rm-hero__ring--2"></div>
+    <div class="rm-hero__ring rm-hero__ring--3"></div>
+    <div class="rm-hero__inner">
+        <div class="rm-hero__left">
+            <div class="rm-hero__icon"><i class="fas fa-bullhorn"></i></div>
+            <div>
+                <div class="rm-hero__title">Manage Announcements</div>
+                <div class="rm-hero__sub">Create, edit, and manage community announcements</div>
+            </div>
+        </div>
+        <a href="create-announcement.php" class="db-btn db-btn--success">
+            <i class="fas fa-plus"></i> New Announcement
+        </a>
     </div>
 </div>
 
-<div class="container-fluid">
-    <!-- Statistics -->
-    <div class="stats-grid">
-        <div class="stat-card">
-            <div class="stat-label">Total Announcements</div>
-            <div class="stat-value"><?php echo number_format($stats['total_announcements']); ?></div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-label">Posted Today</div>
-            <div class="stat-value"><?php echo number_format($stats['today_announcements']); ?></div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-label">This Week</div>
-            <div class="stat-value"><?php echo number_format($stats['week_announcements']); ?></div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-label">This Month</div>
-            <div class="stat-value"><?php echo number_format($stats['month_announcements']); ?></div>
-        </div>
+<div style="padding:0 24px 24px;">
+
+<!-- Stats -->
+<div class="db-stats-row">
+    <div class="db-stat-card">
+        <div class="db-stat-card__icon db-stat-card__icon--amber"><i class="fas fa-bullhorn"></i></div>
+        <div><div class="db-stat-card__num"><?php echo number_format($stats['total_announcements']); ?></div><div class="db-stat-card__label">Total</div></div>
+        <div class="db-stat-card__bar db-stat-card__bar--amber"></div>
     </div>
-    
-    <!-- Action Bar -->
-    <div class="action-bar">
-        <div></div>
-        <a href="create-announcement.php" class="btn btn-success">
-            <i class="fas fa-plus"></i> Create New Announcement
-        </a>
+    <div class="db-stat-card">
+        <div class="db-stat-card__icon db-stat-card__icon--teal"><i class="fas fa-calendar-day"></i></div>
+        <div><div class="db-stat-card__num"><?php echo number_format($stats['today_announcements']); ?></div><div class="db-stat-card__label">Posted Today</div></div>
+        <div class="db-stat-card__bar db-stat-card__bar--teal"></div>
     </div>
-    
-    <!-- Filters -->
-    <div class="filters-section">
-        <form method="GET" action="">
-            <div class="filters-grid">
-                <div class="form-group">
-                    <label>Search</label>
-                    <input type="text" name="search" class="form-control" placeholder="Search announcements..." value="<?php echo htmlspecialchars($search); ?>">
+    <div class="db-stat-card">
+        <div class="db-stat-card__icon db-stat-card__icon--sky"><i class="fas fa-calendar-week"></i></div>
+        <div><div class="db-stat-card__num"><?php echo number_format($stats['week_announcements']); ?></div><div class="db-stat-card__label">This Week</div></div>
+        <div class="db-stat-card__bar db-stat-card__bar--sky"></div>
+    </div>
+    <div class="db-stat-card">
+        <div class="db-stat-card__icon db-stat-card__icon--indigo"><i class="fas fa-calendar-alt"></i></div>
+        <div><div class="db-stat-card__num"><?php echo number_format($stats['month_announcements']); ?></div><div class="db-stat-card__label">This Month</div></div>
+        <div class="db-stat-card__bar db-stat-card__bar--indigo"></div>
+    </div>
+</div>
+
+<!-- Search -->
+<div class="db-panel">
+    <div class="db-panel__header">
+        <div class="db-panel__title">
+            <div class="db-panel__icon db-panel__icon--teal"><i class="fas fa-search"></i></div>
+            <h2>Search Announcements</h2>
+        </div>
+        <?php if ($search): ?>
+            <a href="?" class="db-btn db-btn--ghost db-btn--sm"><i class="fas fa-times"></i> Clear</a>
+        <?php endif; ?>
+    </div>
+    <div class="db-panel__body">
+        <form method="GET">
+            <div class="db-form-row">
+                <div style="flex:1;min-width:220px;">
+                    <label class="db-filter-label">Search</label>
+                    <input type="text" name="search" class="db-input" style="width:100%;" placeholder="Search by title or content…" value="<?php echo htmlspecialchars($search); ?>">
                 </div>
-                <div class="form-group" style="display: flex; align-items: flex-end;">
-                    <button type="submit" class="btn btn-primary">Apply</button>
+                <div style="padding-top:18px;">
+                    <button type="submit" class="db-btn db-btn--primary"><i class="fas fa-search"></i> Search</button>
                 </div>
             </div>
         </form>
     </div>
-    
-    <!-- Announcements List -->
-    <div class="announcements-list">
+</div>
+
+<!-- Announcements List -->
+<div class="db-panel">
+    <div class="db-panel__header">
+        <div class="db-panel__title">
+            <div class="db-panel__icon db-panel__icon--amber"><i class="fas fa-list"></i></div>
+            <h2>All Announcements</h2>
+            <span class="db-badge db-badge--amber"><?php echo $announcements->num_rows; ?></span>
+        </div>
+        <span style="font-size:12px;color:var(--db-muted);"><i class="fas fa-info-circle"></i> Click actions to manage</span>
+    </div>
+
+    <div class="ann-list">
         <?php if ($announcements->num_rows > 0): ?>
-            <?php while ($announcement = $announcements->fetch_assoc()): 
-                // Debug: print all keys to see what's available
-                // Uncomment next line if you need to debug
-                // error_log("Announcement keys: " . print_r(array_keys($announcement), true));
-                
-                // Get ID - should be 'id' based on your table structure
+            <?php while ($announcement = $announcements->fetch_assoc()):
                 $announcement_id = isset($announcement['id']) ? $announcement['id'] : 0;
                 $title = htmlspecialchars($announcement['title']);
                 $content = htmlspecialchars($announcement['content']);
-                $created_at = date('M d, Y h:i A', strtotime($announcement['created_at']));
-                
-                // Debug: Check if ID exists
-                if ($announcement_id === 0) {
-                    error_log("Warning: Announcement ID is 0 or missing");
-                }
+                $created_at = date('M d, Y \a\t h:i A', strtotime($announcement['created_at']));
             ?>
-                <div class="announcement-item">
-                    <div class="announcement-header">
-                        <div class="author-avatar">
-                            <i class="fas fa-user"></i>
-                        </div>
-                        <div class="announcement-meta">
-                            <div class="author-name">Admin</div>
-                            <div class="post-date"><?php echo $created_at; ?></div>
-                        </div>
-                    </div>
-                    
-                    <h3 class="announcement-title"><?php echo $title; ?></h3>
-                    <div class="announcement-content">
-                        <?php 
-                        if (strlen($content) > 200) {
-                            echo nl2br(substr($content, 0, 200)) . '...';
-                        } else {
-                            echo nl2br($content);
-                        }
-                        ?>
-                    </div>
-                    
-                    <div class="announcement-footer">
-                        <div></div>
-                        <div class="announcement-actions">
-                            <?php if ($announcement_id > 0): ?>
-                                <button onclick="viewAnnouncement(<?php echo $announcement_id; ?>)" class="btn btn-secondary btn-sm">View</button>
-                                <button onclick="editAnnouncement(<?php echo $announcement_id; ?>)" class="btn btn-primary btn-sm">Edit</button>
-                                <button onclick="confirmDelete(<?php echo $announcement_id; ?>)" class="btn btn-danger btn-sm">Delete</button>
-                            <?php else: ?>
-                                <span style="color: #999; font-size: 0.75rem;">ID not found</span>
-                            <?php endif; ?>
-                        </div>
+            <div class="ann-item">
+                <div class="ann-header">
+                    <div class="ann-avatar"><i class="fas fa-user"></i></div>
+                    <div class="ann-meta">
+                        <div class="ann-author">Admin</div>
+                        <div class="ann-date"><?php echo $created_at; ?></div>
                     </div>
                 </div>
+                <div class="ann-title"><?php echo $title; ?></div>
+                <div class="ann-content">
+                    <?php
+                    if (strlen($content) > 220) {
+                        echo nl2br(substr($content, 0, 220)) . '…';
+                    } else {
+                        echo nl2br($content);
+                    }
+                    ?>
+                </div>
+                <div class="ann-footer">
+                    <?php if ($announcement_id > 0): ?>
+                        <span class="ann-id">#<?php echo str_pad($announcement_id, 5, '0', STR_PAD_LEFT); ?></span>
+                        <button onclick="viewAnnouncement(<?php echo $announcement_id; ?>)" class="db-btn db-btn--ghost db-btn--sm">
+                            <i class="fas fa-eye"></i> View
+                        </button>
+                        <button onclick="editAnnouncement(<?php echo $announcement_id; ?>)" class="db-btn db-btn--primary db-btn--sm">
+                            <i class="fas fa-edit"></i> Edit
+                        </button>
+                        <button onclick="confirmDelete(<?php echo $announcement_id; ?>)" class="db-btn db-btn--danger db-btn--sm">
+                            <i class="fas fa-trash"></i> Delete
+                        </button>
+                    <?php endif; ?>
+                </div>
+            </div>
             <?php endwhile; ?>
         <?php else: ?>
-            <div class="empty-state">
+            <div class="db-empty">
                 <i class="fas fa-bullhorn"></i>
                 <p>No announcements found.</p>
+                <?php if ($search): ?>
+                    <a href="?" class="db-btn db-btn--ghost db-btn--sm"><i class="fas fa-times"></i> Clear Filter</a>
+                <?php endif; ?>
             </div>
         <?php endif; ?>
     </div>
 </div>
 
+</div><!-- /padding -->
+
 <!-- View Modal -->
-<div id="viewModal" class="modal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h2><i class="fas fa-eye"></i> View Announcement</h2>
-            <button class="close" onclick="closeModal('viewModal')">&times;</button>
+<div id="viewModal" class="db-modal">
+    <div class="db-modal__box">
+        <div class="db-modal__header db-modal__header--navy">
+            <h3><i class="fas fa-eye"></i> View Announcement</h3>
+            <button class="db-modal__close" onclick="closeModal('viewModal')">×</button>
         </div>
-        <div class="modal-body" id="viewModalBody">
-            <div class="detail-row">
-                <div class="detail-label">Title</div>
-                <div class="detail-value" id="view-title"></div>
+        <div class="db-modal__body">
+            <div class="db-detail-row">
+                <div class="db-detail-label">Title</div>
+                <div class="db-detail-value large" id="view-title"></div>
             </div>
-            <div class="detail-row">
-                <div class="detail-label">Content</div>
-                <div class="detail-value" id="view-content"></div>
+            <div class="db-detail-row">
+                <div class="db-detail-label">Content</div>
+                <div class="db-detail-value" id="view-content" style="white-space:pre-wrap;"></div>
             </div>
-            <div class="detail-row">
-                <div class="detail-label">Posted On</div>
-                <div class="detail-value" id="view-date"></div>
+            <div class="db-detail-row">
+                <div class="db-detail-label">Posted On</div>
+                <div class="db-detail-value" id="view-date" style="font-family:'DM Mono',monospace;font-size:12px;"></div>
             </div>
-        </div>
-        <div class="modal-footer">
-            <button onclick="closeModal('viewModal')" class="btn btn-outline">Close</button>
+            <div class="db-modal__footer">
+                <button onclick="closeModal('viewModal')" class="db-btn db-btn--ghost"><i class="fas fa-times"></i> Close</button>
+            </div>
         </div>
     </div>
 </div>
 
 <!-- Edit Modal -->
-<div id="editModal" class="modal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h2><i class="fas fa-edit"></i> Edit Announcement</h2>
-            <button class="close" onclick="closeModal('editModal')">&times;</button>
+<div id="editModal" class="db-modal">
+    <div class="db-modal__box">
+        <div class="db-modal__header db-modal__header--teal">
+            <h3><i class="fas fa-edit"></i> Edit Announcement</h3>
+            <button class="db-modal__close" onclick="closeModal('editModal')">×</button>
         </div>
-        <div class="modal-body">
+        <div class="db-modal__body">
             <form id="editForm">
                 <input type="hidden" id="edit-id" name="id">
-                <div class="form-group-modal">
+                <div class="db-field">
                     <label>Title</label>
                     <input type="text" id="edit-title" name="title" required>
                 </div>
-                <div class="form-group-modal">
+                <div class="db-field">
                     <label>Content</label>
                     <textarea id="edit-content" name="content" required></textarea>
                 </div>
             </form>
-        </div>
-        <div class="modal-footer">
-            <button onclick="closeModal('editModal')" class="btn btn-outline">Cancel</button>
-            <button onclick="saveAnnouncement()" class="btn btn-primary">Save Changes</button>
+            <div class="db-modal__footer">
+                <button onclick="closeModal('editModal')" class="db-btn db-btn--ghost"><i class="fas fa-times"></i> Cancel</button>
+                <button onclick="saveAnnouncement()" class="db-btn db-btn--primary"><i class="fas fa-save"></i> Save Changes</button>
+            </div>
         </div>
     </div>
 </div>
 
-<!-- Delete Confirmation Modal -->
-<div id="deleteModal" class="modal">
-    <div class="modal-content" style="max-width: 400px;">
-        <div class="modal-header">
-            <h2><i class="fas fa-trash"></i> Delete Announcement</h2>
-            <button class="close" onclick="closeModal('deleteModal')">&times;</button>
+<!-- Delete Modal -->
+<div id="deleteModal" class="db-modal">
+    <div class="db-modal__box" style="max-width:420px;">
+        <div class="db-modal__header db-modal__header--rose">
+            <h3><i class="fas fa-trash"></i> Delete Announcement</h3>
+            <button class="db-modal__close" onclick="closeModal('deleteModal')">×</button>
         </div>
-        <div class="modal-body">
-            <p style="color: #4b5563; line-height: 1.6;">Are you sure you want to delete this announcement? This action cannot be undone.</p>
+        <div class="db-modal__body">
+            <p style="color:var(--db-muted);line-height:1.7;margin-bottom:4px;">Are you sure you want to delete this announcement? <strong style="color:var(--db-rose)">This action cannot be undone.</strong></p>
             <input type="hidden" id="delete-id">
-        </div>
-        <div class="modal-footer">
-            <button onclick="closeModal('deleteModal')" class="btn btn-outline">Cancel</button>
-            <button onclick="deleteAnnouncement()" class="btn btn-danger">Delete</button>
+            <div class="db-modal__footer">
+                <button onclick="closeModal('deleteModal')" class="db-btn db-btn--ghost"><i class="fas fa-times"></i> Cancel</button>
+                <button onclick="deleteAnnouncement()" class="db-btn db-btn--danger"><i class="fas fa-trash"></i> Delete</button>
+            </div>
         </div>
     </div>
 </div>
 
 <script>
-// Modal Functions
-function closeModal(modalId) {
-    document.getElementById(modalId).style.display = 'none';
-}
+function closeModal(id){ document.getElementById(id).classList.remove('db-modal--open'); document.body.style.overflow=''; }
+function openModal(id){ document.getElementById(id).classList.add('db-modal--open'); document.body.style.overflow='hidden'; }
+window.addEventListener('click', e => { if(e.target.classList.contains('db-modal')) closeModal(e.target.id); });
+document.addEventListener('keydown', e => { if(e.key==='Escape') document.querySelectorAll('.db-modal--open').forEach(m=>closeModal(m.id)); });
 
-// Close modal when clicking outside
-window.onclick = function(event) {
-    if (event.target.classList.contains('modal')) {
-        event.target.style.display = 'none';
-    }
-}
-
-// View Announcement
 function viewAnnouncement(id) {
-    console.log('Fetching announcement ID:', id);
-    
     fetch(`actions/get-announcement.php?id=${id}`)
-        .then(response => {
-            console.log('Response status:', response.status);
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            return response.json();
-        })
+        .then(r => r.json())
         .then(data => {
-            console.log('Response data:', data);
-            
             if (data.success) {
-                // Check if announcement object exists
-                if (!data.announcement) {
-                    alert('Error: Announcement data is missing');
-                    return;
-                }
-                
-                // Safely access properties
-                const title = data.announcement.title || 'No title';
-                const content = data.announcement.content || 'No content';
-                const createdAt = data.announcement.created_at || new Date().toISOString();
-                
-                document.getElementById('view-title').textContent = title;
-                document.getElementById('view-content').innerHTML = content.replace(/\n/g, '<br>');
-                document.getElementById('view-date').textContent = new Date(createdAt).toLocaleString();
-                document.getElementById('viewModal').style.display = 'block';
-            } else {
-                alert('Error: ' + (data.message || 'Unknown error'));
-            }
+                document.getElementById('view-title').textContent = data.announcement.title || '';
+                document.getElementById('view-content').textContent = data.announcement.content || '';
+                document.getElementById('view-date').textContent = new Date(data.announcement.created_at).toLocaleString();
+                openModal('viewModal');
+            } else { alert('Error: ' + (data.message || 'Unknown error')); }
         })
-        .catch(error => {
-            console.error('Fetch error:', error);
-            alert('Failed to load announcement. Error: ' + error.message);
-        });
+        .catch(e => alert('Failed to load: ' + e.message));
 }
 
-// Edit Announcement
 function editAnnouncement(id) {
     fetch(`actions/get-announcement.php?id=${id}`)
-        .then(response => response.json())
+        .then(r => r.json())
         .then(data => {
             if (data.success) {
                 document.getElementById('edit-id').value = id;
                 document.getElementById('edit-title').value = data.announcement.title;
                 document.getElementById('edit-content').value = data.announcement.content;
-                document.getElementById('editModal').style.display = 'block';
-            } else {
-                alert('Error: ' + data.message);
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('Failed to load announcement');
+                openModal('editModal');
+            } else { alert('Error: ' + data.message); }
         });
 }
 
-// Save Announcement
 function saveAnnouncement() {
     const id = document.getElementById('edit-id').value;
     const title = document.getElementById('edit-title').value;
     const content = document.getElementById('edit-content').value;
-    
-    if (!title || !content) {
-        alert('Please fill in all fields');
-        return;
-    }
-    
+    if (!title || !content) { alert('Please fill in all fields'); return; }
     fetch('actions/update-announcement.php', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ id, title, content })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            closeModal('editModal');
-            location.reload();
-        } else {
-            alert('Error: ' + data.message);
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('Failed to update announcement');
+    }).then(r => r.json()).then(data => {
+        if (data.success) { closeModal('editModal'); location.reload(); }
+        else alert('Error: ' + data.message);
     });
 }
 
-// Confirm Delete
 function confirmDelete(id) {
     document.getElementById('delete-id').value = id;
-    document.getElementById('deleteModal').style.display = 'block';
+    openModal('deleteModal');
 }
 
-// Delete Announcement
 function deleteAnnouncement() {
     const id = document.getElementById('delete-id').value;
-    
     fetch('actions/delete-announcement.php', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ id })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            closeModal('deleteModal');
-            location.reload();
-        } else {
-            alert('Error: ' + data.message);
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('Failed to delete announcement');
+    }).then(r => r.json()).then(data => {
+        if (data.success) { closeModal('deleteModal'); location.reload(); }
+        else alert('Error: ' + data.message);
     });
 }
 </script>

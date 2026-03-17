@@ -2,900 +2,326 @@
 require_once '../../config/config.php';
 require_once '../../config/session.php';
 requireLogin();
-
 $page_title = 'Expense Management';
-$user_role = getCurrentUserRole();
-
-if (!in_array($user_role, ['Super Admin', 'Treasurer', 'Admin'])) {
-    header('Location: ../../modules/dashboard/index.php');
-    exit();
-}
-
+$user_role  = getCurrentUserRole();
+if (!in_array($user_role, ['Super Admin', 'Treasurer', 'Admin'])) { header('Location: ../../modules/dashboard/index.php'); exit(); }
 $current_user_id = getCurrentUserId();
 
-// Handle POST actions
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (isset($_POST['action'])) {
-        if ($_POST['action'] === 'approve' && isset($_POST['expense_id'])) {
-            $expense_id = intval($_POST['expense_id']);
-            $stmt = $conn->prepare("UPDATE tbl_expenses SET status = 'Approved', approved_by = ?, approval_date = NOW() WHERE expense_id = ?");
-            $stmt->bind_param("ii", $current_user_id, $expense_id);
-            if ($stmt->execute()) {
-                $_SESSION['success_message'] = "Expense approved successfully!";
-            }
-            $stmt->close();
-            header('Location: expenses.php');
-            exit();
-        } elseif ($_POST['action'] === 'release' && isset($_POST['expense_id'])) {
-            $expense_id = intval($_POST['expense_id']);
-            
-            // Get expense amount
-            $exp_stmt = $conn->prepare("SELECT amount FROM tbl_expenses WHERE expense_id = ?");
-            $exp_stmt->bind_param("i", $expense_id);
-            $exp_stmt->execute();
-            $amount = $exp_stmt->get_result()->fetch_assoc()['amount'];
-            $exp_stmt->close();
-            
-            // Update expense status
-            $stmt = $conn->prepare("UPDATE tbl_expenses SET status = 'Released', released_by = ?, release_date = NOW() WHERE expense_id = ?");
-            $stmt->bind_param("ii", $current_user_id, $expense_id);
-            if ($stmt->execute()) {
-                // Deduct from fund balance
-                $update_balance = $conn->prepare("UPDATE tbl_fund_balance SET current_balance = current_balance - ?, updated_by = ? ORDER BY balance_id DESC LIMIT 1");
-                $update_balance->bind_param("di", $amount, $current_user_id);
-                $update_balance->execute();
-                $update_balance->close();
-                
-                $_SESSION['success_message'] = "Expense released successfully!";
-            }
-            $stmt->close();
-            header('Location: expenses.php');
-            exit();
-        } elseif ($_POST['action'] === 'reject' && isset($_POST['expense_id'])) {
-            $expense_id = intval($_POST['expense_id']);
-            $stmt = $conn->prepare("UPDATE tbl_expenses SET status = 'Rejected' WHERE expense_id = ?");
-            $stmt->bind_param("i", $expense_id);
-            if ($stmt->execute()) {
-                $_SESSION['success_message'] = "Expense rejected!";
-            }
-            $stmt->close();
-            header('Location: expenses.php');
-            exit();
-        } elseif ($_POST['action'] === 'cancel' && isset($_POST['expense_id'])) {
-            $expense_id = intval($_POST['expense_id']);
-            $stmt = $conn->prepare("UPDATE tbl_expenses SET status = 'Cancelled' WHERE expense_id = ?");
-            $stmt->bind_param("i", $expense_id);
-            if ($stmt->execute()) {
-                $_SESSION['success_message'] = "Expense cancelled!";
-            }
-            $stmt->close();
-            header('Location: expenses.php');
-            exit();
-        }
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['action'])) {
+    $eid=intval($_POST['expense_id']);
+    if ($_POST['action']==='approve') {
+        $s=$conn->prepare("UPDATE tbl_expenses SET status='Approved',approved_by=?,approval_date=NOW() WHERE expense_id=?");
+        $s->bind_param("ii",$current_user_id,$eid); if($s->execute()) $_SESSION['success_message']="Expense approved!"; $s->close();
+    } elseif ($_POST['action']==='release') {
+        $es=$conn->prepare("SELECT amount FROM tbl_expenses WHERE expense_id=?"); $es->bind_param("i",$eid); $es->execute();
+        $amount=$es->get_result()->fetch_assoc()['amount']; $es->close();
+        $s=$conn->prepare("UPDATE tbl_expenses SET status='Released',released_by=?,release_date=NOW() WHERE expense_id=?");
+        $s->bind_param("ii",$current_user_id,$eid); if($s->execute()){
+            $ub=$conn->prepare("UPDATE tbl_fund_balance SET current_balance=current_balance-?,updated_by=? ORDER BY balance_id DESC LIMIT 1");
+            $ub->bind_param("di",$amount,$current_user_id); $ub->execute(); $ub->close();
+            $_SESSION['success_message']="Expense released!";} $s->close();
+    } elseif ($_POST['action']==='reject') {
+        $s=$conn->prepare("UPDATE tbl_expenses SET status='Rejected' WHERE expense_id=?");
+        $s->bind_param("i",$eid); if($s->execute()) $_SESSION['success_message']="Expense rejected!"; $s->close();
+    } elseif ($_POST['action']==='cancel') {
+        $s=$conn->prepare("UPDATE tbl_expenses SET status='Cancelled' WHERE expense_id=?");
+        $s->bind_param("i",$eid); if($s->execute()) $_SESSION['success_message']="Expense cancelled!"; $s->close();
     }
+    header('Location: expenses.php'); exit();
 }
 
-// Filters
-$status_filter = isset($_GET['status']) ? $_GET['status'] : '';
-$category_filter = isset($_GET['category']) ? intval($_GET['category']) : 0;
-$date_from = isset($_GET['date_from']) ? $_GET['date_from'] : '';
-$date_to = isset($_GET['date_to']) ? $_GET['date_to'] : '';
-$search = isset($_GET['search']) ? trim($_GET['search']) : '';
-
-// Pagination
-$page = isset($_GET['page']) ? intval($_GET['page']) : 1;
-$records_per_page = 15;
-$offset = ($page - 1) * $records_per_page;
-
-// Build query
-$where_clauses = [];
-$params = [];
-$types = '';
-
-if ($status_filter) {
-    $where_clauses[] = "e.status = ?";
-    $params[] = $status_filter;
-    $types .= 's';
-}
-
-if ($category_filter > 0) {
-    $where_clauses[] = "e.category_id = ?";
-    $params[] = $category_filter;
-    $types .= 'i';
-}
-
-if ($date_from) {
-    $where_clauses[] = "e.expense_date >= ?";
-    $params[] = $date_from;
-    $types .= 's';
-}
-
-if ($date_to) {
-    $where_clauses[] = "e.expense_date <= ?";
-    $params[] = $date_to;
-    $types .= 's';
-}
-
-if ($search) {
-    $where_clauses[] = "(e.reference_number LIKE ? OR e.payee LIKE ? OR e.description LIKE ?)";
-    $search_param = "%$search%";
-    $params[] = $search_param;
-    $params[] = $search_param;
-    $params[] = $search_param;
-    $types .= 'sss';
-}
-
-$where_sql = !empty($where_clauses) ? 'WHERE ' . implode(' AND ', $where_clauses) : '';
-
-// Get total count
-$count_sql = "SELECT COUNT(*) as total FROM tbl_expenses e $where_sql";
-$count_stmt = $conn->prepare($count_sql);
-if (!empty($params)) {
-    $count_stmt->bind_param($types, ...$params);
-}
-$count_stmt->execute();
-$total_records = $count_stmt->get_result()->fetch_assoc()['total'];
-$count_stmt->close();
-$total_pages = ceil($total_records / $records_per_page);
-
-// Get expenses
-$sql = "SELECT e.*, ec.category_name,
-        u1.username as requested_by_name,
-        u2.username as approved_by_name,
-        u3.username as released_by_name
-        FROM tbl_expenses e
-        LEFT JOIN tbl_expense_categories ec ON e.category_id = ec.category_id
-        LEFT JOIN tbl_users u1 ON e.requested_by = u1.user_id
-        LEFT JOIN tbl_users u2 ON e.approved_by = u2.user_id
-        LEFT JOIN tbl_users u3 ON e.released_by = u3.user_id
-        $where_sql
-        ORDER BY e.created_at DESC
-        LIMIT ? OFFSET ?";
-
-$params[] = $records_per_page;
-$params[] = $offset;
-$types .= 'ii';
-
-$stmt = $conn->prepare($sql);
-$stmt->bind_param($types, ...$params);
-$stmt->execute();
-$expenses = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-$stmt->close();
-
-// Get categories for filter
-$categories = fetchAll($conn, "SELECT * FROM tbl_expense_categories WHERE is_active = 1 ORDER BY category_name");
-
-// Get summary stats
-$total_pending = fetchOne($conn, "SELECT COALESCE(SUM(amount), 0) as total FROM tbl_expenses WHERE status = 'Pending'")['total'];
-$total_approved = fetchOne($conn, "SELECT COALESCE(SUM(amount), 0) as total FROM tbl_expenses WHERE status = 'Approved'")['total'];
-$total_released = fetchOne($conn, "SELECT COALESCE(SUM(amount), 0) as total FROM tbl_expenses WHERE status = 'Released'")['total'];
-
-$extra_css = '<link rel="stylesheet" href="../../assets/css/financial.css">';
+$sf=$_GET['status']??''; $cf=intval($_GET['category']??0); $df=$_GET['date_from']??''; $dt=$_GET['date_to']??''; $sr=trim($_GET['search']??'');
+$pg=intval($_GET['page']??1); $pp=15; $ofs=($pg-1)*$pp;
+$wc=[]; $par=[]; $tp='';
+if($sf){$wc[]="e.status=?";$par[]=$sf;$tp.='s';}
+if($cf){$wc[]="e.category_id=?";$par[]=$cf;$tp.='i';}
+if($df){$wc[]="e.expense_date>=?";$par[]=$df;$tp.='s';}
+if($dt){$wc[]="e.expense_date<=?";$par[]=$dt;$tp.='s';}
+if($sr){$wc[]="(e.reference_number LIKE ? OR e.payee LIKE ? OR e.description LIKE ?)";$sp="%$sr%";$par[]=$sp;$par[]=$sp;$par[]=$sp;$tp.='sss';}
+$ws=$wc?'WHERE '.implode(' AND ',$wc):'';
+$cs=$conn->prepare("SELECT COUNT(*) as t FROM tbl_expenses e $ws"); if($par) $cs->bind_param($tp,...$par); $cs->execute();
+$tr=$cs->get_result()->fetch_assoc()['t']; $cs->close(); $tpg=ceil($tr/$pp);
+$sql="SELECT e.*,ec.category_name,u1.username as req_name,u2.username as app_name,u3.username as rel_name FROM tbl_expenses e LEFT JOIN tbl_expense_categories ec ON e.category_id=ec.category_id LEFT JOIN tbl_users u1 ON e.requested_by=u1.user_id LEFT JOIN tbl_users u2 ON e.approved_by=u2.user_id LEFT JOIN tbl_users u3 ON e.released_by=u3.user_id $ws ORDER BY e.created_at DESC LIMIT ? OFFSET ?";
+$fp=array_merge($par,[$pp,$ofs]); $ft=$tp.'ii';
+$st=$conn->prepare($sql); $st->bind_param($ft,...$fp); $st->execute();
+$expenses=$st->get_result()->fetch_all(MYSQLI_ASSOC); $st->close();
+$cats=fetchAll($conn,"SELECT * FROM tbl_expense_categories WHERE is_active=1 ORDER BY category_name");
+$total_pending =fetchOne($conn,"SELECT COALESCE(SUM(amount),0) as t FROM tbl_expenses WHERE status='Pending'")['t'];
+$total_approved=fetchOne($conn,"SELECT COALESCE(SUM(amount),0) as t FROM tbl_expenses WHERE status='Approved'")['t'];
+$total_released=fetchOne($conn,"SELECT COALESCE(SUM(amount),0) as t FROM tbl_expenses WHERE status='Released'")['t'];
 include '../../includes/header.php';
 ?>
-
-<div class="financial-header">
-    <div>
-        <h1 class="page-title">
-            <i class="fas fa-arrow-up"></i> Expense Management
-        </h1>
-        <p class="page-subtitle">Track and manage all barangay expenses</p>
-    </div>
-    <div class="header-actions">
-        <a href="expenses-add.php" class="action-btn expense">
-            <i class="fas fa-plus-circle"></i> Add Expense
-        </a>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=DM+Mono:wght@300;400;500&display=swap');
+:root{--db-navy:#0d1b36;--db-navy-light:#1c3461;--db-amber:#f59e0b;--db-amber-light:#fef3c7;--db-amber-dark:#b45309;--db-teal:#0d9488;--db-teal-light:#ccfbf1;--db-rose:#e11d48;--db-rose-light:#ffe4e6;--db-sky:#0ea5e9;--db-sky-light:#e0f2fe;--db-indigo:#6366f1;--db-indigo-light:#e0e7ff;--db-success:#10b981;--db-success-light:#d1fae5;--db-danger:#ef4444;--db-danger-light:#fee2e2;--db-bg:#eef2f7;--db-surf:#ffffff;--db-surf2:#f8fafc;--db-border:#e2e8f0;--db-text:#0f172a;--db-muted:#64748b;--db-radius:14px;--db-radius-sm:8px;--db-radius-lg:20px;--db-shadow:0 1px 3px rgba(13,27,54,.06),0 4px 16px rgba(13,27,54,.07);--db-shadow-lg:0 8px 40px rgba(13,27,54,.14);}
+*,*::before,*::after{box-sizing:border-box;}
+body{font-family:'Sora',sans-serif;background:var(--db-bg);color:var(--db-text);font-size:13.5px;}
+.fm-hero{background:linear-gradient(135deg,var(--db-navy) 0%,var(--db-navy-light) 65%,#7f1d1d 100%);padding:28px 36px;margin-bottom:24px;border-radius:0 0 var(--db-radius-lg) var(--db-radius-lg);position:relative;overflow:hidden;}
+.fm-hero__ring{position:absolute;border-radius:50%;border:1px solid rgba(255,255,255,.06);pointer-events:none;}
+.fm-hero__ring--1{width:300px;height:300px;top:-130px;right:-60px;}
+.fm-hero__ring--2{width:180px;height:180px;top:-50px;right:70px;border-color:rgba(225,29,72,.12);}
+.fm-hero__ring--3{width:100px;height:100px;bottom:-40px;left:40%;border-color:rgba(245,158,11,.14);}
+.fm-hero__inner{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+.fm-hero__left{display:flex;align-items:center;gap:16px;}
+.fm-hero__icon{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#9f1239,var(--db-rose));display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff;box-shadow:0 4px 16px rgba(225,29,72,.4);flex-shrink:0;}
+.fm-hero__title{font-size:22px;font-weight:800;color:#fff;letter-spacing:-.4px;margin-bottom:3px;}
+.fm-hero__sub{font-size:13px;color:rgba(255,255,255,.55);}
+.db-alert{display:flex;align-items:center;gap:12px;padding:14px 18px;border-radius:var(--db-radius);margin-bottom:16px;font-weight:500;font-size:13.5px;border-left:4px solid;}
+.db-alert--success{background:var(--db-success-light);color:#065f46;border-color:var(--db-success);}
+.db-alert__close{margin-left:auto;background:none;border:none;cursor:pointer;font-size:18px;opacity:.6;}
+.db-stats-row{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:24px;}
+.db-stat-card{flex:1 1 150px;background:var(--db-surf);border-radius:var(--db-radius);padding:16px 14px 12px;display:flex;flex-direction:column;gap:9px;box-shadow:var(--db-shadow);border:1px solid var(--db-border);text-decoration:none;color:inherit;transition:transform .2s,box-shadow .2s;}
+.db-stat-card:hover{transform:translateY(-3px);box-shadow:var(--db-shadow-lg);}
+.db-stat-card__icon{width:38px;height:38px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:15px;}
+.db-stat-card__icon--amber{background:var(--db-amber-light);color:var(--db-amber-dark);}
+.db-stat-card__icon--sky{background:var(--db-sky-light);color:var(--db-sky);}
+.db-stat-card__icon--rose{background:var(--db-rose-light);color:var(--db-rose);}
+.db-stat-card__num{font-size:18px;font-weight:800;line-height:1;letter-spacing:-.6px;font-family:'DM Mono',monospace;}
+.db-stat-card__label{font-size:10px;color:var(--db-muted);font-weight:500;text-transform:uppercase;letter-spacing:.5px;}
+.db-stat-card__bar{height:3px;border-radius:2px;opacity:.4;}
+.db-stat-card__bar--amber{background:linear-gradient(90deg,var(--db-amber),transparent);}
+.db-stat-card__bar--sky{background:linear-gradient(90deg,var(--db-sky),transparent);}
+.db-stat-card__bar--rose{background:linear-gradient(90deg,var(--db-rose),transparent);}
+.db-panel{background:var(--db-surf);border-radius:var(--db-radius-lg);border:1px solid var(--db-border);box-shadow:var(--db-shadow);margin-bottom:18px;overflow:hidden;animation:dbFadeUp .35s ease both;}
+@keyframes dbFadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.db-panel__header{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid var(--db-border);gap:10px;flex-wrap:wrap;}
+.db-panel__title{display:flex;align-items:center;gap:10px;}
+.db-panel__title h2{font-size:15px;font-weight:700;}
+.db-panel__icon{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:14px;}
+.db-panel__icon--rose{background:var(--db-rose-light);color:var(--db-rose);}
+.db-panel__icon--teal{background:var(--db-teal-light);color:var(--db-teal);}
+.db-panel__body{padding:20px 22px;}
+.db-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:20px;font-family:'DM Mono',monospace;font-size:10px;font-weight:500;letter-spacing:.3px;white-space:nowrap;}
+.db-badge--success{background:var(--db-success-light);color:#065f46;}
+.db-badge--rose{background:var(--db-rose-light);color:#9f1239;}
+.db-badge--amber{background:var(--db-amber-light);color:#92400e;}
+.db-badge--sky{background:var(--db-sky-light);color:#0369a1;}
+.db-badge--muted{background:var(--db-surf2);color:var(--db-muted);border:1px solid var(--db-border);}
+.db-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:var(--db-radius-sm);font-family:'Sora',sans-serif;font-size:13px;font-weight:600;cursor:pointer;border:1px solid transparent;text-decoration:none;transition:all .18s;white-space:nowrap;}
+.db-btn--sm{padding:6px 12px;font-size:12px;}
+.db-btn--rose{background:linear-gradient(135deg,#9f1239,var(--db-rose));color:#fff;}
+.db-btn--rose:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(225,29,72,.3);color:#fff;}
+.db-btn--primary{background:linear-gradient(135deg,var(--db-navy),var(--db-navy-light));color:#fff;}
+.db-btn--primary:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(13,27,54,.25);color:#fff;}
+.db-btn--ghost{background:var(--db-surf2);color:var(--db-text);border-color:var(--db-border);}
+.db-btn--ghost:hover{background:var(--db-border);}
+.db-filter-label{font-size:11px;font-weight:600;color:var(--db-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;display:block;}
+.db-input,.db-select{padding:9px 13px;border:1.5px solid var(--db-border);border-radius:var(--db-radius-sm);font-family:'Sora',sans-serif;font-size:13px;color:var(--db-text);background:var(--db-surf);outline:none;transition:border-color .18s;}
+.db-input:focus,.db-select:focus{border-color:var(--db-navy-light);box-shadow:0 0 0 3px rgba(28,52,97,.1);}
+.db-form-row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;}
+.db-table-wrap{overflow-x:auto;}
+.db-table{width:100%;border-collapse:collapse;font-size:12.5px;}
+.db-table thead tr{background:linear-gradient(135deg,var(--db-navy),var(--db-navy-light));}
+.db-table thead th{color:rgba(255,255,255,.8);font-family:'DM Mono',monospace;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.8px;padding:11px 16px;white-space:nowrap;border:none;}
+.db-table tbody tr{border-bottom:1px solid var(--db-border);transition:background .12s;}
+.db-table tbody tr:last-child{border-bottom:none;}
+.db-table tbody tr:hover{background:#f5f8ff;}
+.db-table tbody td{padding:11px 16px;vertical-align:middle;}
+.db-id{font-family:'DM Mono',monospace;font-size:11px;color:var(--db-indigo);font-weight:500;}
+.db-text-sm{font-size:11.5px;color:var(--db-muted);}
+.db-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:56px 24px;text-align:center;gap:12px;}
+.db-empty i{font-size:44px;color:var(--db-border);}
+.db-empty p{font-size:14px;color:var(--db-muted);}
+.db-icon-btn{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:7px;border:none;cursor:pointer;font-size:12px;transition:all .15s;}
+.db-icon-btn--default{background:var(--db-surf2);color:var(--db-muted);border:1px solid var(--db-border);}
+.db-icon-btn--default:hover{background:var(--db-border);color:var(--db-text);}
+.db-icon-btn--success{background:var(--db-success-light);color:#065f46;}
+.db-icon-btn--success:hover{background:#a7f3d0;}
+.db-icon-btn--rose{background:var(--db-rose-light);color:#9f1239;}
+.db-icon-btn--rose:hover{background:#fecaca;}
+.db-icon-btn--sky{background:var(--db-sky-light);color:#0369a1;}
+.db-icon-btn--sky:hover{background:#bae6fd;}
+.db-icon-btn--amber{background:var(--db-amber-light);color:#92400e;}
+.db-icon-btn--amber:hover{background:#fde68a;}
+.db-pagination{display:flex;justify-content:center;gap:6px;padding:18px 22px;border-top:1px solid var(--db-border);}
+.db-page-link{padding:6px 12px;border:1.5px solid var(--db-border);background:var(--db-surf);color:var(--db-text);text-decoration:none;border-radius:var(--db-radius-sm);font-size:12px;font-weight:600;transition:all .15s;}
+.db-page-link:hover{background:var(--db-surf2);}
+.db-page-link.active{background:var(--db-navy);color:#fff;border-color:var(--db-navy);}
+.db-modal{display:none;position:fixed;inset:0;background:rgba(13,27,54,.55);backdrop-filter:blur(5px);z-index:9999;align-items:center;justify-content:center;padding:20px;}
+.db-modal--open{display:flex;}
+.db-modal__box{background:var(--db-surf);border-radius:var(--db-radius-lg);width:100%;max-width:520px;max-height:92vh;overflow-y:auto;box-shadow:var(--db-shadow-lg);animation:dbModalIn .28s cubic-bezier(.34,1.56,.64,1);}
+@keyframes dbModalIn{from{opacity:0;transform:scale(.9) translateY(16px)}to{opacity:1;transform:scale(1) translateY(0)}}
+.db-modal__header{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;}
+.db-modal__header--teal{background:linear-gradient(135deg,#065f46,var(--db-teal));}
+.db-modal__header--sky{background:linear-gradient(135deg,#0c4a6e,var(--db-sky));}
+.db-modal__header--rose{background:linear-gradient(135deg,#9f1239,var(--db-rose));}
+.db-modal__header--amber{background:linear-gradient(135deg,var(--db-amber-dark),var(--db-amber));}
+.db-modal__header--muted{background:linear-gradient(135deg,#374151,#6b7280);}
+.db-modal__header h3{color:#fff;font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px;}
+.db-modal__close{background:rgba(255,255,255,.15);border:none;color:rgba(255,255,255,.85);width:30px;height:30px;border-radius:7px;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;}
+.db-modal__close:hover{background:rgba(255,255,255,.28);}
+.db-modal__body{padding:22px;}
+.db-modal__footer{display:flex;gap:10px;margin-top:18px;}
+.db-modal__footer .db-btn{flex:1;justify-content:center;}
+.db-confirm-grid{background:var(--db-surf2);border-radius:var(--db-radius-sm);border:1px solid var(--db-border);overflow:hidden;margin-bottom:14px;}
+.db-confirm-row{display:flex;justify-content:space-between;padding:9px 14px;border-bottom:1px solid var(--db-border);font-size:12.5px;}
+.db-confirm-row:last-child{border-bottom:none;}
+.db-confirm-row .lbl{color:var(--db-muted);font-weight:600;}
+.db-confirm-row .val{font-weight:600;color:var(--db-text);}
+.db-notice{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:var(--db-radius-sm);font-size:12.5px;margin-bottom:14px;}
+.db-notice--success{background:var(--db-success-light);color:#065f46;}
+.db-notice--rose{background:var(--db-rose-light);color:#9f1239;}
+.db-notice--amber{background:var(--db-amber-light);color:#92400e;}
+.db-notice--sky{background:var(--db-sky-light);color:#0369a1;}
+body.dark-mode{background:#0f172a!important;color:#e2e8f0!important;}
+body.dark-mode .db-panel,body.dark-mode .db-modal__box{background:#1e293b!important;border-color:#334155!important;}
+body.dark-mode .db-panel__header{border-bottom-color:#334155!important;}
+body.dark-mode .db-panel__title h2{color:#f1f5f9!important;}
+body.dark-mode .db-stat-card{background:#1e293b!important;border-color:#334155!important;color:#e2e8f0!important;}
+body.dark-mode .db-stat-card__label{color:#64748b!important;}
+body.dark-mode .db-table thead tr{background:linear-gradient(135deg,#0f172a,#1e293b)!important;}
+body.dark-mode .db-table thead th{color:rgba(148,163,184,.9)!important;}
+body.dark-mode .db-table tbody tr{border-bottom-color:#334155!important;}
+body.dark-mode .db-table tbody tr:hover{background:#1e293b!important;}
+body.dark-mode .db-table tbody td{color:#e2e8f0!important;}
+body.dark-mode .db-text-sm{color:#94a3b8!important;}
+body.dark-mode .db-id{color:#a5b4fc!important;}
+body.dark-mode .db-input,body.dark-mode .db-select{background:#334155!important;color:#e2e8f0!important;border-color:#475569!important;}
+body.dark-mode .db-filter-label{color:#94a3b8!important;}
+body.dark-mode .db-btn--ghost{background:#1e293b!important;color:#e2e8f0!important;border-color:#475569!important;}
+body.dark-mode .db-btn--ghost:hover{background:#334155!important;}
+body.dark-mode .db-page-link{background:#1e293b!important;color:#e2e8f0!important;border-color:#475569!important;}
+body.dark-mode .db-page-link.active{background:var(--db-navy)!important;color:#fff!important;}
+body.dark-mode .db-pagination{border-top-color:#334155!important;}
+body.dark-mode .db-confirm-grid{background:#162032!important;border-color:#334155!important;}
+body.dark-mode .db-confirm-row{border-bottom-color:#334155!important;}
+body.dark-mode .db-confirm-row .lbl{color:#64748b!important;}
+body.dark-mode .db-confirm-row .val{color:#e2e8f0!important;}
+body.dark-mode .db-icon-btn--default{background:#1e293b!important;color:#94a3b8!important;border-color:#475569!important;}
+body.dark-mode .db-empty i{color:#334155!important;}
+body.dark-mode .db-empty p{color:#64748b!important;}
+@media(max-width:768px){.fm-hero{padding:20px;border-radius:0;}}
+</style>
+<div class="fm-hero">
+    <div class="fm-hero__ring fm-hero__ring--1"></div><div class="fm-hero__ring fm-hero__ring--2"></div><div class="fm-hero__ring fm-hero__ring--3"></div>
+    <div class="fm-hero__inner">
+        <div class="fm-hero__left">
+            <div class="fm-hero__icon"><i class="fas fa-arrow-up"></i></div>
+            <div><div class="fm-hero__title">Expense Management</div><div class="fm-hero__sub">Track and manage all barangay expenses</div></div>
+        </div>
+        <a href="expenses-add.php" class="db-btn db-btn--rose"><i class="fas fa-plus-circle"></i> Add Expense</a>
     </div>
 </div>
-
+<div style="padding:0 24px 24px;">
 <?php if (isset($_SESSION['success_message'])): ?>
-    <div class="alert alert-success">
-        <i class="fas fa-check-circle"></i>
-        <?php echo $_SESSION['success_message']; unset($_SESSION['success_message']); ?>
-    </div>
+<div class="db-alert db-alert--success"><i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($_SESSION['success_message']); unset($_SESSION['success_message']); ?><button class="db-alert__close" onclick="this.parentElement.remove()">×</button></div>
 <?php endif; ?>
-
-<!-- Summary Cards -->
-<div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 1.5rem;">
-    <div class="stat-card pending">
-        <div class="stat-icon">
-            <i class="fas fa-clock"></i>
-        </div>
-        <div class="stat-details">
-            <div class="stat-label">Pending</div>
-            <div class="stat-value">₱<?php echo number_format($total_pending, 2); ?></div>
-        </div>
-    </div>
-    <div class="stat-card balance">
-        <div class="stat-icon">
-            <i class="fas fa-check"></i>
-        </div>
-        <div class="stat-details">
-            <div class="stat-label">Approved</div>
-            <div class="stat-value">₱<?php echo number_format($total_approved, 2); ?></div>
-        </div>
-    </div>
-    <div class="stat-card expense">
-        <div class="stat-icon">
-            <i class="fas fa-check-double"></i>
-        </div>
-        <div class="stat-details">
-            <div class="stat-label">Released</div>
-            <div class="stat-value">₱<?php echo number_format($total_released, 2); ?></div>
-        </div>
-    </div>
+<div class="db-stats-row">
+    <a href="expenses.php?status=Pending" class="db-stat-card">
+        <div class="db-stat-card__icon db-stat-card__icon--amber"><i class="fas fa-clock"></i></div>
+        <div><div class="db-stat-card__num" style="color:var(--db-amber-dark)">₱<?php echo number_format($total_pending,2); ?></div><div class="db-stat-card__label">Pending</div></div>
+        <div class="db-stat-card__bar db-stat-card__bar--amber"></div>
+    </a>
+    <a href="expenses.php?status=Approved" class="db-stat-card">
+        <div class="db-stat-card__icon db-stat-card__icon--sky"><i class="fas fa-check"></i></div>
+        <div><div class="db-stat-card__num" style="color:var(--db-sky)">₱<?php echo number_format($total_approved,2); ?></div><div class="db-stat-card__label">Approved</div></div>
+        <div class="db-stat-card__bar db-stat-card__bar--sky"></div>
+    </a>
+    <a href="expenses.php?status=Released" class="db-stat-card">
+        <div class="db-stat-card__icon db-stat-card__icon--rose"><i class="fas fa-check-double"></i></div>
+        <div><div class="db-stat-card__num" style="color:var(--db-rose)">₱<?php echo number_format($total_released,2); ?></div><div class="db-stat-card__label">Released</div></div>
+        <div class="db-stat-card__bar db-stat-card__bar--rose"></div>
+    </a>
 </div>
-
 <!-- Filters -->
-<div class="chart-card" style="margin-bottom: 1.5rem;">
-    <form method="GET" class="filter-form">
-        <div class="filter-grid">
-            <div class="form-group">
-                <label>Status</label>
-                <select name="status" class="form-control">
-                    <option value="">All Statuses</option>
-                    <option value="Pending" <?php echo $status_filter === 'Pending' ? 'selected' : ''; ?>>Pending</option>
-                    <option value="Approved" <?php echo $status_filter === 'Approved' ? 'selected' : ''; ?>>Approved</option>
-                    <option value="Released" <?php echo $status_filter === 'Released' ? 'selected' : ''; ?>>Released</option>
-                    <option value="Rejected" <?php echo $status_filter === 'Rejected' ? 'selected' : ''; ?>>Rejected</option>
-                    <option value="Cancelled" <?php echo $status_filter === 'Cancelled' ? 'selected' : ''; ?>>Cancelled</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label>Category</label>
-                <select name="category" class="form-control">
-                    <option value="0">All Categories</option>
-                    <?php foreach ($categories as $cat): ?>
-                        <option value="<?php echo $cat['category_id']; ?>" <?php echo $category_filter == $cat['category_id'] ? 'selected' : ''; ?>>
-                            <?php echo htmlspecialchars($cat['category_name']); ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-            <div class="form-group">
-                <label>Date From</label>
-                <input type="date" name="date_from" class="form-control" value="<?php echo $date_from; ?>">
-            </div>
-            <div class="form-group">
-                <label>Date To</label>
-                <input type="date" name="date_to" class="form-control" value="<?php echo $date_to; ?>">
-            </div>
-            <div class="form-group">
-                <label>Search</label>
-                <input type="text" name="search" class="form-control" placeholder="Reference, payee..." value="<?php echo htmlspecialchars($search); ?>">
-            </div>
-            <div class="form-group" style="display: flex; gap: 0.5rem; align-items: flex-end;">
-                <button type="submit" class="action-btn budget" style="flex: 1;">
-                    <i class="fas fa-filter"></i> Filter
-                </button>
-                <a href="expenses.php" class="action-btn report" style="flex: 1;">
-                    <i class="fas fa-redo"></i> Reset
-                </a>
-            </div>
-        </div>
-    </form>
+<div class="db-panel">
+    <div class="db-panel__header"><div class="db-panel__title"><div class="db-panel__icon db-panel__icon--teal"><i class="fas fa-search"></i></div><h2>Filter Expenses</h2></div></div>
+    <div class="db-panel__body">
+        <form method="GET"><div class="db-form-row">
+            <div><label class="db-filter-label">Status</label><select name="status" class="db-select"><option value="">All</option><?php foreach(['Pending','Approved','Released','Rejected','Cancelled'] as $s): ?><option value="<?php echo $s; ?>" <?php echo $sf===$s?'selected':''; ?>><?php echo $s; ?></option><?php endforeach; ?></select></div>
+            <div><label class="db-filter-label">Category</label><select name="category" class="db-select"><option value="0">All</option><?php foreach($cats as $c): ?><option value="<?php echo $c['category_id']; ?>" <?php echo $cf==$c['category_id']?'selected':''; ?>><?php echo htmlspecialchars($c['category_name']); ?></option><?php endforeach; ?></select></div>
+            <div><label class="db-filter-label">Date From</label><input type="date" name="date_from" class="db-input" value="<?php echo $df; ?>"></div>
+            <div><label class="db-filter-label">Date To</label><input type="date" name="date_to" class="db-input" value="<?php echo $dt; ?>"></div>
+            <div style="flex:1;min-width:180px;"><label class="db-filter-label">Search</label><input type="text" name="search" class="db-input" style="width:100%;" placeholder="Reference, payee…" value="<?php echo htmlspecialchars($sr); ?>"></div>
+            <div style="padding-top:18px;display:flex;gap:8px;"><button type="submit" class="db-btn db-btn--primary"><i class="fas fa-search"></i> Filter</button><a href="expenses.php" class="db-btn db-btn--ghost"><i class="fas fa-redo"></i></a></div>
+        </div></form>
+    </div>
 </div>
-
-<!-- Expense Table -->
-<div class="chart-card">
-    <div class="chart-header">
-        <h3><i class="fas fa-list"></i> Expense Records (<?php echo number_format($total_records); ?> total)</h3>
+<!-- Table -->
+<div class="db-panel">
+    <div class="db-panel__header">
+        <div class="db-panel__title"><div class="db-panel__icon db-panel__icon--rose"><i class="fas fa-list"></i></div><h2>Expense Records</h2><span class="db-badge db-badge--rose"><?php echo number_format($tr); ?></span></div>
     </div>
-    <div class="table-responsive">
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>Reference #</th>
-                    <th>Date</th>
-                    <th>Category</th>
-                    <th>Payee</th>
-                    <th>Amount</th>
-                    <th>Payment Method</th>
-                    <th>Requested By</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php if (empty($expenses)): ?>
-                    <tr>
-                        <td colspan="9" class="text-center">No expense records found</td>
-                    </tr>
-                <?php else: ?>
-                    <?php foreach ($expenses as $exp): ?>
-                        <tr>
-                            <td><strong><?php echo htmlspecialchars($exp['reference_number']); ?></strong></td>
-                            <td><?php echo date('M d, Y', strtotime($exp['expense_date'])); ?></td>
-                            <td><?php echo htmlspecialchars($exp['category_name']); ?></td>
-                            <td><?php echo htmlspecialchars($exp['payee']); ?></td>
-                            <td class="expense-color"><strong>₱<?php echo number_format($exp['amount'], 2); ?></strong></td>
-                            <td><?php echo htmlspecialchars($exp['payment_method']); ?></td>
-                            <td><?php echo htmlspecialchars($exp['requested_by_name']); ?></td>
-                            <td><?php echo getStatusBadge($exp['status']); ?></td>
-                            <td>
-                                <div class="action-buttons">
-                                    <button class="btn-icon" onclick='viewExpense(<?php echo json_encode($exp); ?>)' title="View Details">
-                                        <i class="fas fa-eye"></i>
-                                    </button>
-                                    <?php if ($exp['status'] === 'Pending'): ?>
-                                        <button class="btn-icon success" onclick='openApproveModal(<?php echo json_encode($exp); ?>)' title="Approve">
-                                            <i class="fas fa-check"></i>
-                                        </button>
-                                        <button class="btn-icon danger" onclick='openRejectModal(<?php echo json_encode($exp); ?>)' title="Reject">
-                                            <i class="fas fa-times"></i>
-                                        </button>
-                                    <?php elseif ($exp['status'] === 'Approved'): ?>
-                                        <button class="btn-icon success" onclick='openReleaseModal(<?php echo json_encode($exp); ?>)' title="Release Payment">
-                                            <i class="fas fa-money-bill-wave"></i>
-                                        </button>
-                                        <button class="btn-icon warning" onclick='openCancelModal(<?php echo json_encode($exp); ?>)' title="Cancel">
-                                            <i class="fas fa-ban"></i>
-                                        </button>
-                                    <?php endif; ?>
-                                </div>
-                            </td>
-                        </tr>
-                    <?php endforeach; ?>
+    <div class="db-table-wrap"><table class="db-table">
+        <thead><tr><th>Reference #</th><th>Date</th><th>Category</th><th>Payee</th><th>Amount</th><th>Method</th><th>Requested By</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody>
+        <?php if(empty($expenses)): ?><tr><td colspan="9"><div class="db-empty"><i class="fas fa-inbox"></i><p>No expense records found</p></div></td></tr>
+        <?php else: foreach($expenses as $e):
+            $sc=['Pending'=>'amber','Approved'=>'sky','Released'=>'success','Rejected'=>'rose','Cancelled'=>'muted'];
+            $sbadge=$sc[$e['status']]??'muted';
+        ?>
+        <tr>
+            <td><span class="db-id"><?php echo htmlspecialchars($e['reference_number']); ?></span></td>
+            <td><span class="db-text-sm"><?php echo date('M d, Y',strtotime($e['expense_date'])); ?></span></td>
+            <td><span class="db-badge db-badge--muted"><?php echo htmlspecialchars($e['category_name']); ?></span></td>
+            <td><strong><?php echo htmlspecialchars($e['payee']); ?></strong></td>
+            <td><strong style="color:var(--db-rose);font-family:'DM Mono',monospace;">₱<?php echo number_format($e['amount'],2); ?></strong></td>
+            <td><span class="db-text-sm"><?php echo htmlspecialchars($e['payment_method']); ?></span></td>
+            <td><span class="db-text-sm"><?php echo htmlspecialchars($e['req_name']??'—'); ?></span></td>
+            <td><span class="db-badge db-badge--<?php echo $sbadge; ?>"><?php echo $e['status']; ?></span></td>
+            <td><div style="display:flex;gap:4px;">
+                <button class="db-icon-btn db-icon-btn--default" onclick='viewExpense(<?php echo json_encode($e); ?>)' title="View"><i class="fas fa-eye"></i></button>
+                <?php if($e['status']==='Pending'): ?>
+                    <button class="db-icon-btn db-icon-btn--success" onclick='openApprove(<?php echo json_encode($e); ?>)' title="Approve"><i class="fas fa-check"></i></button>
+                    <button class="db-icon-btn db-icon-btn--rose" onclick='openReject(<?php echo json_encode($e); ?>)' title="Reject"><i class="fas fa-times"></i></button>
+                <?php elseif($e['status']==='Approved'): ?>
+                    <button class="db-icon-btn db-icon-btn--sky" onclick='openRelease(<?php echo json_encode($e); ?>)' title="Release Payment"><i class="fas fa-money-bill-wave"></i></button>
+                    <button class="db-icon-btn db-icon-btn--amber" onclick='openCancel(<?php echo json_encode($e); ?>)' title="Cancel"><i class="fas fa-ban"></i></button>
                 <?php endif; ?>
-            </tbody>
-        </table>
+            </div></td>
+        </tr>
+        <?php endforeach; endif; ?>
+        </tbody>
+    </table></div>
+    <?php if($tpg>1): $qp=$_GET; unset($qp['page']); $bu='expenses.php?'.http_build_query($qp).'&page='; ?>
+    <div class="db-pagination">
+        <?php if($pg>1): ?><a href="<?php echo $bu.($pg-1); ?>" class="db-page-link"><i class="fas fa-chevron-left"></i></a><?php endif; ?>
+        <?php for($i=max(1,$pg-2);$i<=min($tpg,$pg+2);$i++): ?><a href="<?php echo $bu.$i; ?>" class="db-page-link <?php echo $i===$pg?'active':''; ?>"><?php echo $i; ?></a><?php endfor; ?>
+        <?php if($pg<$tpg): ?><a href="<?php echo $bu.($pg+1); ?>" class="db-page-link"><i class="fas fa-chevron-right"></i></a><?php endif; ?>
     </div>
-
-    <!-- Pagination -->
-    <?php if ($total_pages > 1): ?>
-        <div class="pagination">
-            <?php
-            $query_params = $_GET;
-            unset($query_params['page']);
-            $base_url = 'expenses.php?' . http_build_query($query_params) . '&page=';
-            ?>
-            
-            <?php if ($page > 1): ?>
-                <a href="<?php echo $base_url . ($page - 1); ?>" class="page-link">
-                    <i class="fas fa-chevron-left"></i>
-                </a>
-            <?php endif; ?>
-            
-            <?php for ($i = max(1, $page - 2); $i <= min($total_pages, $page + 2); $i++): ?>
-                <a href="<?php echo $base_url . $i; ?>" class="page-link <?php echo $i === $page ? 'active' : ''; ?>">
-                    <?php echo $i; ?>
-                </a>
-            <?php endfor; ?>
-            
-            <?php if ($page < $total_pages): ?>
-                <a href="<?php echo $base_url . ($page + 1); ?>" class="page-link">
-                    <i class="fas fa-chevron-right"></i>
-                </a>
-            <?php endif; ?>
-        </div>
     <?php endif; ?>
 </div>
-
-<!-- View Expense Modal -->
-<div id="viewExpenseModal" class="modal">
-    <div class="modal-content" style="max-width: 600px;">
-        <div class="modal-header">
-            <h2 class="modal-title">Expense Details</h2>
-            <button class="close-btn" onclick="closeModal('viewExpenseModal')">&times;</button>
-        </div>
-        <div id="expenseDetails" class="details-grid"></div>
-    </div>
 </div>
 
-<!-- Approve Modal -->
-<div id="approveModal" class="modal">
-    <div class="modal-content" style="max-width: 500px;">
-        <div class="modal-header" style="background: #d1fae5; border-bottom-color: #10b981;">
-            <h2 class="modal-title" style="color: #065f46;">
-                <i class="fas fa-check-circle"></i> Approve Expense
-            </h2>
-            <button class="close-btn" onclick="closeModal('approveModal')">&times;</button>
-        </div>
-        <div style="padding: 1.5rem;">
-            <p style="margin-bottom: 1.5rem; color: #374151;">Are you sure you want to approve this expense?</p>
-            <div id="approveExpenseInfo" class="info-grid"></div>
-            <form method="POST" style="margin-top: 1.5rem;">
-                <input type="hidden" name="action" value="approve">
-                <input type="hidden" name="expense_id" id="approve_expense_id">
-                <div style="display: flex; gap: 1rem;">
-                    <button type="submit" class="action-btn budget" style="flex: 1;">
-                        <i class="fas fa-check"></i> Approve
-                    </button>
-                    <button type="button" class="action-btn report" onclick="closeModal('approveModal')" style="flex: 1;">
-                        <i class="fas fa-times"></i> Cancel
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- Reject Modal -->
-<div id="rejectModal" class="modal">
-    <div class="modal-content" style="max-width: 500px;">
-        <div class="modal-header" style="background: #fee2e2; border-bottom-color: #ef4444;">
-            <h2 class="modal-title" style="color: #991b1b;">
-                <i class="fas fa-times-circle"></i> Reject Expense
-            </h2>
-            <button class="close-btn" onclick="closeModal('rejectModal')">&times;</button>
-        </div>
-        <div style="padding: 1.5rem;">
-            <div class="alert" style="background: #fef3c7; border-left-color: #f59e0b; margin-bottom: 1.5rem;">
-                <i class="fas fa-exclamation-triangle" style="color: #92400e;"></i>
-                <p style="margin: 0; color: #92400e;">This action cannot be undone. The expense will be marked as rejected.</p>
-            </div>
-            <div id="rejectExpenseInfo" class="info-grid"></div>
-            <form method="POST" style="margin-top: 1.5rem;">
-                <input type="hidden" name="action" value="reject">
-                <input type="hidden" name="expense_id" id="reject_expense_id">
-                <div style="display: flex; gap: 1rem;">
-                    <button type="submit" class="action-btn" style="flex: 1; background: #dc3545; color: white;">
-                        <i class="fas fa-times"></i> Reject
-                    </button>
-                    <button type="button" class="action-btn report" onclick="closeModal('rejectModal')" style="flex: 1;">
-                        <i class="fas fa-arrow-left"></i> Cancel
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- Release Modal -->
-<div id="releaseModal" class="modal">
-    <div class="modal-content" style="max-width: 500px;">
-        <div class="modal-header" style="background: #dbeafe; border-bottom-color: #3b82f6;">
-            <h2 class="modal-title" style="color: #1e40af;">
-                <i class="fas fa-money-bill-wave"></i> Release Payment
-            </h2>
-            <button class="close-btn" onclick="closeModal('releaseModal')">&times;</button>
-        </div>
-        <div style="padding: 1.5rem;">
-            <div class="alert" style="background: #dbeafe; border-left-color: #3b82f6; margin-bottom: 1.5rem;">
-                <i class="fas fa-info-circle" style="color: #1e40af;"></i>
-                <p style="margin: 0; color: #1e40af;">This will mark the payment as released and deduct from the fund balance.</p>
-            </div>
-            <div id="releaseExpenseInfo" class="info-grid"></div>
-            <form method="POST" style="margin-top: 1.5rem;">
-                <input type="hidden" name="action" value="release">
-                <input type="hidden" name="expense_id" id="release_expense_id">
-                <div style="display: flex; gap: 1rem;">
-                    <button type="submit" class="action-btn budget" style="flex: 1;">
-                        <i class="fas fa-check-double"></i> Release Payment
-                    </button>
-                    <button type="button" class="action-btn report" onclick="closeModal('releaseModal')" style="flex: 1;">
-                        <i class="fas fa-times"></i> Cancel
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- Cancel Modal -->
-<div id="cancelModal" class="modal">
-    <div class="modal-content" style="max-width: 500px;">
-        <div class="modal-header" style="background: #f3f4f6; border-bottom-color: #9ca3af;">
-            <h2 class="modal-title" style="color: #374151;">
-                <i class="fas fa-ban"></i> Cancel Expense
-            </h2>
-            <button class="close-btn" onclick="closeModal('cancelModal')">&times;</button>
-        </div>
-        <div style="padding: 1.5rem;">
-            <div class="alert" style="background: #fef3c7; border-left-color: #f59e0b; margin-bottom: 1.5rem;">
-                <i class="fas fa-exclamation-triangle" style="color: #92400e;"></i>
-                <p style="margin: 0; color: #92400e;">This will cancel the approved expense. This action cannot be undone.</p>
-            </div>
-            <div id="cancelExpenseInfo" class="info-grid"></div>
-            <form method="POST" style="margin-top: 1.5rem;">
-                <input type="hidden" name="action" value="cancel">
-                <input type="hidden" name="expense_id" id="cancel_expense_id">
-                <div style="display: flex; gap: 1rem;">
-                    <button type="submit" class="action-btn" style="flex: 1; background: #6b7280; color: white;">
-                        <i class="fas fa-ban"></i> Cancel Expense
-                    </button>
-                    <button type="button" class="action-btn report" onclick="closeModal('cancelModal')" style="flex: 1;">
-                        <i class="fas fa-arrow-left"></i> Back
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<style>
-.filter-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1rem;
-}
-
-.form-group label {
-    display: block;
-    font-weight: 500;
-    margin-bottom: 0.5rem;
-    color: #374151;
-    font-size: 0.9rem;
-}
-
-.form-control {
-    width: 100%;
-    padding: 0.625rem;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    font-size: 0.95rem;
-}
-
-.form-control:focus {
-    outline: none;
-    border-color: #3b82f6;
-}
-
-.action-buttons {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
-    justify-content: center;
-}
-
-.btn-icon {
-    padding: 0.5rem 0.625rem;
-    border: none;
-    background: #f3f4f6;
-    color: #374151;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 0.2s;
-    font-size: 0.95rem;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 32px;
-    min-height: 32px;
-}
-
-.btn-icon:hover {
-    background: #e5e7eb;
-    transform: translateY(-1px);
-}
-
-.btn-icon.success {
-    background: #d1fae5;
-    color: #065f46;
-}
-
-.btn-icon.success:hover {
-    background: #a7f3d0;
-}
-
-.btn-icon.danger {
-    background: #fee2e2;
-    color: #991b1b;
-}
-
-.btn-icon.danger:hover {
-    background: #fecaca;
-}
-
-.btn-icon.warning {
-    background: #fef3c7;
-    color: #92400e;
-}
-
-.btn-icon.warning:hover {
-    background: #fde68a;
-}
-
-.alert-success {
-    background: #d1fae5;
-    color: #065f46;
-    border-left: 4px solid #10b981;
-    padding: 1rem 1.5rem;
-    border-radius: 8px;
-    margin-bottom: 1.5rem;
-    display: flex;
-    gap: 1rem;
-    align-items: center;
-}
-
-.alert {
-    padding: 1rem;
-    border-radius: 8px;
-    display: flex;
-    gap: 1rem;
-    align-items: flex-start;
-    border-left: 4px solid;
-}
-
-.info-grid {
-    background: #f9fafb;
-    padding: 1rem;
-    border-radius: 8px;
-    display: grid;
-    gap: 0.75rem;
-}
-
-.info-item {
-    display: flex;
-    justify-content: space-between;
-    padding: 0.5rem 0;
-    border-bottom: 1px solid #e5e7eb;
-}
-
-.info-item:last-child {
-    border-bottom: none;
-}
-
-.info-label {
-    font-weight: 600;
-    color: #6b7280;
-    font-size: 0.9rem;
-}
-
-.info-value {
-    color: #1f2937;
-    font-weight: 500;
-    text-align: right;
-}
-
-/* Modal Styles */
-.modal {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.5);
-    z-index: 10000;
-    align-items: center;
-    justify-content: center;
-}
-
-.modal.show {
-    display: flex;
-}
-
-.modal-content {
-    background: white;
-    border-radius: 12px;
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
-    max-width: 90%;
-    max-height: 90vh;
-    overflow-y: auto;
-}
-
-.modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1.5rem;
-    border-bottom: 2px solid #e5e7eb;
-}
-
-.modal-title {
-    font-size: 1.25rem;
-    font-weight: 600;
-    margin: 0;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-.close-btn {
-    background: none;
-    border: none;
-    font-size: 1.5rem;
-    cursor: pointer;
-    color: #6b7280;
-    transition: color 0.2s;
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 6px;
-}
-
-.close-btn:hover {
-    color: #1f2937;
-    background: #f3f4f6;
-}
-
-.details-grid {
-    padding: 1.5rem;
-}
-
-.detail-item {
-    display: flex;
-    justify-content: space-between;
-    padding: 0.75rem;
-    background: #f9fafb;
-    border-radius: 6px;
-    margin-bottom: 0.75rem;
-}
-
-.detail-label {
-    font-weight: 600;
-    color: #6b7280;
-}
-
-.detail-value {
-    color: #1f2937;
-    font-weight: 500;
-    text-align: right;
-}
-</style>
+<!-- VIEW -->
+<div id="viewModal" class="db-modal"><div class="db-modal__box"><div class="db-modal__header db-modal__header--teal"><h3><i class="fas fa-eye"></i> Expense Details</h3><button class="db-modal__close" onclick="closeModal('viewModal')">×</button></div><div class="db-modal__body"><div id="expDetails"></div><div class="db-modal__footer"><button class="db-btn db-btn--ghost" onclick="closeModal('viewModal')"><i class="fas fa-times"></i> Close</button></div></div></div></div>
+<!-- APPROVE -->
+<div id="approveModal" class="db-modal"><div class="db-modal__box"><div class="db-modal__header db-modal__header--sky"><h3><i class="fas fa-check-circle"></i> Approve Expense</h3><button class="db-modal__close" onclick="closeModal('approveModal')">×</button></div><div class="db-modal__body"><form method="POST"><input type="hidden" name="action" value="approve"><input type="hidden" name="expense_id" id="app_eid"><div class="db-notice db-notice--sky"><i class="fas fa-info-circle" style="flex-shrink:0;"></i><span>Approving will move this to <strong>Approved</strong> status, ready for release.</span></div><div id="appInfo" class="db-confirm-grid"></div><div class="db-modal__footer"><button type="button" class="db-btn db-btn--ghost" onclick="closeModal('approveModal')"><i class="fas fa-times"></i> Cancel</button><button type="submit" class="db-btn db-btn--primary"><i class="fas fa-check"></i> Approve</button></div></form></div></div></div>
+<!-- REJECT -->
+<div id="rejectModal" class="db-modal"><div class="db-modal__box"><div class="db-modal__header db-modal__header--rose"><h3><i class="fas fa-times-circle"></i> Reject Expense</h3><button class="db-modal__close" onclick="closeModal('rejectModal')">×</button></div><div class="db-modal__body"><form method="POST"><input type="hidden" name="action" value="reject"><input type="hidden" name="expense_id" id="rej_eid"><div class="db-notice db-notice--rose"><i class="fas fa-exclamation-triangle" style="flex-shrink:0;"></i><span>This expense will be marked as <strong>Rejected</strong>. This cannot be undone.</span></div><div id="rejInfo" class="db-confirm-grid"></div><div class="db-modal__footer"><button type="button" class="db-btn db-btn--ghost" onclick="closeModal('rejectModal')"><i class="fas fa-times"></i> Cancel</button><button type="submit" class="db-btn db-btn--rose"><i class="fas fa-times-circle"></i> Reject</button></div></form></div></div></div>
+<!-- RELEASE -->
+<div id="releaseModal" class="db-modal"><div class="db-modal__box"><div class="db-modal__header db-modal__header--teal"><h3><i class="fas fa-money-bill-wave"></i> Release Payment</h3><button class="db-modal__close" onclick="closeModal('releaseModal')">×</button></div><div class="db-modal__body"><form method="POST"><input type="hidden" name="action" value="release"><input type="hidden" name="expense_id" id="rel_eid"><div class="db-notice db-notice--success"><i class="fas fa-info-circle" style="flex-shrink:0;"></i><span>This will <strong>deduct the amount from the fund balance</strong> and mark as Released.</span></div><div id="relInfo" class="db-confirm-grid"></div><div class="db-modal__footer"><button type="button" class="db-btn db-btn--ghost" onclick="closeModal('releaseModal')"><i class="fas fa-times"></i> Cancel</button><button type="submit" class="db-btn db-btn--primary"><i class="fas fa-check-double"></i> Release Payment</button></div></form></div></div></div>
+<!-- CANCEL -->
+<div id="cancelModal" class="db-modal"><div class="db-modal__box"><div class="db-modal__header db-modal__header--muted"><h3><i class="fas fa-ban"></i> Cancel Expense</h3><button class="db-modal__close" onclick="closeModal('cancelModal')">×</button></div><div class="db-modal__body"><form method="POST"><input type="hidden" name="action" value="cancel"><input type="hidden" name="expense_id" id="can_eid"><div class="db-notice db-notice--amber"><i class="fas fa-exclamation-triangle" style="flex-shrink:0;"></i><span>This will cancel the approved expense. <strong>This cannot be undone.</strong></span></div><div id="canInfo" class="db-confirm-grid"></div><div class="db-modal__footer"><button type="button" class="db-btn db-btn--ghost" onclick="closeModal('cancelModal')"><i class="fas fa-times"></i> Back</button><button type="submit" class="db-btn db-btn--primary" style="background:linear-gradient(135deg,#374151,#6b7280)"><i class="fas fa-ban"></i> Cancel Expense</button></div></form></div></div></div>
 
 <script>
-function viewExpense(expense) {
-    const modal = document.getElementById('viewExpenseModal');
-    const details = document.getElementById('expenseDetails');
-    
-    details.innerHTML = `
-        <div class="detail-item">
-            <span class="detail-label">Reference Number:</span>
-            <span class="detail-value">${expense.reference_number}</span>
-        </div>
-        <div class="detail-item">
-            <span class="detail-label">Category:</span>
-            <span class="detail-value">${expense.category_name}</span>
-        </div>
-        <div class="detail-item">
-            <span class="detail-label">Amount:</span>
-            <span class="detail-value expense-color"><strong>₱${parseFloat(expense.amount).toLocaleString('en-US', {minimumFractionDigits: 2})}</strong></span>
-        </div>
-        <div class="detail-item">
-            <span class="detail-label">Payee:</span>
-            <span class="detail-value">${expense.payee}</span>
-        </div>
-        <div class="detail-item">
-            <span class="detail-label">Expense Date:</span>
-            <span class="detail-value">${new Date(expense.expense_date).toLocaleDateString('en-US', {year: 'numeric', month: 'long', day: 'numeric'})}</span>
-        </div>
-        <div class="detail-item">
-            <span class="detail-label">Payment Method:</span>
-            <span class="detail-value">${expense.payment_method}</span>
-        </div>
-        ${expense.invoice_number ? `
-        <div class="detail-item">
-            <span class="detail-label">Invoice Number:</span>
-            <span class="detail-value">${expense.invoice_number}</span>
-        </div>
-        ` : ''}
-        <div class="detail-item">
-            <span class="detail-label">Requested By:</span>
-            <span class="detail-value">${expense.requested_by_name}</span>
-        </div>
-        ${expense.approved_by_name ? `
-        <div class="detail-item">
-            <span class="detail-label">Approved By:</span>
-            <span class="detail-value">${expense.approved_by_name}</span>
-        </div>
-        ` : ''}
-        ${expense.released_by_name ? `
-        <div class="detail-item">
-            <span class="detail-label">Released By:</span>
-            <span class="detail-value">${expense.released_by_name}</span>
-        </div>
-        ` : ''}
-        <div class="detail-item" style="flex-direction: column; align-items: flex-start;">
-            <span class="detail-label">Description:</span>
-            <span class="detail-value" style="margin-top: 0.5rem;">${expense.description}</span>
-        </div>
-        <div class="detail-item">
-            <span class="detail-label">Status:</span>
-            <span class="detail-value">${getStatusBadgeHTML(expense.status)}</span>
-        </div>
-    `;
-    
-    modal.classList.add('show');
+function openModal(id){document.getElementById(id).classList.add('db-modal--open');document.body.style.overflow='hidden';}
+function closeModal(id){document.getElementById(id).classList.remove('db-modal--open');document.body.style.overflow='';}
+window.addEventListener('click',e=>{if(e.target.classList.contains('db-modal'))closeModal(e.target.id);});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelectorAll('.db-modal--open').forEach(m=>closeModal(m.id));});
+function buildGrid(e){return`<div class="db-confirm-row"><span class="lbl">Reference #</span><span class="val db-id">${e.reference_number}</span></div><div class="db-confirm-row"><span class="lbl">Payee</span><span class="val">${e.payee}</span></div><div class="db-confirm-row"><span class="lbl">Amount</span><span class="val" style="color:var(--db-rose)">₱${parseFloat(e.amount).toLocaleString('en-PH',{minimumFractionDigits:2})}</span></div><div class="db-confirm-row"><span class="lbl">Category</span><span class="val">${e.category_name||'—'}</span></div>`;}
+function viewExpense(e){
+    const sc={Pending:'var(--db-amber-dark)',Approved:'var(--db-sky)',Released:'var(--db-success)',Rejected:'var(--db-rose)',Cancelled:'var(--db-muted)'};
+    document.getElementById('expDetails').innerHTML=`<div class="db-confirm-grid">
+        <div class="db-confirm-row"><span class="lbl">Reference #</span><span class="val db-id">${e.reference_number}</span></div>
+        <div class="db-confirm-row"><span class="lbl">Category</span><span class="val">${e.category_name||'—'}</span></div>
+        <div class="db-confirm-row"><span class="lbl">Amount</span><span class="val" style="color:var(--db-rose);font-family:'DM Mono',monospace">₱${parseFloat(e.amount).toLocaleString('en-PH',{minimumFractionDigits:2})}</span></div>
+        <div class="db-confirm-row"><span class="lbl">Payee</span><span class="val">${e.payee}</span></div>
+        <div class="db-confirm-row"><span class="lbl">Expense Date</span><span class="val">${new Date(e.expense_date).toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})}</span></div>
+        <div class="db-confirm-row"><span class="lbl">Payment Method</span><span class="val">${e.payment_method}</span></div>
+        ${e.invoice_number?`<div class="db-confirm-row"><span class="lbl">Invoice #</span><span class="val">${e.invoice_number}</span></div>`:''}
+        <div class="db-confirm-row"><span class="lbl">Requested By</span><span class="val">${e.req_name||'—'}</span></div>
+        ${e.app_name?`<div class="db-confirm-row"><span class="lbl">Approved By</span><span class="val" style="color:var(--db-sky)">${e.app_name}</span></div>`:''}
+        ${e.rel_name?`<div class="db-confirm-row"><span class="lbl">Released By</span><span class="val" style="color:var(--db-success)">${e.rel_name}</span></div>`:''}
+        <div class="db-confirm-row"><span class="lbl">Status</span><span class="val" style="color:${sc[e.status]||'inherit'}">${e.status}</span></div>
+        ${e.description?`<div class="db-confirm-row" style="flex-direction:column;gap:4px;"><span class="lbl">Description</span><span class="val" style="text-align:left">${e.description}</span></div>`:''}
+    </div>`;
+    openModal('viewModal');
 }
-
-function openApproveModal(expense) {
-    document.getElementById('approve_expense_id').value = expense.expense_id;
-    document.getElementById('approveExpenseInfo').innerHTML = `
-        <div class="info-item">
-            <span class="info-label">Reference:</span>
-            <span class="info-value">${expense.reference_number}</span>
-        </div>
-        <div class="info-item">
-            <span class="info-label">Payee:</span>
-            <span class="info-value">${expense.payee}</span>
-        </div>
-        <div class="info-item">
-            <span class="info-label">Amount:</span>
-            <span class="info-value" style="color: #dc2626; font-weight: 700;">₱${parseFloat(expense.amount).toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
-        </div>
-        <div class="info-item">
-            <span class="info-label">Category:</span>
-            <span class="info-value">${expense.category_name}</span>
-        </div>
-    `;
-    document.getElementById('approveModal').classList.add('show');
-}
-
-function openRejectModal(expense) {
-    document.getElementById('reject_expense_id').value = expense.expense_id;
-    document.getElementById('rejectExpenseInfo').innerHTML = `
-        <div class="info-item">
-            <span class="info-label">Reference:</span>
-            <span class="info-value">${expense.reference_number}</span>
-        </div>
-        <div class="info-item">
-            <span class="info-label">Payee:</span>
-            <span class="info-value">${expense.payee}</span>
-        </div>
-        <div class="info-item">
-            <span class="info-label">Amount:</span>
-            <span class="info-value" style="color: #dc2626; font-weight: 700;">₱${parseFloat(expense.amount).toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
-        </div>
-    `;
-    document.getElementById('rejectModal').classList.add('show');
-}
-
-function openReleaseModal(expense) {
-    document.getElementById('release_expense_id').value = expense.expense_id;
-    document.getElementById('releaseExpenseInfo').innerHTML = `
-        <div class="info-item">
-            <span class="info-label">Reference:</span>
-            <span class="info-value">${expense.reference_number}</span>
-        </div>
-        <div class="info-item">
-            <span class="info-label">Payee:</span>
-            <span class="info-value">${expense.payee}</span>
-        </div>
-        <div class="info-item">
-            <span class="info-label">Amount:</span>
-            <span class="info-value" style="color: #dc2626; font-weight: 700;">₱${parseFloat(expense.amount).toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
-        </div>
-        <div class="info-item">
-            <span class="info-label">Payment Method:</span>
-            <span class="info-value">${expense.payment_method}</span>
-        </div>
-    `;
-    document.getElementById('releaseModal').classList.add('show');
-}
-
-function openCancelModal(expense) {
-    document.getElementById('cancel_expense_id').value = expense.expense_id;
-    document.getElementById('cancelExpenseInfo').innerHTML = `
-        <div class="info-item">
-            <span class="info-label">Reference:</span>
-            <span class="info-value">${expense.reference_number}</span>
-        </div>
-        <div class="info-item">
-            <span class="info-label">Payee:</span>
-            <span class="info-value">${expense.payee}</span>
-        </div>
-        <div class="info-item">
-            <span class="info-label">Amount:</span>
-            <span class="info-value" style="color: #dc2626; font-weight: 700;">₱${parseFloat(expense.amount).toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
-        </div>
-    `;
-    document.getElementById('cancelModal').classList.add('show');
-}
-
-function closeModal(modalId) {
-    document.getElementById(modalId).classList.remove('show');
-}
-
-function getStatusBadgeHTML(status) {
-    const badges = {
-        'Pending': '<span style="background: #fef3c7; color: #92400e; padding: 0.25rem 0.75rem; border-radius: 6px; font-weight: 600; font-size: 0.85rem;">Pending</span>',
-        'Approved': '<span style="background: #dbeafe; color: #1e40af; padding: 0.25rem 0.75rem; border-radius: 6px; font-weight: 600; font-size: 0.85rem;">Approved</span>',
-        'Released': '<span style="background: #d1fae5; color: #065f46; padding: 0.25rem 0.75rem; border-radius: 6px; font-weight: 600; font-size: 0.85rem;">Released</span>',
-        'Rejected': '<span style="background: #fee2e2; color: #991b1b; padding: 0.25rem 0.75rem; border-radius: 6px; font-weight: 600; font-size: 0.85rem;">Rejected</span>',
-        'Cancelled': '<span style="background: #f3f4f6; color: #374151; padding: 0.25rem 0.75rem; border-radius: 6px; font-weight: 600; font-size: 0.85rem;">Cancelled</span>'
-    };
-    return badges[status] || status;
-}
-
-window.onclick = function(event) {
-    if (event.target.classList.contains('modal')) {
-        event.target.classList.remove('show');
-    }
-}
+function openApprove(e){document.getElementById('app_eid').value=e.expense_id;document.getElementById('appInfo').innerHTML=buildGrid(e);openModal('approveModal');}
+function openReject(e){document.getElementById('rej_eid').value=e.expense_id;document.getElementById('rejInfo').innerHTML=buildGrid(e);openModal('rejectModal');}
+function openRelease(e){document.getElementById('rel_eid').value=e.expense_id;document.getElementById('relInfo').innerHTML=buildGrid(e);openModal('releaseModal');}
+function openCancel(e){document.getElementById('can_eid').value=e.expense_id;document.getElementById('canInfo').innerHTML=buildGrid(e);openModal('cancelModal');}
+setTimeout(()=>document.querySelectorAll('.db-alert').forEach(a=>{a.style.transition='opacity .4s';a.style.opacity='0';setTimeout(()=>a.remove(),400);}),5000);
 </script>
-
 <?php include '../../includes/footer.php'; ?>
