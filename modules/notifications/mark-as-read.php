@@ -42,11 +42,20 @@ if ($action !== 'mark_read') {
 }
 
 // ── Verify ownership (security: never trust client-supplied IDs alone) ────────
-$check = $conn->prepare(
-    "SELECT notification_id FROM tbl_notifications
-     WHERE notification_id = ? AND user_id = ?"
-);
-$check->bind_param('ii', $notification_id, $user_id);
+$user_role = getCurrentUserRole();
+$is_admin  = in_array($user_role, ['Super Admin','Super Administrator','Admin','Staff']);
+
+if ($is_admin) {
+    $check = $conn->prepare(
+        "SELECT notification_id FROM tbl_notifications WHERE notification_id = ?"
+    );
+    $check->bind_param('i', $notification_id);
+} else {
+    $check = $conn->prepare(
+        "SELECT notification_id FROM tbl_notifications WHERE notification_id = ? AND user_id = ?"
+    );
+    $check->bind_param('ii', $notification_id, $user_id);
+}
 $check->execute();
 $check->store_result();
 
@@ -58,13 +67,17 @@ if ($check->num_rows === 0) {
 $check->close();
 
 // ── Mark as read ──────────────────────────────────────────────────────────────
-$stmt = $conn->prepare(
-    "UPDATE tbl_notifications
-     SET is_read = 1
-     WHERE notification_id = ? AND user_id = ? AND is_read = 0"
-);
-$stmt->bind_param('ii', $notification_id, $user_id);
-$ok = $stmt->execute();
+if ($is_admin) {
+    $stmt = $conn->prepare(
+        "UPDATE tbl_notifications SET is_read=1 WHERE notification_id=? AND is_read=0"
+    );
+    $stmt->bind_param('i', $notification_id);
+} else {
+    $stmt = $conn->prepare(
+        "UPDATE tbl_notifications SET is_read=1 WHERE notification_id=? AND user_id=? AND is_read=0"
+    );
+    $stmt->bind_param('ii', $notification_id, $user_id);
+}$ok = $stmt->execute();
 $stmt->close();
 
 if (!$ok) {

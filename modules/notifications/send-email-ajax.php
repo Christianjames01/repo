@@ -32,12 +32,11 @@ function resolveReferenceType(string $notification_type): string {
         'alert'             => 'announcement',
         'incident_reported' => 'incident',
         'status_update'     => 'announcement',
+        'email_reply'       => 'email_inbox',
     ];
     return $map[$notification_type] ?? 'announcement';
 }
 
-// ── Map notification_type → type value that tbl_notifications expects ─────────
-// Matches the badge/filter labels visible in the notifications page.
 function resolveNotificationType(string $notification_type): string {
     $map = [
         'general'           => 'general',
@@ -45,6 +44,7 @@ function resolveNotificationType(string $notification_type): string {
         'alert'             => 'alert',
         'incident_reported' => 'incident_reported',
         'status_update'     => 'status_update',
+        'email_reply'       => 'email_reply',
     ];
     return $map[$notification_type] ?? 'announcement';
 }
