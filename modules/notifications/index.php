@@ -619,11 +619,11 @@ $extra_css = '
 
 /* Panel */
 .ms-panel {
-  position: fixed; right: -420px; top: 0; bottom: 0;
+  position: fixed; right: -860px; top: 0; bottom: 0;
   width: 420px; background: var(--white);
   box-shadow: -4px 0 24px rgba(0,0,0,.15);
   z-index: 301; display: flex; flex-direction: column;
-  transition: right .25s cubic-bezier(.32,.84,.44,1);
+  transition: right .25s cubic-bezier(.32,.84,.44,1), width .25s cubic-bezier(.32,.84,.44,1);
   overflow: hidden;
 }
 .ms-panel.open { right: 0; }
@@ -725,10 +725,24 @@ $extra_css = '
 /* Ticket list */
 .ms-list {
   flex: 1; overflow-y: auto; overflow-x: hidden;
+  position: relative;
 }
 .ms-list::-webkit-scrollbar { width: 4px; }
 .ms-list::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 2px; }
-
+/* ── ROW HOVER PREVIEW CARD ── */
+.row-preview-card {
+  position: fixed; z-index: 9999;
+  background: #fff; border: 1px solid #e5e7eb;
+  border-radius: 10px; padding: 14px 16px;
+  box-shadow: 0 8px 28px rgba(0,0,0,.13);
+  min-width: 300px; max-width: 380px;
+  pointer-events: none;
+  animation: ddIn .1s ease;
+  font-family: "Nunito Sans", sans-serif;
+}
+.row-preview-title { font-size: 13.5px; font-weight: 700; color: #374151; margin-bottom: 6px; display: flex; align-items: center; gap: 7px; }
+.row-preview-id { font-size: 11px; color: #9ca3af; font-weight: 500; margin-bottom: 6px; }
+.row-preview-body { font-size: 12px; color: #6b7280; line-height: 1.6; }
 /* Individual ticket item */
 .ms-item {
   padding: 12px 16px; border-bottom: 1px solid #f3f4f6;
@@ -755,8 +769,9 @@ $extra_css = '
 
 /* Detail panel */
 .ms-detail {
-  position: absolute; inset: 0; background: var(--white);
+  position: absolute; top: 0; bottom: 0; right: 0; background: var(--white);
   display: flex; flex-direction: column; overflow: hidden;
+  border-left: 1px solid var(--border);
 }
 .ms-detail-header {
   display: flex; align-items: center; gap: 6px; padding: 8px 12px;
@@ -1294,12 +1309,15 @@ include '../../includes/header.php';
                             $t   = $notif['type']??'';
                             $rt  = $notif['reference_type']??'';
                             $nid = intval($notif['notification_id']);
-                            $rid = intval($notif['reference_id']??0);
+$rid = intval($notif['reference_id']??0);
+
+                            // Define $is_email FIRST
                             $is_email = ($t==='email_reply'||$rt==='email_inbox');
 
                             [$icon,$color,$type_label] = gIcon($t,$rt);
                             $view_url = gUrl($t,$rt,$nid,$rid);
 
+                            // Parse sender from email message
                             $sender_name=''; $sender_email='';
                             if ($is_email) {
                                 $msg=$notif['message']??'';
@@ -1309,16 +1327,42 @@ include '../../includes/header.php';
                                 if (!$sender_email&&preg_match('/[\w._%+\-]+@[\w.\-]+\.[a-z]{2,}/i',$msg,$em)) $sender_email=$em[0];
                             }
 
+                            // Get the requester's email from users table
+                            $requester_email = '';
+                            $requester_name  = '';
+                            $req_uid = intval($notif['related_user_id'] ?? $notif['created_by'] ?? 0);
+                            if ($req_uid) {
+                                $req_user = fetchOne($conn,
+"SELECT u.email,
+        COALESCE(CONCAT_WS(' ', r.first_name, r.last_name), u.username) AS full_name
+ FROM tbl_users u
+ LEFT JOIN tbl_residents r ON u.resident_id = r.resident_id
+ WHERE u.user_id = ?",
+                                    [$req_uid], 'i');
+                                if ($req_user) {
+                                    $requester_email = $req_user['email'] ?? '';
+                                    $requester_name  = $req_user['full_name'] ?? '';
+                                }
+                            }
+                            // For email-type notifications, fall back to parsed sender
+                            if ($is_email && !$requester_email && $sender_email) {
+                                $requester_email = $sender_email;
+                                $requester_name  = $sender_name;
+                            }
+                               
+
                             $is_unread = !$notif['is_read'];
                             $row_cls   = $is_unread ? ($is_email?'unread-email':'unread') : '';
                             $preview   = htmlspecialchars(mb_strimwidth($notif['message']??'',0,100,'…'));
                             $icon_bg   = 'background:'.htmlspecialchars($color).'18;color:'.htmlspecialchars($color);
                         ?>
-                        <tr class="<?= $row_cls ?>"
+<tr class="<?= $row_cls ?>"
                             data-url="<?= htmlspecialchars($view_url) ?>"
                             data-nid="<?= $nid ?>"
                             data-read="<?= $notif['is_read']?1:0 ?>"
-                            data-search="<?= strtolower(htmlspecialchars($notif['title'].' '.($notif['message']??''))) ?>">
+                            data-search="<?= strtolower(htmlspecialchars($notif['title'].' '.($notif['message']??''))) ?>"
+                          data-email="<?= htmlspecialchars($requester_email) ?>"
+                            data-sender="<?= htmlspecialchars($requester_name) ?>">
 
                             <!-- Checkbox -->
                             <td onclick="event.stopPropagation()">
@@ -1465,20 +1509,20 @@ include '../../includes/header.php';
         <button class="ms-close" onclick="closeMySummary()"><i class="fas fa-times"></i></button>
     </div>
 
-    <!-- Stats row -->
+   <!-- Stats row -->
     <div class="ms-section-label">Notifications</div>
     <div class="ms-stats-row">
-        <div class="ms-stat-card ms-stat-red" onclick="msFilter('unread')">
+        <div class="ms-stat-card ms-stat-red active" id="msStatOverdue" onclick="msFilter('overdue')">
             <div class="ms-stat-num" id="msUnreadNum">0</div>
-            <div class="ms-stat-lbl">Unread</div>
+            <div class="ms-stat-lbl">Overdue</div>
         </div>
-        <div class="ms-stat-card ms-stat-blue active" id="msStatToday" onclick="msFilter('today')">
+        <div class="ms-stat-card ms-stat-blue" id="msStatDueToday" onclick="msFilter('due_today')">
             <div class="ms-stat-num" id="msTodayNum">0</div>
-            <div class="ms-stat-lbl">Today</div>
+            <div class="ms-stat-lbl">Due Today</div>
         </div>
-        <div class="ms-stat-card ms-stat-gray" onclick="msFilter('all')">
+        <div class="ms-stat-card ms-stat-gray" id="msStatPending" onclick="msFilter('pending')">
             <div class="ms-stat-num" id="msTotalNum">0</div>
-            <div class="ms-stat-lbl">Total</div>
+            <div class="ms-stat-lbl">Pending</div>
         </div>
     </div>
 
@@ -1550,8 +1594,8 @@ include '../../includes/header.php';
                 </div>
                 <div class="ms-ticket-meta" id="msDetailMeta"></div>
             </div>
-            <button class="ms-ticket-pin" title="Pin"><i class="fas fa-thumbtack"></i></button>
-            <button class="ms-ticket-search" title="Search"><i class="fas fa-search"></i></button>
+<button class="ms-ticket-pin" id="msPinBtn" title="Pin to top" onclick="msPinTicket()"><i class="fas fa-thumbtack"></i></button>
+<button class="ms-ticket-search" title="Search in message" onclick="msSearchInMessage()"><i class="fas fa-search"></i></button>
         </div>
 
         <!-- Status + transitions -->
@@ -1564,9 +1608,9 @@ include '../../includes/header.php';
             </div>
             <div class="ms-transitions">
                 <div class="ms-trans-label">Transitions</div>
-                <div style="display:flex;gap:6px">
-                    <button class="ms-trans-btn" onclick="msTransition('On Hold')">On Hold</button>
-                    <button class="ms-trans-btn" onclick="msTransition('Work In Progress')">Work In Progress</button>
+               <div style="display:flex;gap:6px">
+                    <button class="ms-trans-btn" onclick="msTransition('On Hold')" onmouseenter="msShowTransTooltip(this,'On Hold','The ticket is temporarily paused due to pending information, dependencies, or external factors such as awaiting user response, external support or required approvals.','On Hold')">On Hold</button>
+                    <button class="ms-trans-btn" onclick="msTransition('Work In Progress')" onmouseenter="msShowTransTooltip(this,'Work In Progress','The ticket is actively being worked on by an assigned officer.','Work In Progress')">Work In Progress</button>
                 </div>
             </div>
         </div>
@@ -1585,7 +1629,7 @@ include '../../includes/header.php';
             <div class="ms-conv-filter">
                 Filter:
                 <label><input type="checkbox" checked onchange="msConvFilter()"> Emails</label>
-                <label><input type="checkbox" onchange="msConvFilter()"> Auto Notifications</label>
+<label><input type="checkbox" checked onchange="msConvFilter()"> Auto Notifications</label>
                 <label><input type="checkbox" checked onchange="msConvFilter()"> Notes</label>
             </div>
             <div class="ms-conv-section-label">Conversations</div>
@@ -1648,11 +1692,10 @@ document.querySelectorAll('#notifTable tbody tr').forEach(row => {
         const nid = row.dataset.nid, url = row.dataset.url || 'notification-detail.php?id='+nid;
         if (row.dataset.read === '0') {
             const fd = new FormData(); fd.append('notification_id', nid);
-            fetch('mark-as-read.php', {method:'POST',body:fd,keepalive:true}).catch(()=>{});
+           fetch('<?= BASE_URL ?>/modules/notifications/mark-as-read.php', {method:'POST',body:fd,keepalive:true}).catch(()=>{});
         }
         window.location.href = url;
     });
-    /* Row detail expand on icon click */
     const icons = row.querySelector('.req-icons');
     if (icons) {
         icons.addEventListener('click', e => {
@@ -1684,11 +1727,87 @@ document.querySelectorAll('#notifTable tbody tr').forEach(row => {
         });
     }
 });
+function positionPreviewCard(e) {
+    if (!previewCard) return;
+    const cardW = 360;
+    const cardH = previewCard.offsetHeight || 120;
+    let left = e.clientX + 16;
+    let top  = e.clientY + 16;
+
+    // Flip left if going off right edge
+    if (left + cardW > window.innerWidth - 10) left = e.clientX - cardW - 10;
+    // Flip up if going off bottom edge
+    if (top + cardH > window.innerHeight - 10) top = e.clientY - cardH - 10;
+
+    previewCard.style.left = left + 'px';
+    previewCard.style.top  = top + 'px';
+    previewCard.style.position = 'fixed';
+}
+/* ══ Row hover preview card ══ */
+let previewCard = null;
+let previewTimer = null;
+
+function positionPreviewCard(e) {
+    if (!previewCard) return;
+    const cardW = 380;
+    const cardH = previewCard.offsetHeight || 140;
+    let left = e.clientX + 16;
+    let top  = e.clientY + 16;
+    if (left + cardW > window.innerWidth - 10) left = e.clientX - cardW - 10;
+    if (top + cardH > window.innerHeight - 10) top = e.clientY - cardH - 10;
+    previewCard.style.left = left + 'px';
+    previewCard.style.top  = top + 'px';
+}
+
+document.querySelectorAll('#notifTable tbody tr:not(.req-detail-row)').forEach(row => {
+    row.addEventListener('mouseenter', e => {
+        previewTimer = setTimeout(() => {
+            if (previewCard) previewCard.remove();
+
+            const nid      = row.dataset.nid || '';
+            const title    = row.querySelector('.req-subject')?.textContent?.trim() || '';
+            // Full message is stored in data-search as "title message" — extract message part
+            const search   = row.dataset.search || '';
+            const fullMsg  = search.replace(title.toLowerCase(), '').trim();
+            const iconEl   = row.querySelector('.req-icon i');
+            const iconCls  = iconEl ? Array.from(iconEl.classList).find(c => c.startsWith('fa-') && c !== 'fas') || 'fa-bell' : 'fa-bell';
+            const iconBg   = row.querySelector('.req-icon')?.style?.background || '#f9fafb';
+            const iconClr  = row.querySelector('.req-icon')?.style?.color || '#6b7280';
+
+            if (!title) return;
+
+            previewCard = document.createElement('div');
+            previewCard.className = 'row-preview-card';
+            previewCard.innerHTML = `
+                <div style="font-size:11px;color:#9ca3af;font-weight:500;margin-bottom:8px">
+                    Incident Request ID: <strong style="color:#6b7280">ID-${String(nid).padStart(4,'0')}</strong>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+                    <span style="width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;background:${iconBg};color:${iconClr}">
+                        <i class="fas ${iconCls}"></i>
+                    </span>
+                    <span style="font-size:13.5px;font-weight:700;color:#374151">${title}</span>
+                </div>
+                ${fullMsg ? `<div style="font-size:12px;color:#6b7280;line-height:1.7;max-height:120px;overflow:hidden">${fullMsg}</div>` : ''}`;
+            document.body.appendChild(previewCard);
+            positionPreviewCard(e);
+        }, 250);
+    });
+
+    row.addEventListener('mousemove', e => {
+        if (previewCard) positionPreviewCard(e);
+    });
+
+    row.addEventListener('mouseleave', () => {
+        clearTimeout(previewTimer);
+        if (previewCard) { previewCard.remove(); previewCard = null; }
+    });
+});
 
 /* ══ Mark read inline ══ */
 function markReadInline(nid, row, detailRow) {
     const fd = new FormData(); fd.append('notification_id', nid);
-    fetch('mark-as-read.php', {method:'POST',body:fd}).then(()=>{
+fetch('<?= BASE_URL ?>/modules/notifications/mark-as-read.php', {method:'POST',body:fd}).then(()=>{
         if (row) { row.classList.remove('unread','unread-email'); row.dataset.read='1'; }
         if (detailRow) detailRow.remove();
         showToast('Marked as read','success');
@@ -1713,7 +1832,7 @@ function toggleAll(cb) { document.querySelectorAll('.notif-cb').forEach(c => c.c
 function selAllRows()  { document.querySelectorAll('.notif-cb').forEach(c => c.checked=true);  document.getElementById('selAll').checked=true;  updateSelBar(); }
 function deselAllRows(){ document.querySelectorAll('.notif-cb').forEach(c => c.checked=false); document.getElementById('selAll').checked=false; updateSelBar(); }
 function getChecked()  { return [...document.querySelectorAll('.notif-cb:checked')].map(c=>c.value); }
-function updateSelBar(){ /* optional: show a selection count badge */ }
+function updateSelBar(){}
 
 /* ══ Bulk actions ══ */
 function bulkRead() {
@@ -1751,11 +1870,19 @@ function confirmDel(nid) {
     openModal('delModal');
 }
 
-/* ══ Live search ══ */
 function liveSearch(q) {
-    const term=q.toLowerCase().trim();
+    const term = q.toLowerCase().trim();
     document.querySelectorAll('#notifTable tbody tr:not(.req-detail-row)').forEach(row => {
-        row.style.display = !term||(row.dataset.search||'').includes(term)?'':'none';
+        if (!term) { row.style.display = ''; return; }
+        const searchText = (row.dataset.search || '');
+        // Also match against the padded ID (e.g. "0302" or "302" matches ID-0302)
+        const nid        = row.dataset.nid || '';
+        const paddedId   = String(nid).padStart(4, '0');
+        const matches    = searchText.includes(term)
+                        || paddedId.includes(term)
+                        || nid.includes(term)
+                        || ('id-' + paddedId).includes(term);
+        row.style.display = matches ? '' : 'none';
     });
 }
 
@@ -1769,7 +1896,7 @@ function showToast(msg,type='success') {
     toastTimer=setTimeout(()=>t.classList.remove('show'),3000);
 }
 
-/* ══ Toolbar action functions ══ */
+/* ══ Toolbar actions ══ */
 function pickUpSelected() {
     const ids = getChecked();
     if (!ids.length) { showToast('Select at least one notification first.', 'error'); return; }
@@ -1778,21 +1905,16 @@ function pickUpSelected() {
 function closeSelected() {
     const ids = getChecked();
     if (!ids.length) { showToast('Select at least one notification first.', 'error'); return; }
-    showBulkModal('danger','Close Notifications','fa-times-circle',
-        `Close ${ids.length} notification(s)?`,'bulk_delete','danger');
+    showBulkModal('danger','Close Notifications','fa-times-circle',`Close ${ids.length} notification(s)?`,'bulk_delete','danger');
 }
 function assignTo(name) {
     const ids = getChecked();
     if (!ids.length) { showToast('Select at least one notification first.', 'error'); return; }
     showToast('Assigned to ' + name, 'success');
     document.querySelectorAll('.dd-wrapper.open').forEach(el => el.classList.remove('open'));
-    // Update technician column visually
     document.querySelectorAll('.notif-cb:checked').forEach(cb => {
         const row = cb.closest('tr');
-        if (row) {
-            const techCell = row.querySelector('.tech-name');
-            if (techCell) techCell.innerHTML = '<span class="tech-dot"></span> ' + name;
-        }
+        if (row) { const tc = row.querySelector('.tech-name'); if (tc) tc.innerHTML = '<span class="tech-dot"></span> ' + name; }
     });
     deselAllRows();
 }
@@ -1809,284 +1931,403 @@ setTimeout(()=>{
    MY SUMMARY PANEL
 ══════════════════════════════════════════════════════ */
 
-/* Barangay notification data pulled from the page stats */
-const msData = {
-    unread: parseInt(document.querySelector('.stat-card.red .stat-num, .stat-card.teal .stat-num')?.textContent || '0'),
-    today:  0,
-    total:  0,
-};
-
-/* Try to get real counts from the stat cards */
 (function() {
-    const cards = document.querySelectorAll('.stat-card');
-    cards.forEach(c => {
-        const lbl = c.querySelector('.stat-lbl')?.textContent?.toLowerCase() || '';
-        const num = parseInt(c.querySelector('.stat-num')?.textContent || '0');
-        if (lbl.includes('today'))  msData.today  = num;
-        if (lbl.includes('total') || lbl.includes('all read') || lbl.includes('unread')) {
-            if (lbl.includes('unread') || lbl.includes('all read')) msData.unread = num;
-        }
-    });
-    /* Get total from ict card */
     const ictNums = document.querySelectorAll('.ict-stat-num');
-    if (ictNums.length >= 1) msData.total = parseInt(ictNums[0].textContent || '0');
-    if (ictNums.length >= 2) msData.unread = parseInt(ictNums[1].textContent || '0');
-
-    document.getElementById('msUnreadNum').textContent = msData.unread;
-    document.getElementById('msTodayNum').textContent  = msData.today;
-    document.getElementById('msTotalNum').textContent  = msData.total;
+    const total  = ictNums[0] ? parseInt(ictNums[0].textContent) : 0;
+    const unread = ictNums[1] ? parseInt(ictNums[1].textContent) : 0;
+    const today  = parseInt(document.querySelector('.stat-card.teal .stat-num')?.textContent || '0');
+    document.getElementById('msUnreadNum').textContent = unread;
+    document.getElementById('msTodayNum').textContent  = today;
+    document.getElementById('msTotalNum').textContent  = total;
 })();
 
-let msCurrentFilter = 'today';
+let msCurrentFilter = 'overdue';
 let msActiveItem    = null;
 let msSortAsc       = false;
+const msTicketStatus = {}; // stores transition status per nid
 
-/* Build notification list from existing table rows */
+function msExpandToSplit() {
+    const panel = document.getElementById('msPanel');
+    panel.style.width    = '860px';
+    panel.style.maxWidth = '96vw';
+    const detail = document.getElementById('msDetail');
+    detail.style.left  = '300px';
+    detail.style.right = '0';
+    detail.style.top   = '0';
+    detail.style.bottom = '0';
+}
+function msCollapseToNormal() {
+    const panel = document.getElementById('msPanel');
+    panel.style.width    = '420px';
+    panel.style.maxWidth = '';
+}
+
 function msGetItems(filter) {
     const rows = document.querySelectorAll('#notifTable tbody tr:not(.req-detail-row)');
     let items = [];
     rows.forEach(row => {
-        const nid    = row.dataset.nid;
-        const isRead = row.dataset.read === '1';
-        const url    = row.dataset.url || 'notification-detail.php?id=' + nid;
-        const search = row.dataset.search || '';
-        const title  = row.querySelector('.req-subject')?.textContent?.trim() || 'Notification';
-        const preview = row.querySelectorAll('td')[2]?.querySelector('[style*="9ca3af"]')?.textContent?.trim() || '';
-        const iconEl = row.querySelector('.req-icon i');
+        const nid       = row.dataset.nid;
+        const isRead    = row.dataset.read === '1';
+        const url       = row.dataset.url || 'notification-detail.php?id=' + nid;
+        const title     = row.querySelector('.req-subject')?.textContent?.trim() || 'Notification';
+        const preview   = row.querySelectorAll('td')[2]?.querySelector('[style*="9ca3af"]')?.textContent?.trim() || '';
         const iconColor = row.querySelector('.req-icon')?.getAttribute('style') || '';
-        const statusBadge = row.querySelector('.status-badge')?.textContent?.trim() || (isRead ? 'Read' : 'Open');
-        const techName = row.querySelector('.tech-name')?.textContent?.trim() || 'Admin';
-
+        const techName  = row.querySelector('.tech-name')?.textContent?.trim() || 'Admin';
+        // Get sender email from the row (set via data-email on the tr by PHP)
+        const senderEmail = row.dataset.email || '';
+        const senderName  = row.dataset.sender || '';
         let show = true;
-        if (filter === 'unread' && isRead)   show = false;
-        if (filter === 'today')  show = true; // show all as "today" since we can't filter without server
-
-        if (show) {
-            items.push({ nid, isRead, url, title, preview, iconColor, statusBadge, techName, row });
-        }
+        if (filter === 'overdue' && isRead) show = false;
+       if (show) items.push({ nid, isRead, url, title, preview, iconColor, techName, senderEmail, senderName, row });
     });
     return items;
 }
 
+const typeIconMap = {
+    'fa-exclamation-triangle': { bg:'#fff8e1', color:'#f59e0b' },
+    'fa-gavel':                { bg:'#fef2f2', color:'#ef4444' },
+    'fa-comments':             { bg:'#fff3e0', color:'#f97316' },
+    'fa-file-alt':             { bg:'#e3f2fd', color:'#1976d2' },
+    'fa-envelope':             { bg:'#e3f2fd', color:'#1976d2' },
+    'fa-bullhorn':             { bg:'#ede9fe', color:'#8b5cf6' },
+    'fa-calendar-check':       { bg:'#f0fdfa', color:'#14b8a6' },
+    'fa-hand-holding-medical': { bg:'#faf5ff', color:'#8b5cf6' },
+    'fa-bell':                 { bg:'#f9fafb', color:'#6b7280' },
+};
+
+function msGetIconStyle(item) {
+    const rowIcon = item.row?.querySelector('.req-icon i');
+    let iconClass = 'fa-bell';
+    if (rowIcon) {
+        const cls = Array.from(rowIcon.classList).find(c => c.startsWith('fa-') && c !== 'fas');
+        if (cls) iconClass = cls;
+    }
+    return { iconClass, style: typeIconMap[iconClass] || { bg:'#f9fafb', color:'#6b7280' } };
+}
+
 function msBuildList(filter) {
     const list = document.getElementById('msList');
-    document.getElementById('msLoading').style.display = 'flex';
-    list.innerHTML = '';
-    list.appendChild(document.getElementById('msLoading'));
+    list.innerHTML = '<div class="ms-loading"><i class="fas fa-spinner fa-spin"></i> Loading...</div>';
 
-    setTimeout(() => {
-        document.getElementById('msLoading').style.display = 'none';
+    const allNids = [...document.querySelectorAll('#notifTable tbody tr:not(.req-detail-row)')]
+        .map(r => r.dataset.nid).filter(Boolean);
+
+    const loadStatuses = allNids.length
+        ? Promise.all(allNids.map(nid =>
+            msTicketStatus[nid]
+                ? Promise.resolve()
+                : fetch(`<?= BASE_URL ?>/modules/notifications/update-status.php?nid=${nid}&action=get`)
+                    .then(r => r.json())
+                    .then(data => { if (data.status) msTicketStatus[nid] = data.status; })
+                    .catch(() => {})
+          ))
+        : Promise.resolve();
+
+    loadStatuses.then(() => {
         const items = msGetItems(filter);
-
-        // Sort
         if (msSortAsc) items.reverse();
-
-        // Filter label
-        const labels = { unread: 'Unread', today: 'Today', all: 'All' };
+        const labelMap = { overdue:'Overdue', due_today:'Due Today', pending:'Pending' };
         document.getElementById('msFilterLabel').textContent =
-            'Module: Notification | Value: ' + (labels[filter] || 'All');
+            'Module: Notification \u00a0|\u00a0 Value: ' + (labelMap[filter] || filter);
         document.getElementById('msFilterCount').textContent = items.length;
-
+        list.innerHTML = '';
         if (!items.length) {
-            list.innerHTML = '<div style="padding:40px;text-align:center;color:#9ca3af"><i class="fas fa-bell-slash" style="font-size:24px;display:block;margin-bottom:8px"></i>No notifications found</div>';
+            list.innerHTML = '<div style="padding:40px;text-align:center;color:#9ca3af;font-size:13px"><i class="fas fa-bell-slash" style="font-size:22px;display:block;margin-bottom:8px"></i>No notifications found</div>';
             return;
         }
-
-        // Barangay type icons
-        const typeIconMap = {
-            'fa-exclamation-triangle': { bg:'#fff8e1', color:'#f59e0b' },
-            'fa-gavel':               { bg:'#fef2f2', color:'#ef4444' },
-            'fa-comments':            { bg:'#fff3e0', color:'#f97316' },
-            'fa-file-alt':            { bg:'#e3f2fd', color:'#1976d2' },
-            'fa-envelope':            { bg:'#e3f2fd', color:'#1976d2' },
-            'fa-bullhorn':            { bg:'#ede9fe', color:'#8b5cf6' },
-            'fa-calendar-check':      { bg:'#f0fdfa', color:'#14b8a6' },
-            'fa-hand-holding-medical':{ bg:'#faf5ff', color:'#8b5cf6' },
-            'fa-bell':                { bg:'#f9fafb', color:'#6b7280' },
-        };
-
         items.forEach(item => {
+            const { iconClass, style } = msGetIconStyle(item);
+            const cachedStatus = msTicketStatus[item.nid] || (item.isRead ? 'Read' : 'Open');
+            const wip  = cachedStatus === 'Work In Progress';
+            const hold = cachedStatus === 'On Hold';
+            const read = cachedStatus === 'Read';
+            const dotColor = read ? '#22c55e' : hold ? '#6b7280' : wip ? '#f59e0b' : '#ef4444';
+            const lblColor = read ? '#16a34a' : hold ? '#6b7280' : wip ? '#d97706' : '#ef4444';
             const div = document.createElement('div');
-            div.className = 'ms-item' + (item.isRead ? '' : ' ms-item-unread');
+            div.className = 'ms-item';
             div.dataset.nid = item.nid;
-
-            // Extract icon class
-            let iconClass = 'fa-bell', iconBg = '#f9fafb', iconColor2 = '#6b7280';
-            const iconMatch = item.iconColor.match(/color:(#[0-9a-f]+)/i);
-            const bgMatch   = item.iconColor.match(/background:(#[0-9a-f]+)/i);
-            if (bgMatch)   iconBg     = bgMatch[1] + '18';
-            if (iconMatch) iconColor2 = iconMatch[1];
-
-            // Try to get icon class from the row
-            const rowIcon = item.row?.querySelector('.req-icon i');
-            if (rowIcon) {
-                const cls = Array.from(rowIcon.classList).find(c => c.startsWith('fa-') && c !== 'fas');
-                if (cls) iconClass = cls;
-            }
-            const typeStyle = typeIconMap[iconClass] || { bg: iconBg, color: iconColor2 };
-
             div.innerHTML = `
-                <input type="checkbox" class="ms-item-cb" onclick="event.stopPropagation()">
+                <input type="checkbox" class="ms-item-cb" style="position:absolute;top:13px;right:12px;width:13px;height:13px;accent-color:#1976d2;cursor:pointer" onclick="event.stopPropagation()">
                 <div class="ms-item-header">
-                    <div class="ms-item-icon" style="background:${typeStyle.bg};color:${typeStyle.color}">
-                        <i class="fas ${iconClass}"></i>
-                    </div>
+                    <div class="ms-item-icon" style="background:${style.bg};color:${style.color}"><i class="fas ${iconClass}"></i></div>
                     <span class="ms-item-id">ID-${String(item.nid).padStart(4,'0')}</span>
                     <span class="ms-item-title">${item.title}</span>
                 </div>
                 <div class="ms-item-meta">
-                    <span>By: ${item.techName}</span>
-                    <span class="ms-item-status">
-                        Status: <span class="ms-item-status-dot" style="background:${item.isRead ? '#22c55e' : '#ef4444'}"></span>
-                        <strong style="color:${item.isRead ? '#16a34a' : '#ef4444'}">${item.isRead ? 'Read' : 'Open'}</strong>
-                    </span>
+                    By: ${item.techName} &nbsp;|&nbsp; On: — &nbsp;|&nbsp; Status:
+                    <span class="ms-item-status-dot" style="background:${dotColor}"></span>
+                    <strong style="color:${lblColor}">${cachedStatus}</strong>
                 </div>`;
-
-            div.addEventListener('click', (e) => {
+            div.addEventListener('click', e => {
                 if (e.target.type === 'checkbox') return;
-                msShowDetail(item, typeStyle, iconClass);
+                msShowDetail(item, style, iconClass);
             });
             list.appendChild(div);
         });
-    }, 200);
+    });
 }
 
 function msShowDetail(item, typeStyle, iconClass) {
-    // Mark active
     document.querySelectorAll('.ms-item').forEach(i => i.classList.remove('active'));
-    document.querySelector(`[data-nid="${item.nid}"]`)?.classList.add('active');
+    document.querySelector(`.ms-item[data-nid="${item.nid}"]`)?.classList.add('active');
     msActiveItem = item;
+    msExpandToSplit();
+    msUpdatePinBtn(item.nid);
 
-    // Fill detail
-    document.getElementById('msDetailId').textContent    = 'ID-' + String(item.nid).padStart(4, '0');
-    document.getElementById('msDetailTitle').textContent = item.title;
+    document.getElementById('msDetailId').textContent        = 'ID-' + String(item.nid).padStart(4,'0');
+    document.getElementById('msDetailTitle').textContent     = item.title;
     document.getElementById('msDetailIcon').style.background = typeStyle.bg;
     document.getElementById('msDetailIcon').style.color      = typeStyle.color;
-    document.getElementById('msDetailIcon').innerHTML = `<i class="fas ${iconClass}"></i>`;
+    document.getElementById('msDetailIcon').innerHTML        = `<i class="fas ${iconClass}"></i>`;
 
-    // Status
-    const isRead = item.isRead;
+    const isRead   = item.isRead;
     const statusEl = document.getElementById('msDetailStatus');
-    statusEl.innerHTML = `<span class="ms-status-dot" style="background:${isRead ? '#22c55e' : '#ef4444'}"></span> ${isRead ? 'Read' : 'Open'}`;
-    statusEl.style.background   = isRead ? '#f0fdf4' : '#fef2f2';
-    statusEl.style.color        = isRead ? '#16a34a' : '#ef4444';
-    statusEl.style.borderColor  = isRead ? '#bbf7d0' : '#fecaca';
+   if (msTicketStatus[item.nid]) {
+    msApplyStatus(msTicketStatus[item.nid]);
+} else {
+    fetch('<?= BASE_URL ?>/modules/notifications/update-status.php?nid=' + item.nid + '&action=get')
+        .then(r => r.json())
+        .then(data => {
+            const s = data.status || (isRead ? 'Read' : 'Open');
+            msTicketStatus[item.nid] = s;
+            msApplyStatus(s);
+        })
+        .catch(() => msApplyStatus(isRead ? 'Read' : 'Open'));
+}
 
-    // Meta
     document.getElementById('msDetailMeta').innerHTML =
-        `<span style="color:#1976d2">Barangay Notification</span> &nbsp;|&nbsp; ` +
-        `Priority: <strong>Not Assigned</strong> &nbsp;|&nbsp; ` +
-        `Reported by Barangay System`;
+        `<span style="background:#fff8e1;color:#d97706;padding:2px 7px;border-radius:3px;font-size:10.5px;font-weight:700">Incident Request</span>
+         &nbsp; Priority: <strong>Not Assigned</strong>
+         &nbsp;|&nbsp; Requested By <span style="color:#1976d2">${item.techName}</span>
+         &nbsp; on <span style="color:#9ca3af">—</span>`;
 
-    // Conversation
-    const msgWrap = document.getElementById('msConvMessages');
-    msgWrap.innerHTML = `
-        <div class="ms-msg">
-            <div class="ms-msg-icon"><i class="fas ${iconClass}"></i></div>
+ document.getElementById('msConvMessages').innerHTML = `
+        <div class="ms-msg" data-type="email">
+            <div class="ms-msg-icon" style="background:${typeStyle.bg};color:${typeStyle.color}"><i class="fas ${iconClass}"></i></div>
             <div class="ms-msg-body">
-                <div class="ms-msg-sender" style="color:var(--blue)">Barangay System</div>
-                <div class="ms-msg-time">${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})} ${new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</div>
+                <div class="ms-msg-sender">${item.senderName || item.techName}</div>
+                <div class="ms-msg-time">—</div>
                 <div class="ms-msg-text">${item.preview || item.title}</div>
                 <div class="ms-msg-actions">
-                    <button class="ms-msg-act-btn" title="Reply"><i class="fas fa-reply"></i></button>
-                    <button class="ms-msg-act-btn" title="Reply All"><i class="fas fa-reply-all"></i></button>
-                    <button class="ms-msg-act-btn" title="Forward"><i class="fas fa-share"></i></button>
+                    <button class="ms-msg-act-btn" title="Reply" onclick="msOpenReply('reply','${item.nid}','${(item.senderEmail||'').replace(/'/g,"\\'")}','${(item.senderName||item.techName||'').replace(/'/g,"\\'")}')"><i class="fas fa-reply"></i></button>
+                    <button class="ms-msg-act-btn" title="Reply All" onclick="msOpenReply('reply_all','${item.nid}','${(item.senderEmail||'').replace(/'/g,"\\'")}','${(item.senderName||item.techName||'').replace(/'/g,"\\'")}')"><i class="fas fa-reply-all"></i></button>
+                    <button class="ms-msg-act-btn" title="Forward" onclick="msOpenReply('forward','${item.nid}','${(item.senderEmail||'').replace(/'/g,"\\'")}','${(item.senderName||item.techName||'').replace(/'/g,"\\'")}')"><i class="fas fa-share"></i></button>
                 </div>
             </div>
-        </div>`;
-
-    // Details tab content
-    document.getElementById('msDetailsContent').innerHTML = `
-        <div class="ms-detail-field">
-            <div class="ms-detail-field-label">Ticket ID</div>
-            <div class="ms-detail-field-value" style="color:var(--blue);font-weight:700">ID-${String(item.nid).padStart(4,'0')}</div>
         </div>
-        <div class="ms-detail-field">
-            <div class="ms-detail-field-label">Status</div>
-            <div class="ms-detail-field-value">
-                <span class="ms-detail-badge ${isRead ? 'read' : 'open'}">${isRead ? 'Read' : 'Open'}</span>
+     <div class="ms-msg" data-type="auto" style="display:none" id="msAutoNotifMsg">
+            <div class="ms-msg-icon" style="background:#f0fdf4;color:#16a34a"><i class="fas fa-robot"></i></div>
+            <div class="ms-msg-body">
+                <div class="ms-msg-sender" style="color:#16a34a">System</div>
+                <div class="ms-msg-time">—</div>
+                <div class="ms-msg-text" style="background:#f0fdf4;border-color:#bbf7d0" id="msAutoNotifContent">
+                    <strong>Notification Created</strong><br>
+                    Ticket ID: ID-${String(item.nid).padStart(4,'0')}<br>
+                    Subject: ${item.title}<br>
+                    Status: ${item.isRead ? 'Read' : 'Open'}<br>
+                    Assigned To: ${item.techName}
+                </div>
             </div>
         </div>
-        <div class="ms-detail-field">
-            <div class="ms-detail-field-label">Type</div>
-            <div class="ms-detail-field-value">Barangay Notification</div>
+        <div class="ms-msg" data-type="note" style="display:flex">
+            <div class="ms-msg-icon" style="background:#fff8e1;color:#f59e0b"><i class="fas fa-sticky-note"></i></div>
+            <div class="ms-msg-body">
+                <div class="ms-msg-sender" style="color:#d97706">System Note</div>
+                <div class="ms-msg-time">—</div>
+                <div class="ms-msg-text" style="background:#fff8e1;border-color:#fde68a">
+                    Notification delivered. Status: ${item.isRead ? '<span style="color:#16a34a">Read</span>' : '<span style="color:#ef4444">Unread</span>'}
+                </div>
+            </div>
         </div>
-        <div class="ms-detail-field">
-            <div class="ms-detail-field-label">Assigned Officer</div>
-            <div class="ms-detail-field-value">${item.techName}</div>
-        </div>
-        <div class="ms-detail-field">
-            <div class="ms-detail-field-label">Subject</div>
-            <div class="ms-detail-field-value">${item.title}</div>
-        </div>
-        <div class="ms-detail-field">
-            <div class="ms-detail-field-label">Preview</div>
-            <div class="ms-detail-field-value" style="color:var(--text-muted)">${item.preview || '—'}</div>
-        </div>
+        <div id="msReplyForm" style="display:none;margin-top:12px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;background:#fff">
+            <div style="padding:10px 14px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;gap:8px;background:#f9fafb">
+                <span style="font-size:11px;font-weight:700;color:#1976d2" id="msReplyType">Reply All</span>
+                <div style="flex:1"></div>
+                <button onclick="msCloseReply()" style="background:none;border:none;cursor:pointer;color:#9ca3af;font-size:14px">×</button>
+            </div>
+            <div style="padding:10px 14px;display:flex;flex-direction:column;gap:8px">
+                <div style="display:flex;align-items:center;gap:10px">
+                    <label style="font-size:12px;color:#374151;font-weight:600;width:60px">To <span style="color:#ef4444">*</span></label>
+                    <input id="msReplyTo" type="text" style="flex:1;border:1px solid #e5e7eb;border-radius:4px;padding:5px 9px;font-size:12px;outline:none;font-family:inherit" placeholder="Recipient email">
+                </div>
+                <div style="display:flex;align-items:center;gap:10px">
+                    <label style="font-size:12px;color:#374151;font-weight:600;width:60px">Cc</label>
+                    <input type="text" style="flex:1;border:1px solid #e5e7eb;border-radius:4px;padding:5px 9px;font-size:12px;outline:none;font-family:inherit" placeholder="">
+                </div>
+                <div style="display:flex;align-items:center;gap:10px">
+                    <label style="font-size:12px;color:#374151;font-weight:600;width:60px">Bcc</label>
+                    <input type="text" style="flex:1;border:1px solid #e5e7eb;border-radius:4px;padding:5px 9px;font-size:12px;outline:none;font-family:inherit" placeholder="">
+                </div>
+                <div style="display:flex;align-items:center;gap:10px">
+                    <label style="font-size:12px;color:#374151;font-weight:600;width:60px">Template</label>
+                    <select style="flex:1;border:1px solid #e5e7eb;border-radius:4px;padding:5px 9px;font-size:12px;outline:none;font-family:inherit;background:#fff">
+                        <option>Default Reply Template</option>
+                        <option>Follow Up Template</option>
+                        <option>Resolution Template</option>
+                    </select>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px">
+                    <label style="font-size:12px;color:#374151;font-weight:600;width:60px">Subject <span style="color:#ef4444">*</span></label>
+                    <input id="msReplySubject" type="text" style="flex:1;border:1px solid #e5e7eb;border-radius:4px;padding:5px 9px;font-size:12px;outline:none;font-family:inherit">
+                </div>
+                <div style="display:flex;align-items:flex-start;gap:10px">
+                    <label style="font-size:12px;color:#374151;font-weight:600;width:60px;padding-top:6px">Description</label>
+                    <div style="flex:1">
+                        <div style="border:1px solid #e5e7eb;border-radius:4px;overflow:hidden">
+                            <div style="background:#f9fafb;border-bottom:1px solid #e5e7eb;padding:5px 8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                                <button onclick="document.execCommand('bold')" style="background:none;border:none;cursor:pointer;font-weight:700;font-size:12px;padding:2px 5px;border-radius:3px" title="Bold"><b>B</b></button>
+                                <button onclick="document.execCommand('italic')" style="background:none;border:none;cursor:pointer;font-style:italic;font-size:12px;padding:2px 5px;border-radius:3px" title="Italic"><i>I</i></button>
+                                <button onclick="document.execCommand('underline')" style="background:none;border:none;cursor:pointer;font-size:12px;padding:2px 5px;border-radius:3px;text-decoration:underline" title="Underline">U</button>
+                                <span style="width:1px;height:14px;background:#e5e7eb;display:inline-block"></span>
+                                <select onchange="document.execCommand('fontSize',false,this.value);this.value=''" style="border:1px solid #e5e7eb;border-radius:3px;font-size:11px;padding:1px 3px;background:#fff">
+                                    <option value="">Size</option>
+                                    <option value="1">8</option><option value="2">10</option><option value="3">12</option>
+                                    <option value="4">14</option><option value="5">18</option><option value="6">24</option>
+                                </select>
+                                <button onclick="document.execCommand('insertUnorderedList')" style="background:none;border:none;cursor:pointer;font-size:12px;padding:2px 5px" title="Bullet list">≡</button>
+                            </div>
+                            <div id="msReplyBody" contenteditable="true" style="min-height:100px;padding:10px 12px;font-size:12.5px;color:#374151;outline:none;line-height:1.6"></div>
+                        </div>
+                    </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px">
+                    <label style="font-size:12px;color:#374151;font-weight:600;width:60px">Request Status</label>
+                    <select style="width:120px;border:1px solid #e5e7eb;border-radius:4px;padding:5px 9px;font-size:12px;outline:none;font-family:inherit;background:#fff">
+                        <option>Open</option>
+                        <option>On Hold</option>
+                        <option>Work In Progress</option>
+                        <option>Resolved</option>
+                        <option>Closed</option>
+                    </select>
+                </div>
+                <div style="display:flex;align-items:flex-start;gap:10px">
+                    <label style="font-size:12px;color:#374151;font-weight:600;width:60px;padding-top:4px">Attachments</label>
+                    <div style="flex:1">
+                        <div style="border:1.5px dashed #d1d5db;border-radius:6px;padding:14px;text-align:center;color:#9ca3af;font-size:12px;cursor:pointer" onclick="document.getElementById('msReplyFile').click()">
+                            Drag and drop files here
+                        </div>
+                        <input type="file" id="msReplyFile" multiple style="display:none">
+                    </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px;padding-left:70px">
+                    <input type="checkbox" checked id="msReplyShowMail" style="accent-color:#1976d2;cursor:pointer">
+                    <label for="msReplyShowMail" style="font-size:12px;color:#374151;cursor:pointer">Show this mail to requester also</label>
+                </div>
+            </div>
+            <div style="padding:10px 14px;border-top:1px solid #e5e7eb;display:flex;gap:8px;background:#f9fafb">
+                <button onclick="msSendReply()" style="padding:6px 18px;background:#1976d2;color:#fff;border:none;border-radius:4px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit">Send</button>
+                <button style="padding:6px 14px;background:#fff;color:#374151;border:1px solid #e5e7eb;border-radius:4px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit">Save</button>
+                <button style="padding:6px 14px;background:#fff;color:#374151;border:1px solid #e5e7eb;border-radius:4px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit">Send for review</button>
+                <button onclick="msCloseReply()" style="padding:6px 14px;background:#fff;color:#374151;border:1px solid #e5e7eb;border-radius:4px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>
+            </div>
+
+            
+        </div>`;
+
+    document.getElementById('msDetailsContent').innerHTML = `
+        <div class="ms-detail-field"><div class="ms-detail-field-label">Ticket ID</div>
+            <div class="ms-detail-field-value" style="color:#1976d2;font-weight:700">ID-${String(item.nid).padStart(4,'0')}</div></div>
+        <div class="ms-detail-field"><div class="ms-detail-field-label">Status</div>
+            <div class="ms-detail-field-value"><span class="ms-detail-badge ${isRead?'read':'open'}">${isRead?'Read':'Open'}</span></div></div>
+        <div class="ms-detail-field"><div class="ms-detail-field-label">Subject</div>
+            <div class="ms-detail-field-value">${item.title}</div></div>
+        <div class="ms-detail-field"><div class="ms-detail-field-label">Assigned Officer</div>
+            <div class="ms-detail-field-value">${item.techName}</div></div>
+        <div class="ms-detail-field"><div class="ms-detail-field-label">Preview</div>
+            <div class="ms-detail-field-value" style="color:#6b7280">${item.preview||'—'}</div></div>
         <div style="margin-top:14px">
-            <a href="${item.url}" class="ms-tb-btn primary" style="background:var(--blue);color:#fff;border-color:var(--blue);display:inline-flex">
+            <a href="${item.url}" class="ms-tb-btn" style="background:#1976d2;color:#fff;border-color:#1976d2">
                 <i class="fas fa-eye"></i> View Full Details
             </a>
         </div>`;
 
-    // Show detail
-    document.getElementById('msDetail').style.display = 'flex';
-    document.getElementById('msDetail').style.flexDirection = 'column';
+    const detail = document.getElementById('msDetail');
+    detail.style.display       = 'flex';
+    detail.style.flexDirection = 'column';
 
-    // Reset tabs
     document.querySelectorAll('.ms-conv-tab').forEach(t => t.classList.remove('active'));
     document.querySelector('.ms-conv-tab').classList.add('active');
-    document.getElementById('msConvBody').style.display = 'block';
+    document.getElementById('msConvBody').style.display    = 'block';
     document.getElementById('msDetailsBody').style.display = 'none';
 
-    // Mark as read background
+   // Load reply history into the Auto Notifications tab
+    if (item.nid) {
+        fetch('<?= BASE_URL ?>/modules/notifications/get-replies.php?nid=' + item.nid)
+            .then(r => r.json())
+            .then(data => {
+                if (data.replies && data.replies.length > 0) {
+                    const autoEl = document.getElementById('msAutoNotifMsg');
+                    const contentEl = document.getElementById('msAutoNotifContent');
+                    if (autoEl && contentEl) {
+                        let html = '<strong>Reply History</strong><br><br>';
+                        data.replies.forEach(r => {
+                            html += `<div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #e5e7eb">
+                                <div style="font-size:11px;color:#6b7280;margin-bottom:3px">
+                                    Sent to: <strong>${r.recipient_email}</strong> &nbsp;·&nbsp; ${r.created_at}
+                                </div>
+                                <div style="font-size:12px;color:#374151"><strong>${r.subject}</strong></div>
+                                <div style="font-size:11.5px;color:#6b7280;margin-top:2px">${r.body}</div>
+                            </div>`;
+                        });
+                        contentEl.innerHTML = html;
+                        autoEl.style.display = 'flex';
+                    }
+                }
+            })
+            .catch(() => {});
+    }
+
     if (!item.isRead) {
         const fd = new FormData(); fd.append('notification_id', item.nid);
-        fetch('mark-as-read.php', {method:'POST', body:fd, keepalive:true}).catch(()=>{});
+        fetch('<?= BASE_URL ?>/modules/notifications/mark-as-read.php', {method:'POST', body:fd, keepalive:true}).catch(()=>{});
     }
 }
 
 function msSummaryBack() {
-    document.getElementById('msDetail').style.display = 'none';
+    const detail = document.getElementById('msDetail');
+    detail.style.display = 'none';
+    detail.style.left = '';
+    detail.style.right = '';
+    msCollapseToNormal();
     msActiveItem = null;
+    document.querySelectorAll('.ms-item').forEach(i => i.classList.remove('active'));
 }
 
 function msFilter(filter) {
     msCurrentFilter = filter;
-    // Update active stat card
     document.querySelectorAll('.ms-stat-card').forEach(c => c.classList.remove('active'));
-    const map = { unread: 0, today: 1, all: 2 };
-    document.querySelectorAll('.ms-stat-card')[map[filter] ?? 2]?.classList.add('active');
-    // Close detail if open
+    const map = { overdue:'msStatOverdue', due_today:'msStatDueToday', pending:'msStatPending' };
+    document.getElementById(map[filter])?.classList.add('active');
     document.getElementById('msDetail').style.display = 'none';
+    msCollapseToNormal();
+    msActiveItem = null;
     msBuildList(filter);
 }
 
 function msSortToggle() {
     msSortAsc = !msSortAsc;
-    document.getElementById('msSortIcon').className =
-        msSortAsc ? 'fas fa-sort-amount-up' : 'fas fa-sort-amount-down';
+    document.getElementById('msSortIcon').className = msSortAsc ? 'fas fa-sort-amount-up' : 'fas fa-sort-amount-down';
     msBuildList(msCurrentFilter);
 }
 
-function msPickUp() { showToast('Notification picked up', 'success'); }
+function msPickUp()       { showToast('Notification picked up', 'success'); }
 function msAssignTo(name) { showToast('Assigned to ' + name, 'success'); closeAllMsDD(); }
 function msMarkAllRead() {
     const link = document.querySelector('a[href*="mark_all_read"]');
-    if (link) { window.location.href = link.href; }
+    if (link) window.location.href = link.href;
     else showToast('All notifications marked as read', 'success');
 }
-function msDetailEdit()   { if(msActiveItem) window.location.href = msActiveItem.url; }
+function msDetailEdit()   { if (msActiveItem) window.location.href = msActiveItem.url; }
 function msDetailPickUp() { showToast('Picked up', 'success'); }
 function msDetailAssign() { showToast('Assign feature — select officer from list', 'success'); }
 function msDetailPrint()  { window.print(); }
 function msMarkReadDetail() {
     if (!msActiveItem) return;
     const fd = new FormData(); fd.append('notification_id', msActiveItem.nid);
-    fetch('mark-as-read.php', {method:'POST', body:fd}).then(() => {
+   fetch('<?= BASE_URL ?>/modules/notifications/mark-as-read.php', {method:'POST', body:fd}).then(() => {
         showToast('Marked as read', 'success');
         msBuildList(msCurrentFilter);
-        document.getElementById('msDetail').style.display = 'none';
+        msSummaryBack();
     }).catch(()=>{});
 }
 function msDeleteDetail() {
@@ -2103,15 +2344,102 @@ function msConvTab(tab, panel) {
     document.getElementById('msDetailsBody').style.display = panel === 'details' ? 'block' : 'none';
 }
 function msTransition(status) {
-    showToast('Status changed to: ' + status, 'success');
-    const statusEl = document.getElementById('msDetailStatus');
-    const isWip = status === 'Work In Progress';
-    statusEl.innerHTML = `<span class="ms-status-dot" style="background:${isWip ? '#f59e0b' : '#6b7280'}"></span> ${status}`;
-    statusEl.style.background  = isWip ? '#fff8e1' : '#f3f4f6';
-    statusEl.style.color       = isWip ? '#d97706' : '#6b7280';
-    statusEl.style.borderColor = isWip ? '#fde68a' : '#e5e7eb';
+    document.querySelectorAll('.ms-trans-tooltip').forEach(t => t.remove());
+    if (msActiveItem) {
+        msTicketStatus[msActiveItem.nid] = status;
+        const fd = new FormData();
+        fd.append('nid', msActiveItem.nid);
+        fd.append('status', status);
+        fetch('<?= BASE_URL ?>/modules/notifications/update-status.php', { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    showToast('Status changed to: ' + status, 'success');
+                    // Refresh auto-notifications tab to show status update email
+                    if (msActiveItem?.nid) {
+                        fetch('<?= BASE_URL ?>/modules/notifications/get-replies.php?nid=' + msActiveItem.nid)
+                            .then(r => r.json())
+                            .then(data => {
+                                if (data.replies && data.replies.length > 0) {
+                                    const autoEl = document.getElementById('msAutoNotifMsg');
+                                    const contentEl = document.getElementById('msAutoNotifContent');
+                                    if (autoEl && contentEl) {
+                                        let html = '<strong>Reply History</strong><br><br>';
+                                        data.replies.forEach(r => {
+                                            html += `<div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #e5e7eb">
+                                                <div style="font-size:11px;color:#6b7280;margin-bottom:3px">
+                                                    Sent to: <strong>${r.recipient_email}</strong> &nbsp;·&nbsp; ${r.created_at}
+                                                </div>
+                                                <div style="font-size:12px;color:#374151"><strong>${r.subject}</strong></div>
+                                                <div style="font-size:11.5px;color:#6b7280;margin-top:2px">${r.body}</div>
+                                            </div>`;
+                                        });
+                                        contentEl.innerHTML = html;
+                                        autoEl.style.display = 'flex';
+                                    }
+                                }
+                            }).catch(() => {});
+                    }
+                } else showToast('Failed to save status', 'error');
+            })
+            .catch(() => showToast('Network error', 'error'));
+    }
+    msApplyStatus(status);
 }
-function msConvFilter() { /* filter conv messages by type */ }
+function msApplyStatus(status) {
+    const el = document.getElementById('msDetailStatus');
+    if (!el) return;
+    const wip  = status === 'Work In Progress';
+    const hold = status === 'On Hold';
+    const read = status === 'Read';
+    const open = status === 'Open';
+    el.innerHTML    = `<span class="ms-status-dot" style="background:${read?'#22c55e':hold?'#6b7280':wip?'#f59e0b':'#ef4444'}"></span> ${status}`;
+    el.style.background  = read ? '#f0fdf4' : hold ? '#f3f4f6' : wip ? '#fff8e1' : '#fef2f2';
+    el.style.color       = read ? '#16a34a' : hold ? '#6b7280' : wip ? '#d97706' : '#ef4444';
+    el.style.borderColor = read ? '#bbf7d0' : hold ? '#e5e7eb' : wip ? '#fde68a' : '#fecaca';
+
+    // ── Also update the list item's status indicator ──
+    if (msActiveItem) {
+        const listItem = document.querySelector(`.ms-item[data-nid="${msActiveItem.nid}"]`);
+        if (listItem) {
+            const dot   = listItem.querySelector('.ms-item-status-dot');
+            const label = listItem.querySelector('strong');
+            const dotColor  = read ? '#22c55e' : hold ? '#6b7280' : wip ? '#f59e0b' : '#ef4444';
+            const lblColor  = read ? '#16a34a' : hold ? '#6b7280' : wip ? '#d97706' : '#ef4444';
+            if (dot)   dot.style.background = dotColor;
+            if (label) { label.style.color = lblColor; label.textContent = status; }
+        }
+    }
+}
+
+function msShowTransTooltip(btn, name, desc, target) {
+    document.querySelectorAll('.ms-trans-tooltip').forEach(t => t.remove());
+    const tip = document.createElement('div');
+    tip.className = 'ms-trans-tooltip';
+    tip.style.cssText = 'position:absolute;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:9999;min-width:240px;max-width:300px;font-size:12px;color:#374151';
+    tip.innerHTML = `
+        <div style="font-weight:700;margin-bottom:4px;font-size:12.5px">Name: ${name}</div>
+        <div style="color:#6b7280;line-height:1.6;margin-bottom:6px">Description: ${desc}</div>
+        <div style="font-weight:600;color:#1976d2">Target Status: ${target}</div>`;
+    document.body.appendChild(tip);
+    const r = btn.getBoundingClientRect();
+    tip.style.top  = (r.bottom + window.scrollY + 6) + 'px';
+    tip.style.left = (r.left + window.scrollX) + 'px';
+    const hideOnClick = (e) => { if (!tip.contains(e.target) && e.target !== btn) { tip.remove(); document.removeEventListener('click', hideOnClick); } };
+    setTimeout(() => document.addEventListener('click', hideOnClick), 50);
+}
+function msConvFilter() {
+    const cbs    = document.querySelectorAll('.ms-conv-filter input[type="checkbox"]');
+    const showEmails = cbs[0]?.checked;
+    const showAuto   = cbs[1]?.checked;
+    const showNotes  = cbs[2]?.checked;
+    document.querySelectorAll('#msConvMessages .ms-msg[data-type]').forEach(msg => {
+        const t = msg.dataset.type;
+        if (t === 'email')  msg.style.display = showEmails ? 'flex' : 'none';
+        if (t === 'auto')   msg.style.display = showAuto   ? 'flex' : 'none';
+        if (t === 'note')   msg.style.display = showNotes  ? 'flex' : 'none';
+    });
+}
 
 function toggleMsDD(id) {
     document.querySelectorAll('.ms-tb-dd-wrap.open, .ms-dd-wrap.open').forEach(el => {
@@ -2125,13 +2453,87 @@ function closeAllMsDD() {
 document.addEventListener('click', e => {
     if (!e.target.closest('.ms-tb-dd-wrap') && !e.target.closest('.ms-dd-wrap')) closeAllMsDD();
 });
+function msOpenReply(type, nid, senderEmail, senderName) {
+    const form = document.getElementById('msReplyForm');
+    if (!form) return;
+    const typeLabel = type === 'reply' ? 'Reply' : type === 'reply_all' ? 'Reply All' : 'Forward';
+    const typeEl = document.getElementById('msReplyType');
+    if (typeEl) typeEl.textContent = typeLabel;
+
+    const toEl = document.getElementById('msReplyTo');
+    if (toEl) {
+        if (type === 'forward') {
+            toEl.value = '';
+        } else {
+            // Use actual sender email from the notification row
+            toEl.value = senderEmail || '';
+        }
+    }
+
+    const subjectEl = document.getElementById('msReplySubject');
+    if (subjectEl) {
+        const prefix = type === 'forward' ? 'Fwd' : 'Re';
+        subjectEl.value = prefix + ': [Request ID :##ID-' + String(nid).padStart(4,'0') + '##] : ' + (msActiveItem?.title || '');
+    }
+
+    const bodyEl = document.getElementById('msReplyBody');
+    if (bodyEl) {
+        const from = senderName ? senderName + (senderEmail ? ' <' + senderEmail + '>' : '') : (senderEmail || '');
+        bodyEl.innerHTML = '<br><br>'
+            + '<p style="color:#9ca3af;font-size:11px;margin:0">--- Original Message ---</p>'
+            + (from ? '<p style="color:#9ca3af;font-size:11px;margin:0">From: ' + from + '</p>' : '')
+            + '<p style="color:#9ca3af;font-size:11px;margin:0">' + (msActiveItem?.preview || '') + '</p>';
+    }
+
+    form.style.display = 'block';
+    form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function msCloseReply() {
+    const form = document.getElementById('msReplyForm');
+    if (form) form.style.display = 'none';
+}
+
+function msSendReply() {
+    const to      = document.getElementById('msReplyTo')?.value?.trim();
+    const subject = document.getElementById('msReplySubject')?.value?.trim();
+    const body    = document.getElementById('msReplyBody')?.innerHTML?.trim();
+
+    if (!to) { showToast('Please enter a recipient email.', 'error'); return; }
+    if (!subject) { showToast('Please enter a subject.', 'error'); return; }
+
+    const btn = document.querySelector('#msReplyForm button[onclick="msSendReply()"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; }
+
+    const fd = new FormData();
+    fd.append('action',     'send_reply');
+    fd.append('to',         to);
+    fd.append('subject',    subject);
+    fd.append('body',       body);
+    fd.append('nid',        msActiveItem?.nid || '');
+
+    fetch('<?= BASE_URL ?>/modules/notifications/send-reply.php', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                showToast('Reply sent successfully!', 'success');
+                msCloseReply();
+            } else {
+                showToast('Failed to send: ' + (data.error || 'Unknown error'), 'error');
+            }
+        })
+        .catch(() => showToast('Network error. Please try again.', 'error'))
+        .finally(() => {
+            if (btn) { btn.disabled = false; btn.textContent = 'Send'; }
+        });
+}
 
 function toggleMySummary() {
     const panel   = document.getElementById('msPanel');
     const overlay = document.getElementById('msOverlay');
-    const isOpen  = panel.classList.contains('open');
-    if (isOpen) { closeMySummary(); }
-    else {
+    if (panel.classList.contains('open')) {
+        closeMySummary();
+    } else {
         panel.classList.add('open');
         overlay.classList.add('open');
         msBuildList(msCurrentFilter);
@@ -2140,8 +2542,145 @@ function toggleMySummary() {
 function closeMySummary() {
     document.getElementById('msPanel').classList.remove('open');
     document.getElementById('msOverlay').classList.remove('open');
+    msCollapseToNormal();
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMySummary(); });
+
+/* ══ Pin ticket to top of list ══ */
+function msPinTicket() {
+    if (!msActiveItem) return;
+    const nid = msActiveItem.nid;
+    const btn = document.getElementById('msPinBtn');
+    const key = 'pinned_' + nid;
+    const isPinned = sessionStorage.getItem(key);
+    if (isPinned) {
+        sessionStorage.removeItem(key);
+        btn.style.background = '';
+        btn.style.color = '';
+        btn.style.borderColor = '';
+        showToast('Unpinned', 'success');
+    } else {
+        sessionStorage.setItem(key, '1');
+        btn.style.background = '#e3f2fd';
+        btn.style.color = '#1976d2';
+        btn.style.borderColor = '#1976d2';
+        showToast('Pinned to top', 'success');
+    }
+    const list = document.getElementById('msList');
+    const items = [...list.querySelectorAll('.ms-item')];
+    items.sort((a, b) => {
+        const aPinned = sessionStorage.getItem('pinned_' + a.dataset.nid) ? 1 : 0;
+        const bPinned = sessionStorage.getItem('pinned_' + b.dataset.nid) ? 1 : 0;
+        return bPinned - aPinned;
+    });
+    items.forEach(el => list.appendChild(el));
+    const listItem = list.querySelector(`.ms-item[data-nid="${nid}"]`);
+    if (listItem) {
+        if (!isPinned) {
+            if (!listItem.querySelector('.ms-pin-badge')) {
+                const badge = document.createElement('span');
+                badge.className = 'ms-pin-badge';
+                badge.style.cssText = 'position:absolute;top:10px;left:0;width:3px;height:calc(100% - 20px);background:#1976d2;border-radius:0 2px 2px 0';
+                listItem.appendChild(badge);
+            }
+        } else {
+            listItem.querySelector('.ms-pin-badge')?.remove();
+        }
+    }
+}
+
+function msUpdatePinBtn(nid) {
+    const btn = document.getElementById('msPinBtn');
+    if (!btn) return;
+    const isPinned = sessionStorage.getItem('pinned_' + nid);
+    if (isPinned) {
+        btn.style.background = '#e3f2fd';
+        btn.style.color = '#1976d2';
+        btn.style.borderColor = '#1976d2';
+    } else {
+        btn.style.background = '';
+        btn.style.color = '';
+        btn.style.borderColor = '';
+    }
+}
+
+let msSearchHighlights = [];
+let msSearchIndex = 0;
+
+function msSearchInMessage() {
+    const existing = document.getElementById('msSearchBar');
+    if (existing) { existing.remove(); msSearchHighlights = []; return; }
+    const convBody = document.getElementById('msConvBody');
+    if (!convBody) return;
+    const bar = document.createElement('div');
+    bar.id = 'msSearchBar';
+    bar.style.cssText = 'position:sticky;top:0;z-index:10;background:#fff;border-bottom:1px solid #e5e7eb;padding:7px 12px;display:flex;align-items:center;gap:6px;flex-shrink:0';
+    bar.innerHTML = `
+        <i class="fas fa-search" style="font-size:11px;color:#9ca3af"></i>
+        <input id="msSearchInput" type="text" placeholder="Search in message..."
+            style="flex:1;border:none;outline:none;font-size:12.5px;color:#374151;font-family:inherit"
+            oninput="msDoSearch(this.value)">
+        <span id="msSearchCount" style="font-size:11px;color:#9ca3af;white-space:nowrap"></span>
+        <button onclick="msSearchNav(-1)" style="background:none;border:none;cursor:pointer;color:#6b7280;font-size:11px;padding:2px 4px"><i class="fas fa-chevron-up"></i></button>
+        <button onclick="msSearchNav(1)" style="background:none;border:none;cursor:pointer;color:#6b7280;font-size:11px;padding:2px 4px"><i class="fas fa-chevron-down"></i></button>
+        <button onclick="document.getElementById('msSearchBar').remove();msSearchHighlights=[]"
+            style="background:none;border:none;cursor:pointer;color:#9ca3af;font-size:13px;line-height:1">×</button>`;
+    convBody.insertBefore(bar, convBody.firstChild);
+    document.getElementById('msSearchInput').focus();
+}
+
+function msDoSearch(q) {
+    document.querySelectorAll('#msConvMessages mark.ms-highlight').forEach(m => {
+        m.replaceWith(document.createTextNode(m.textContent));
+    });
+    msSearchHighlights = [];
+    msSearchIndex = 0;
+    if (!q.trim()) { document.getElementById('msSearchCount').textContent = ''; return; }
+    const container = document.getElementById('msConvMessages');
+    if (!container) return;
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+    nodes.forEach(node => {
+        const text = node.textContent;
+        if (!regex.test(text)) return;
+        regex.lastIndex = 0;
+        const frag = document.createDocumentFragment();
+        let last = 0, m;
+        while ((m = regex.exec(text)) !== null) {
+            frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+            const mark = document.createElement('mark');
+            mark.className = 'ms-highlight';
+            mark.style.cssText = 'background:#fff176;color:#374151;border-radius:2px;padding:0 1px';
+            mark.textContent = m[0];
+            frag.appendChild(mark);
+            msSearchHighlights.push(mark);
+            last = m.index + m[0].length;
+        }
+        frag.appendChild(document.createTextNode(text.slice(last)));
+        node.replaceWith(frag);
+    });
+    const countEl = document.getElementById('msSearchCount');
+    if (msSearchHighlights.length > 0) {
+        msSearchNav(0);
+        countEl.textContent = `1 / ${msSearchHighlights.length}`;
+    } else {
+        countEl.textContent = 'No results';
+    }
+}
+
+function msSearchNav(dir) {
+    if (!msSearchHighlights.length) return;
+    msSearchHighlights.forEach(m => { m.style.background = '#fff176'; });
+    if (dir !== 0) msSearchIndex = (msSearchIndex + dir + msSearchHighlights.length) % msSearchHighlights.length;
+    const current = msSearchHighlights[msSearchIndex];
+    current.style.background = '#ff9800';
+    current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    const countEl = document.getElementById('msSearchCount');
+    if (countEl) countEl.textContent = `${msSearchIndex + 1} / ${msSearchHighlights.length}`;
+}
+
 </script>
 
 <?php include '../../includes/footer.php'; ?>
