@@ -687,10 +687,9 @@ function getUserFullName($conn, $user_id) {
  * Super Admin AND other staff roles get notified
  */
 function notifyIncidentReported($conn, $incident_id, $incident_title) {
-    // Get all admin and staff users who should be notified
     $admins = fetchAll($conn,
         "SELECT user_id FROM tbl_users 
-         WHERE role IN ('Super Administrator', 'Administrator', 'Admin', 'Staff', 'Secretary', 'Tanod') 
+         WHERE role IN ('Super Admin', 'Super Administrator', 'Admin', 'Barangay Captain', 'Staff', 'Secretary', 'Treasurer', 'Barangay Tanod', 'Tanod') 
          AND status = 'active'",
         [], ''
     );

@@ -78,6 +78,12 @@ $stats = fetchOne($conn,"
         SUM(CASE WHEN created_at>=DATE_SUB(NOW(),INTERVAL 7 DAY) THEN 1 ELSE 0 END) as this_week
     FROM tbl_notifications WHERE user_id=? AND $notification_filter",[$user_id],'i');
 
+// Global total for "All time" display (all users)
+$global_total = fetchOne($conn,"
+    SELECT COUNT(*) as total
+    FROM tbl_notifications WHERE $notification_filter");
+$all_time = $global_total['total'] ?? 0;
+
 /* ── Pagination / filtering ───────────────────────────────────────────── */
 $page        = max(1,intval($_GET['page']??1));
 $per_page    = 20;
@@ -85,13 +91,20 @@ $offset      = ($page-1)*$per_page;
 $filter      = $_GET['filter']??'all';
 $type_filter = $_GET['type']??'';
 
-$where = "user_id=? AND $notification_filter";
-$params = [$user_id]; $types = 'i';
+$where = $notification_filter;
+$params = []; $types = '';
+
+if (!$is_super_admin) {
+    $where .= " AND user_id=?";  // Regular users: own tickets only
+    $params[] = $user_id; $types .= 'i';
+}
 
 if ($filter==='unread')    { $where .= " AND is_read=0"; }
 elseif ($filter==='read')  { $where .= " AND is_read=1"; }
 elseif ($filter==='today') { $where .= " AND DATE(created_at)=CURDATE()"; }
 elseif ($filter==='week')  { $where .= " AND created_at>=DATE_SUB(NOW(),INTERVAL 7 DAY)"; }
+
+// ... rest unchanged
 
 if ($type_filter) {
     if      (stripos($type_filter,'email')!==false)       $where .= " AND (type='email_reply' OR reference_type='email_inbox')";
@@ -115,9 +128,17 @@ $notifications = fetchAll($conn,
     array_merge($params,[$per_page,$offset]), $types.'ii');
 
 /* ── Type counts ──────────────────────────────────────────────────────── */
-$all_type_stats = fetchAll($conn,"
-    SELECT type,reference_type,COUNT(*) as count FROM tbl_notifications
-    WHERE user_id=? AND $notification_filter GROUP BY type,reference_type",[$user_id],'i');
+if ($is_super_admin) {
+    $all_type_stats = fetchAll($conn,"
+        SELECT type,reference_type,COUNT(*) as count 
+        FROM tbl_notifications WHERE $notification_filter 
+        GROUP BY type,reference_type");
+} else {
+    $all_type_stats = fetchAll($conn,"
+        SELECT type,reference_type,COUNT(*) as count 
+        FROM tbl_notifications WHERE user_id=? AND $notification_filter 
+        GROUP BY type,reference_type",[$user_id],'i');
+}
 
 $cnt = ['incident'=>0,'blotter'=>0,'complaint'=>0,'request'=>0,'appointment'=>0,'medical'=>0,'announcement'=>0,'email'=>0];
 foreach ($all_type_stats as $ts) {
@@ -557,12 +578,14 @@ $extra_css = '
 
 /* ── TOAST — exact from HTML ── */
 .toast {
-  position: fixed; bottom: 20px; right: 20px; background: #1e293b; color: #e2e8f0;
-  padding: 12px 18px; border-radius: 8px; font-size: 13px; font-weight: 600;
+  position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(60px);
+  background: #1e293b; color: #e2e8f0;
+  padding: 12px 22px; border-radius: 8px; font-size: 13px; font-weight: 600;
   box-shadow: 0 8px 24px rgba(0,0,0,.2); z-index: 99999;
   display: flex; align-items: center; gap: 10px;
-  transform: translateY(60px); opacity: 0; transition: all .25s ease;
+  opacity: 0; transition: all .25s ease; white-space: nowrap;
 }
+.toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
 .toast.show { transform: translateY(0); opacity: 1; }
 .toast.success i { color: #34d399; }
 .toast.error   i { color: #f87171; }
@@ -899,6 +922,292 @@ $extra_css = '
 .ms-detail-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 3px; font-size: 11px; font-weight: 700; }
 .ms-detail-badge.open { background: #fef2f2; color: var(--red); }
 .ms-detail-badge.read { background: #f0fdf4; color: #16a34a; }
+
+
+/* ══ DARK MODE OVERRIDES ══════════════════════════════════════════════ */
+body.dark-mode .main-content { background: #0f172a !important; }
+body.dark-mode .content-area { background: #0f172a !important; }
+
+/* Tab bar */
+body.dark-mode .tab-bar { background: #1e293b !important; border-bottom-color: #334155 !important; }
+body.dark-mode .tab-item { color: #64748b !important; }
+body.dark-mode .tab-item:hover { color: #60a5fa !important; }
+body.dark-mode .tab-item.active { color: #60a5fa !important; border-bottom-color: #60a5fa !important; }
+
+/* Stat cards — colored gradient cards stay as-is, only white card needs override */
+body.dark-mode .stat-card.blue-light-card {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .stat-card.blue-light-card .stat-lbl { color: #64748b !important; }
+
+/* ICT summary card */
+body.dark-mode .ict-card {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .ict-card-title { color: #64748b !important; }
+body.dark-mode .ict-stat-num { color: #94a3b8 !important; }
+body.dark-mode .ict-stat-num.orange { color: #f59e0b !important; }
+body.dark-mode .ict-stat-lbl { color: #64748b !important; }
+body.dark-mode .ict-card-refresh {
+    border-color: #334155 !important;
+    color: #64748b !important;
+}
+body.dark-mode .ict-card-refresh:hover { background: #1e3a5f !important; color: #60a5fa !important; }
+
+/* Section header */
+body.dark-mode .section-title { color: #e2e8f0 !important; }
+
+/* Buttons */
+body.dark-mode .sec-btn {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+    color: #94a3b8 !important;
+}
+body.dark-mode .sec-btn:hover {
+    background: #1e3a5f !important;
+    border-color: #3b82f6 !important;
+    color: #60a5fa !important;
+}
+body.dark-mode .sec-btn.primary { background: #1976d2 !important; color: #fff !important; border-color: #1976d2 !important; }
+body.dark-mode .sec-btn.primary:hover { background: #1565c0 !important; }
+body.dark-mode .sec-btn.success { background: #052e16 !important; color: #34d399 !important; border-color: #064e3b !important; }
+body.dark-mode .sec-btn.danger  { background: #450a0a !important; color: #f87171 !important; border-color: #7f1d1d !important; }
+
+/* Split button */
+body.dark-mode .split-btn { border-color: #2563eb !important; }
+body.dark-mode .split-btn .main-part { background: #1976d2 !important; }
+body.dark-mode .split-btn .arrow-part { background: #1565c0 !important; }
+
+/* Panels */
+body.dark-mode .panel {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .panel-header { border-bottom-color: #334155 !important; }
+body.dark-mode .panel-title  { color: #64748b !important; }
+body.dark-mode .panel-subtitle { color: #e2e8f0 !important; }
+body.dark-mode .panel-toolbar { border-bottom-color: #334155 !important; background: #1e293b !important; }
+body.dark-mode .panel-body::-webkit-scrollbar-thumb { background: #334155 !important; }
+
+/* Left panel task items */
+body.dark-mode .task-item { border-bottom-color: #0f172a !important; }
+body.dark-mode .task-item:hover { background: #1e3a5f !important; }
+body.dark-mode .task-name { color: #e2e8f0 !important; }
+body.dark-mode .task-item [style*="background:#e5e7eb"] {
+    background: #334155 !important;
+    color: #94a3b8 !important;
+}
+/* Active type filter item */
+body.dark-mode .task-item[style*="background:#e3f2fd"] {
+    background: #1e3a5f !important;
+}
+
+/* Search bar */
+body.dark-mode .notif-search {
+    background: #0f172a !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .notif-search input { color: #e2e8f0 !important; }
+body.dark-mode .notif-search input::placeholder { color: #475569 !important; }
+body.dark-mode .notif-search:focus-within { border-color: #3b82f6 !important; }
+
+/* Table */
+body.dark-mode .req-table { background: #1e293b !important; }
+body.dark-mode .req-table thead th {
+    background: #1e293b !important;
+    color: #64748b !important;
+    border-bottom-color: #334155 !important;
+}
+body.dark-mode .req-table tbody tr { border-bottom-color: #243044 !important; }
+body.dark-mode .req-table tbody tr:hover { background: #1e3a5f !important; }
+body.dark-mode .req-table tbody tr.unread {
+    border-left-color: #3b82f6 !important;
+    background: #1a2d4a !important;
+}
+body.dark-mode .req-table tbody tr.unread:hover { background: #1e3a5f !important; }
+body.dark-mode .req-table tbody tr.unread-email {
+    border-left-color: #f59e0b !important;
+    background: #2a1f0a !important;
+}
+body.dark-mode .req-table tbody tr.selected { background: #1e3a5f !important; }
+body.dark-mode .req-table td { color: #94a3b8 !important; }
+body.dark-mode .req-subject { color: #e2e8f0 !important; }
+body.dark-mode .req-subject.bold { color: #f1f5f9 !important; }
+body.dark-mode .req-id { color: #60a5fa !important; }
+body.dark-mode .req-dash { color: #475569 !important; }
+body.dark-mode .tech-name { color: #e2e8f0 !important; }
+
+/* Status badges */
+body.dark-mode .status-badge.status-open { background: #1e3a5f !important; color: #60a5fa !important; }
+body.dark-mode .status-badge.status-read { background: #052e16 !important; color: #34d399 !important; }
+
+/* NEW badges */
+body.dark-mode .new-badge.new-blue  { background: #1e3a5f !important; color: #93c5fd !important; }
+body.dark-mode .new-badge.new-amber { background: #2a1f0a !important; color: #fbbf24 !important; }
+
+/* Row detail expand */
+body.dark-mode .req-detail-row { background: #1e3a5f !important; border-bottom-color: #334155 !important; }
+body.dark-mode .req-detail-label { color: #64748b !important; }
+body.dark-mode .req-detail-value { color: #e2e8f0 !important; }
+
+/* Dropdown menus */
+body.dark-mode .dd-menu {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .dd-item { color: #e2e8f0 !important; }
+body.dark-mode .dd-item:hover { background: #1e3a5f !important; color: #60a5fa !important; }
+body.dark-mode .dd-item.danger { color: #f87171 !important; }
+body.dark-mode .dd-item.danger:hover { background: #450a0a !important; }
+body.dark-mode .dd-sep    { background: #334155 !important; }
+body.dark-mode .dd-header { color: #475569 !important; }
+
+/* Right sidebar cards — colored ones stay, no override needed */
+/* Pagination */
+body.dark-mode .pg-btn {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+    color: #94a3b8 !important;
+}
+body.dark-mode .pg-btn:hover { background: #1e3a5f !important; color: #60a5fa !important; border-color: #3b82f6 !important; }
+body.dark-mode .pg-btn.active { background: #1976d2 !important; border-color: #1976d2 !important; color: #fff !important; }
+
+/* Pagination footer bar */
+body.dark-mode [style*="background:#fff"][style*="border-top:1px solid #e5e7eb"] {
+    background: #1e293b !important;
+    border-top-color: #334155 !important;
+}
+body.dark-mode [style*="color:#9ca3af"] { color: #64748b !important; }
+
+/* Bottom bar */
+body.dark-mode .bottom-bar {
+    background: #1e293b !important;
+    border-top-color: #334155 !important;
+}
+body.dark-mode .bottom-btn {
+    border-color: #334155 !important;
+    color: #64748b !important;
+}
+body.dark-mode .bottom-btn:hover { background: #1e3a5f !important; color: #60a5fa !important; }
+
+/* Alert banners */
+body.dark-mode #sdAlert    { background: #052e16 !important; color: #34d399 !important; border-color: #064e3b !important; }
+body.dark-mode #sdAlertErr { background: #450a0a !important; color: #f87171 !important; border-color: #7f1d1d !important; }
+
+/* Modals */
+body.dark-mode .modal-box { background: #1e293b !important; }
+body.dark-mode .modal-header { border-bottom-color: #334155 !important; }
+body.dark-mode .modal-header h3 { color: #f1f5f9 !important; }
+body.dark-mode .modal-close { border-color: #334155 !important; color: #64748b !important; }
+body.dark-mode .modal-body h3 { color: #f1f5f9 !important; }
+body.dark-mode .modal-body p  { color: #64748b !important; }
+body.dark-mode .modal-footer  { border-top-color: #334155 !important; }
+
+/* My Summary panel */
+body.dark-mode .ms-panel { background: #1e293b !important; }
+body.dark-mode .ms-header { background: #1e293b !important; border-bottom-color: #334155 !important; }
+body.dark-mode .ms-title  { color: #f1f5f9 !important; }
+body.dark-mode .ms-close  { border-color: #334155 !important; color: #64748b !important; }
+body.dark-mode .ms-section-label { color: #64748b !important; }
+body.dark-mode .ms-stat-card.ms-stat-gray {
+    background: #243044 !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .ms-stat-gray .ms-stat-num { color: #e2e8f0 !important; }
+body.dark-mode .ms-stat-gray .ms-stat-lbl { color: #64748b !important; }
+body.dark-mode .ms-filter-bar {
+    background: #1e3a5f !important;
+    border-color: #2563eb !important;
+    color: #60a5fa !important;
+}
+body.dark-mode .ms-toolbar { border-bottom-color: #334155 !important; }
+body.dark-mode .ms-tb-btn {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+    color: #94a3b8 !important;
+}
+body.dark-mode .ms-tb-btn:hover { background: #1e3a5f !important; color: #60a5fa !important; border-color: #3b82f6 !important; }
+body.dark-mode .ms-tb-dd,
+body.dark-mode .ms-tb-dd-right {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .ms-tb-dd-item { color: #e2e8f0 !important; }
+body.dark-mode .ms-tb-dd-item:hover { background: #1e3a5f !important; color: #60a5fa !important; }
+body.dark-mode .ms-list { background: #1e293b !important; }
+body.dark-mode .ms-item { border-bottom-color: #243044 !important; }
+body.dark-mode .ms-item:hover { background: #1e3a5f !important; }
+body.dark-mode .ms-item.active { background: #1e3a5f !important; border-left-color: #3b82f6 !important; }
+body.dark-mode .ms-item-title { color: #e2e8f0 !important; }
+body.dark-mode .ms-item-meta  { color: #64748b !important; }
+body.dark-mode .ms-detail { background: #1e293b !important; border-left-color: #334155 !important; }
+body.dark-mode .ms-detail-header { border-bottom-color: #334155 !important; }
+body.dark-mode .ms-back-btn { border-color: #334155 !important; color: #64748b !important; }
+body.dark-mode .ms-back-btn:hover { background: #1e3a5f !important; color: #60a5fa !important; }
+body.dark-mode .ms-ticket-card { border-bottom-color: #334155 !important; }
+body.dark-mode .ms-ticket-title { color: #f1f5f9 !important; }
+body.dark-mode .ms-ticket-meta  { color: #64748b !important; }
+body.dark-mode .ms-ticket-pin,
+body.dark-mode .ms-ticket-search { border-color: #334155 !important; color: #64748b !important; }
+body.dark-mode .ms-ticket-pin:hover,
+body.dark-mode .ms-ticket-search:hover { background: #1e3a5f !important; color: #60a5fa !important; }
+body.dark-mode .ms-status-row { border-bottom-color: #334155 !important; }
+body.dark-mode .ms-status-label,
+body.dark-mode .ms-trans-label { color: #64748b !important; }
+body.dark-mode .ms-trans-btn { background: #1e293b !important; border-color: #334155 !important; color: #94a3b8 !important; }
+body.dark-mode .ms-trans-btn:hover { background: #1e3a5f !important; color: #60a5fa !important; }
+body.dark-mode .ms-conv-tabs { border-bottom-color: #334155 !important; }
+body.dark-mode .ms-conv-tab { color: #64748b !important; }
+body.dark-mode .ms-conv-tab:hover { color: #60a5fa !important; }
+body.dark-mode .ms-conv-tab.active { color: #60a5fa !important; border-bottom-color: #60a5fa !important; }
+body.dark-mode .ms-conv-body { background: #1e293b !important; }
+body.dark-mode .ms-conv-filter { color: #64748b !important; }
+body.dark-mode .ms-conv-section-label { color: #64748b !important; }
+body.dark-mode .ms-msg-text {
+    background: #243044 !important;
+    border-color: #334155 !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode .ms-msg-sender { color: #60a5fa !important; }
+body.dark-mode .ms-msg-time   { color: #475569 !important; }
+body.dark-mode .ms-msg-act-btn { border-color: #334155 !important; color: #64748b !important; }
+body.dark-mode .ms-msg-act-btn:hover { background: #1e3a5f !important; color: #60a5fa !important; }
+body.dark-mode .ms-detail-field-label { color: #64748b !important; }
+body.dark-mode .ms-detail-field-value { color: #e2e8f0 !important; }
+body.dark-mode .ms-detail-badge.open { background: #450a0a !important; color: #f87171 !important; }
+body.dark-mode .ms-detail-badge.read { background: #052e16 !important; color: #34d399 !important; }
+
+/* Row hover preview card */
+body.dark-mode .row-preview-card {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+    box-shadow: 0 8px 28px rgba(0,0,0,.4) !important;
+}
+body.dark-mode .row-preview-card [style*="color:#374151"] { color: #f1f5f9 !important; }
+body.dark-mode .row-preview-card [style*="color:#6b7280"] { color: #94a3b8 !important; }
+body.dark-mode .row-preview-card [style*="color:#9ca3af"] { color: #64748b !important; }
+
+/* Reply form inside My Summary */
+body.dark-mode #msReplyForm { background: #1e293b !important; border-color: #334155 !important; }
+body.dark-mode #msReplyForm input,
+body.dark-mode #msReplyForm select,
+body.dark-mode #msReplyForm [contenteditable] {
+    background: #0f172a !important;
+    border-color: #334155 !important;
+    color: #e2e8f0 !important;
+}
+body.dark-mode #msReplyForm [style*="background:#f9fafb"] { background: #243044 !important; border-color: #334155 !important; }
+body.dark-mode #msReplyForm [style*="border:1.5px dashed"] { border-color: #475569 !important; color: #64748b !important; }
+body.dark-mode #msReplyForm [style*="background:#f9fafb"][style*="border-bottom"] { background: #243044 !important; border-bottom-color: #334155 !important; }
+body.dark-mode #msReplyForm label { color: #94a3b8 !important; }
+
+/* Content scrollbar */
+body.dark-mode .content-area::-webkit-scrollbar-thumb { background: #334155 !important; }
+body.dark-mode .req-table-wrap::-webkit-scrollbar-thumb { background: #334155 !important; }
+body.dark-mode .ms-list::-webkit-scrollbar-thumb { background: #334155 !important; }
+body.dark-mode .ms-conv-body::-webkit-scrollbar-thumb { background: #334155 !important; }
 </style>';
 
 include '../../includes/header.php';
@@ -972,7 +1281,7 @@ include '../../includes/header.php';
                 <i class="fas fa-check-double"></i> Mark All Read
             </a>
             <?php endif; ?>
-            <button class="sec-btn" onclick="location.reload()"><i class="fas fa-sync-alt"></i></button>
+<button type="button" class="sec-btn" onclick="location.reload()"><i class="fas fa-sync-alt"></i></button>
         </div>
     </div>
 
@@ -1066,7 +1375,7 @@ include '../../includes/header.php';
                     <i class="fas fa-check-double"></i> Mark All Read
                 </a>
                 <?php endif; ?>
-                <button class="sec-btn" onclick="location.reload()" style="font-size:11px"><i class="fas fa-sync-alt"></i> Refresh</button>
+<button type="button" class="sec-btn" onclick="location.reload()" style="font-size:11px"><i class="fas fa-sync-alt"></i> Refresh</button>
             </div>
             <div class="panel-body">
                 <!-- All types -->
@@ -1219,32 +1528,20 @@ include '../../includes/header.php';
                 <button class="sec-btn" onclick="closeSelected()" style="flex-shrink:0">Close</button>
 
                 <!-- Assign dropdown -->
-                <div class="dd-wrapper" id="ddAssign2" style="flex-shrink:0">
-                    <button class="sec-btn" onclick="toggleDD('ddAssign2')">
-                        Assign <i class="fas fa-chevron-down" style="font-size:9px;opacity:.6;margin-left:2px"></i>
-                    </button>
-                    <div class="dd-menu">
-                        <div class="dd-header">Assign To</div>
-                        <div class="dd-item" onclick="assignTo('Barangay Captain')">
-                            <span style="width:7px;height:7px;border-radius:50%;background:#22c55e;display:inline-block;margin-right:4px"></span> Barangay Captain
-                        </div>
-                        <div class="dd-item" onclick="assignTo('Barangay Secretary')">
-                            <span style="width:7px;height:7px;border-radius:50%;background:#22c55e;display:inline-block;margin-right:4px"></span> Barangay Secretary
-                        </div>
-                        <div class="dd-item" onclick="assignTo('Barangay Treasurer')">
-                            <span style="width:7px;height:7px;border-radius:50%;background:#22c55e;display:inline-block;margin-right:4px"></span> Barangay Treasurer
-                        </div>
-                        <div class="dd-item" onclick="assignTo('Barangay Kagawad 1')">
-                            <span style="width:7px;height:7px;border-radius:50%;background:#9ca3af;display:inline-block;margin-right:4px"></span> Barangay Kagawad 1
-                        </div>
-                        <div class="dd-item" onclick="assignTo('Barangay Kagawad 2')">
-                            <span style="width:7px;height:7px;border-radius:50%;background:#9ca3af;display:inline-block;margin-right:4px"></span> Barangay Kagawad 2
-                        </div>
-                        <div class="dd-item" onclick="assignTo('SK Chairman')">
-                            <span style="width:7px;height:7px;border-radius:50%;background:#9ca3af;display:inline-block;margin-right:4px"></span> SK Chairman
-                        </div>
-                    </div>
-                </div>
+              <!-- Assign dropdown -->
+<div class="dd-wrapper" id="ddAssign2" style="flex-shrink:0">
+    <button class="sec-btn" onclick="toggleDD('ddAssign2');loadStaffList('ddAssign2')">
+        Assign <i class="fas fa-chevron-down" style="font-size:9px;opacity:.6;margin-left:2px"></i>
+    </button>
+    <div class="dd-menu" style="min-width:220px;max-height:260px;overflow-y:auto">
+        <div class="dd-header">Assign To</div>
+        <div id="ddAssign2List">
+            <div class="dd-item" style="color:#9ca3af;pointer-events:none">
+                <i class="fas fa-spinner fa-spin"></i> Loading...
+            </div>
+        </div>
+    </div>
+</div>
 
                 <div style="flex:1"></div>
 
@@ -1304,12 +1601,20 @@ include '../../includes/header.php';
                                 <th>Technician</th>
                             </tr>
                         </thead>
-                        <tbody>
-                        <?php foreach ($notifications as $notif):
-                            $t   = $notif['type']??'';
-                            $rt  = $notif['reference_type']??'';
-                            $nid = intval($notif['notification_id']);
-$rid = intval($notif['reference_id']??0);
+                        <?php $counter = $total - $offset; ?>
+<tbody>
+<?php foreach ($notifications as $notif):
+    $t   = $notif['type']??'';
+    $t   = $notif['type']??'';
+    $rt  = $notif['reference_type']??'';
+    $nid = intval($notif['notification_id']);
+    $rid = intval($notif['reference_id']??0);
+
+    // ADD THIS — fetch custom status
+$custom_status_row = fetchOne($conn,
+    "SELECT status FROM tbl_notification_status WHERE notification_id = ? ORDER BY id DESC LIMIT 1",
+    [$nid], 'i');
+    $custom_status = $custom_status_row['status'] ?? ($notif['is_read'] ? 'Read' : 'Open');
 
                             // Define $is_email FIRST
                             $is_email = ($t==='email_reply'||$rt==='email_inbox');
@@ -1360,10 +1665,11 @@ $rid = intval($notif['reference_id']??0);
                             data-url="<?= htmlspecialchars($view_url) ?>"
                             data-nid="<?= $nid ?>"
                             data-read="<?= $notif['is_read']?1:0 ?>"
+                            data-status="<?= htmlspecialchars($custom_status) ?>"
+                            data-assigned-uid="<?= intval($notif['assigned_to'] ?? 0) ?>"
                             data-search="<?= strtolower(htmlspecialchars($notif['title'].' '.($notif['message']??''))) ?>"
-                          data-email="<?= htmlspecialchars($requester_email) ?>"
+                            data-email="<?= htmlspecialchars($requester_email) ?>"
                             data-sender="<?= htmlspecialchars($requester_name) ?>">
-
                             <!-- Checkbox -->
                             <td onclick="event.stopPropagation()">
                                 <input type="checkbox" class="req-cb notif-cb" name="notification_ids[]" value="<?= $nid ?>" onchange="updateSelBar()">
@@ -1404,15 +1710,23 @@ $rid = intval($notif['reference_id']??0);
                             </td>
 
                             <!-- ID -->
-                            <td><span class="req-id">ID-<?= str_pad($nid,4,'0',STR_PAD_LEFT) ?></span></td>
+<td><span class="req-id">ID-<?= str_pad($counter,3,'0',STR_PAD_LEFT) ?></span></td>
 
                             <!-- Status -->
-                            <td>
-                                <span class="status-badge <?= $is_unread?'status-open':'status-read' ?>">
-                                    <i class="fas <?= $is_unread?'fa-circle':'fa-check' ?>" style="font-size:<?= $is_unread?'6':'9' ?>px"></i>
-                                    <?= $is_unread?'Open':'Read' ?>
-                                </span>
-                            </td>
+                           <td>
+    <?php
+    $st = $custom_status;
+    if ($st === 'On Hold') {
+        echo '<span class="status-badge" style="background:#f3f4f6;color:#6b7280"><i class="fas fa-pause-circle" style="font-size:9px"></i> On Hold</span>';
+    } elseif ($st === 'Work In Progress') {
+        echo '<span class="status-badge" style="background:#fff8e1;color:#d97706"><i class="fas fa-spinner" style="font-size:9px"></i> In Progress</span>';
+    } elseif ($st === 'Read') {
+        echo '<span class="status-badge status-read"><i class="fas fa-check" style="font-size:9px"></i> Read</span>';
+    } else {
+        echo '<span class="status-badge status-open"><i class="fas fa-circle" style="font-size:6px"></i> Open</span>';
+    }
+    ?>
+</td>
 
                             <!-- Priority -->
                             <td><span class="req-dash">—</span></td>
@@ -1422,14 +1736,32 @@ $rid = intval($notif['reference_id']??0);
 
                             <!-- Technician -->
                             <td>
-                                <div class="tech-name">
-                                    <span class="tech-dot"></span>
-                                    Admin
+                                <?php
+                                $assigned_name = '';
+                                $assigned_uid  = intval($notif['assigned_to'] ?? 0);
+                                if ($assigned_uid) {
+                                    $assigned_user = fetchOne($conn,
+                                        "SELECT u.role,
+                                                COALESCE(CONCAT_WS(' ', r.first_name, r.last_name), u.username) AS full_name
+                                         FROM tbl_users u
+                                         LEFT JOIN tbl_residents r ON u.resident_id = r.resident_id
+                                         WHERE u.user_id = ?",
+                                        [$assigned_uid], 'i');
+$assigned_name = !empty($assigned_user['full_name'])
+    ? $assigned_user['full_name']
+    : ($assigned_user['role'] ?? '');                                }
+                                if (!$assigned_name) $assigned_name = 'Unassigned';
+                                $is_online = ($assigned_uid > 0);
+                                ?>
+                                <div class="tech-name" data-assigned-uid="<?= $assigned_uid ?>">
+                                    <span class="tech-dot <?= $is_online ? '' : 'away' ?>"></span>
+                                    <?= htmlspecialchars($assigned_name) ?>
                                 </div>
                             </td>
 
                         </tr>
-                        <?php endforeach; ?>
+                       <?php $counter--; ?>
+<?php endforeach; ?>
                         </tbody>
                     </table>
                 </div>
@@ -1478,8 +1810,8 @@ $rid = intval($notif['reference_id']??0);
                         <div class="side-inflow-sub">Last 7 days</div>
                     </div>
                     <div class="side-inflow-row">
-                        <div class="side-inflow-num"><?= number_format($stats['total']) ?></div>
-                        <div class="side-inflow-sub">All time</div>
+<div class="side-inflow-num"><?= number_format($all_time) ?></div>
+<div class="side-inflow-sub">All time</div>
                     </div>
                 </div>
             </div>
@@ -1533,17 +1865,20 @@ $rid = intval($notif['reference_id']??0);
         <span class="ms-filter-count" id="msFilterCount">0</span>
     </div>
 
-    <!-- Toolbar -->
+ <!-- Toolbar -->
     <div class="ms-toolbar">
         <button class="ms-tb-btn" onclick="msPickUp()"><i class="fas fa-hand-pointer"></i> Pick Up</button>
         <div class="ms-tb-dd-wrap" id="msTbAssign">
-            <button class="ms-tb-btn" onclick="toggleMsDD('msTbAssign')">
-                <i class="fas fa-user-plus"></i> Assign <i class="fas fa-chevron-down" style="font-size:9px"></i>
+            <button class="ms-tb-btn" onclick="toggleMsDD('msTbAssign');loadStaffList('msTbAssign')">
+                <i class="fas fa-user-plus"></i> Assign
+                <i class="fas fa-chevron-down" style="font-size:9px"></i>
             </button>
-            <div class="ms-tb-dd">
-                <div class="ms-tb-dd-item" onclick="msAssignTo('Barangay Captain')">Barangay Captain</div>
-                <div class="ms-tb-dd-item" onclick="msAssignTo('Barangay Secretary')">Barangay Secretary</div>
-                <div class="ms-tb-dd-item" onclick="msAssignTo('Barangay Kagawad')">Barangay Kagawad</div>
+            <div class="ms-tb-dd" style="max-height:240px;overflow-y:auto">
+                <div id="msTbAssignList">
+                    <div class="ms-tb-dd-item" style="color:#9ca3af;pointer-events:none">
+                        <i class="fas fa-spinner fa-spin"></i> Loading...
+                    </div>
+                </div>
             </div>
         </div>
         <button class="ms-tb-btn" onclick="msMarkAllRead()"><i class="fas fa-check-double"></i> Mark Read</button>
@@ -1589,7 +1924,7 @@ $rid = intval($notif['reference_id']??0);
             </div>
             <div class="ms-ticket-info">
                 <div class="ms-ticket-id-title">
-                    <span class="ms-ticket-id" id="msDetailId">ID-0000</span>
+<span class="ms-ticket-id" id="msDetailId">ID-000</span>
                     <span class="ms-ticket-title" id="msDetailTitle">Title</span>
                 </div>
                 <div class="ms-ticket-meta" id="msDetailMeta"></div>
@@ -1727,22 +2062,6 @@ document.querySelectorAll('#notifTable tbody tr').forEach(row => {
         });
     }
 });
-function positionPreviewCard(e) {
-    if (!previewCard) return;
-    const cardW = 360;
-    const cardH = previewCard.offsetHeight || 120;
-    let left = e.clientX + 16;
-    let top  = e.clientY + 16;
-
-    // Flip left if going off right edge
-    if (left + cardW > window.innerWidth - 10) left = e.clientX - cardW - 10;
-    // Flip up if going off bottom edge
-    if (top + cardH > window.innerHeight - 10) top = e.clientY - cardH - 10;
-
-    previewCard.style.left = left + 'px';
-    previewCard.style.top  = top + 'px';
-    previewCard.style.position = 'fixed';
-}
 /* ══ Row hover preview card ══ */
 let previewCard = null;
 let previewTimer = null;
@@ -1778,9 +2097,12 @@ document.querySelectorAll('#notifTable tbody tr:not(.req-detail-row)').forEach(r
 
             previewCard = document.createElement('div');
             previewCard.className = 'row-preview-card';
+            // Get the display ID from the table cell (the req-id span), not the raw nid
+            const displayId = row.querySelector('.req-id')?.textContent?.trim() || 'ID-' + String(nid).padStart(3,'0');
+
             previewCard.innerHTML = `
                 <div style="font-size:11px;color:#9ca3af;font-weight:500;margin-bottom:8px">
-                    Incident Request ID: <strong style="color:#6b7280">ID-${String(nid).padStart(4,'0')}</strong>
+Incident Request ID: <strong style="color:#6b7280">${displayId}</strong>
                 </div>
                 <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
                     <span style="width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;background:${iconBg};color:${iconClr}">
@@ -1896,13 +2218,33 @@ function showToast(msg,type='success') {
     toastTimer=setTimeout(()=>t.classList.remove('show'),3000);
 }
 
-/* ══ Toolbar actions ══ */
 function pickUpSelected() {
     const ids = getChecked();
     if (!ids.length) { showToast('Select at least one notification first.', 'error'); return; }
-    showToast(ids.length + ' notification(s) picked up.', 'success');
-}
-function closeSelected() {
+    const fd = new FormData();
+    ids.forEach(id => fd.append('nids[]', id));
+    // No uid = self-pickup, always overwrites
+    fetch('<?= BASE_URL ?>/modules/notifications/assign-notification.php', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                showToast(ids.length + ' notification(s) picked up by ' + data.name, 'success');
+                document.querySelectorAll('.notif-cb:checked').forEach(cb => {
+                    const row = cb.closest('tr');
+                    if (row) {
+                        const tc = row.querySelector('.tech-name');
+                        if (tc) tc.innerHTML = '<span class="tech-dot"></span> ' + data.name;
+                        row.dataset.assignedUid = data.uid;
+                    }
+                });
+                deselAllRows();
+            } else {
+                showToast('Failed: ' + (data.error || ''), 'error');
+            }
+        })
+        .catch(() => showToast('Network error', 'error'));
+
+}function closeSelected() {
     const ids = getChecked();
     if (!ids.length) { showToast('Select at least one notification first.', 'error'); return; }
     showBulkModal('danger','Close Notifications','fa-times-circle',`Close ${ids.length} notification(s)?`,'bulk_delete','danger');
@@ -1910,15 +2252,154 @@ function closeSelected() {
 function assignTo(name) {
     const ids = getChecked();
     if (!ids.length) { showToast('Select at least one notification first.', 'error'); return; }
-    showToast('Assigned to ' + name, 'success');
     document.querySelectorAll('.dd-wrapper.open').forEach(el => el.classList.remove('open'));
-    document.querySelectorAll('.notif-cb:checked').forEach(cb => {
-        const row = cb.closest('tr');
-        if (row) { const tc = row.querySelector('.tech-name'); if (tc) tc.innerHTML = '<span class="tech-dot"></span> ' + name; }
-    });
-    deselAllRows();
+    const fd = new FormData();
+    fd.append('action', 'assign');
+    fd.append('name', name);
+    ids.forEach(id => fd.append('nids[]', id));
+fetch('<?= BASE_URL ?>/modules/notifications/pickup-notification.php', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                showToast('Assigned to ' + data.name, 'success');
+                document.querySelectorAll('.notif-cb:checked').forEach(cb => {
+                    const row = cb.closest('tr');
+                    if (row) {
+                        const tc = row.querySelector('.tech-name');
+                        if (tc) tc.innerHTML = '<span class="tech-dot"></span> ' + data.name;
+                        if (data.uid) row.dataset.assignedUid = data.uid;
+                    }
+                });
+            } else {
+                showToast('Failed to assign: ' + (data.error || ''), 'error');
+            }
+            deselAllRows();
+        })
+        .catch(() => { showToast('Network error', 'error'); deselAllRows(); });
+}
+/* ══ Staff list cache ══ */
+let staffListCache = null;
+
+function loadStaffList(ddId) {
+    if (staffListCache) { renderStaffList(staffListCache, ddId); return; }
+fetch('<?= BASE_URL ?>/modules/notifications/pickup-notification.php?action=staff')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                staffListCache = data.staff;
+                renderStaffList(data.staff, ddId);
+            } else {
+                showToast('Failed to load staff list.', 'error');
+            }
+        })
+        .catch(() => showToast('Network error loading staff.', 'error'));
 }
 
+function renderStaffList(staff, ddId) {
+    const listMap = {
+        'ddAssign2':  'ddAssign2List',
+        'msTbAssign': 'msTbAssignList',
+    };
+    const listId = listMap[ddId];
+    if (!listId) return;
+    const container = document.getElementById(listId);
+    if (!container) return;
+    const isMsPanel = ddId === 'msTbAssign';
+    if (!staff.length) {
+        container.innerHTML = `<div class="${isMsPanel?'ms-tb-dd-item':'dd-item'}" style="color:#9ca3af;pointer-events:none">No staff found</div>`;
+        return;
+    }
+    let html = '';
+    let lastRole = '';
+    staff.forEach(s => {
+        if (s.role !== lastRole) {
+            lastRole = s.role;
+            html += `<div style="font-size:9.5px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:#9ca3af;padding:6px 10px 2px;pointer-events:none">${s.role}</div>`;
+        }
+        const dotColor = s.is_online == 1 ? '#22c55e' : '#9ca3af';
+        const safeName = s.full_name.replace(/'/g, "\\'");
+        if (isMsPanel) {
+            html += `<div class="ms-tb-dd-item" onclick="msAssignTo('${safeName}', ${s.user_id})">
+                <span style="width:7px;height:7px;border-radius:50%;background:${dotColor};display:inline-block;flex-shrink:0"></span>
+                <span style="flex:1">${s.full_name}</span>
+            </div>`;
+        } else {
+            html += `<div class="dd-item" onclick="assignTo('${safeName}', ${s.user_id})">
+                <span style="width:7px;height:7px;border-radius:50%;background:${dotColor};display:inline-block;flex-shrink:0"></span>
+                <span style="flex:1">${s.full_name}</span>
+                <span style="font-size:10px;color:#9ca3af;margin-left:auto">${s.role}</span>
+            </div>`;
+        }
+    });
+    container.innerHTML = html;
+}
+
+function assignTo(name, uid) {
+    const ids = getChecked();
+    if (!ids.length) { showToast('Select at least one notification first.', 'error'); return; }
+    document.querySelectorAll('.dd-wrapper.open').forEach(el => el.classList.remove('open'));
+    const fd = new FormData();
+    fd.append('action', 'assign');
+    fd.append('name', name);
+    fd.append('uid', uid || '');
+    ids.forEach(id => fd.append('nids[]', id));
+    fetch('<?= BASE_URL ?>/modules/notifications/assign-notification.php', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                showToast('Assigned to ' + data.name, 'success');
+                document.querySelectorAll('.notif-cb:checked').forEach(cb => {
+                    const row = cb.closest('tr');
+                    if (row) {
+                        const tc = row.querySelector('.tech-name');
+                        if (tc) tc.innerHTML = '<span class="tech-dot"></span> ' + data.name;
+                        if (data.uid) row.dataset.assignedUid = data.uid;
+                    }
+                });
+            } else {
+                showToast('Failed to assign: ' + (data.error || ''), 'error');
+            }
+            deselAllRows();
+        })
+        .catch(() => { showToast('Network error', 'error'); deselAllRows(); });
+}
+
+function msAssignTo(name, uid) {
+    const checked = [...document.querySelectorAll('.ms-item-cb:checked')];
+    const ids = checked.length
+        ? checked.map(cb => cb.closest('.ms-item')?.dataset.nid).filter(Boolean)
+        : (msActiveItem ? [msActiveItem.nid] : []);
+    if (!ids.length) { showToast('Select at least one notification first.', 'error'); return; }
+    closeAllMsDD();
+    const fd = new FormData();
+    fd.append('action', 'assign');
+    fd.append('name', name);
+    fd.append('uid', uid || '');
+    ids.forEach(id => fd.append('nids[]', id));
+    fetch('<?= BASE_URL ?>/modules/notifications/assign-notification.php', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                showToast('Assigned to ' + data.name, 'success');
+                ids.forEach(nid => {
+                    const listItem = document.querySelector(`.ms-item[data-nid="${nid}"]`);
+                    if (listItem) {
+                        const byEl = listItem.querySelector('.ms-item-meta');
+                        if (byEl) byEl.innerHTML = byEl.innerHTML.replace(/By:.*?\|/, 'By: ' + data.name + ' &nbsp;|&nbsp;');
+                    }
+                    const tableRow = document.querySelector(`#notifTable tbody tr[data-nid="${nid}"]`);
+                    if (tableRow) {
+                        const tc = tableRow.querySelector('.tech-name');
+                        if (tc) tc.innerHTML = '<span class="tech-dot"></span> ' + data.name;
+                        if (data.uid) tableRow.dataset.assignedUid = data.uid;
+                    }
+                });
+            } else {
+                showToast('Failed to assign: ' + (data.error || ''), 'error');
+            }
+        })
+        .catch(() => showToast('Network error', 'error'));
+}   
 /* ══ Auto-dismiss alerts ══ */
 setTimeout(()=>{
     ['sdAlert','sdAlertErr'].forEach(id => {
@@ -1931,10 +2412,12 @@ setTimeout(()=>{
    MY SUMMARY PANEL
 ══════════════════════════════════════════════════════ */
 
+const MS_CURRENT_UID = <?= intval($user_id) ?>;
+
 (function() {
-    const ictNums = document.querySelectorAll('.ict-stat-num');
-    const total  = ictNums[0] ? parseInt(ictNums[0].textContent) : 0;
-    const unread = ictNums[1] ? parseInt(ictNums[1].textContent) : 0;
+    const rows  = [...document.querySelectorAll('#notifTable tbody tr:not(.req-detail-row)')];
+    const total  = rows.length;
+    const unread = rows.filter(r => r.dataset.read === '0').length;
     const today  = parseInt(document.querySelector('.stat-card.teal .stat-num')?.textContent || '0');
     document.getElementById('msUnreadNum').textContent = unread;
     document.getElementById('msTodayNum').textContent  = today;
@@ -1962,27 +2445,34 @@ function msCollapseToNormal() {
     panel.style.maxWidth = '';
 }
 
+
+// AFTER — show all notifications, filter only by read/unread state
 function msGetItems(filter) {
     const rows = document.querySelectorAll('#notifTable tbody tr:not(.req-detail-row)');
     let items = [];
     rows.forEach(row => {
-        const nid       = row.dataset.nid;
-        const isRead    = row.dataset.read === '1';
-        const url       = row.dataset.url || 'notification-detail.php?id=' + nid;
-        const title     = row.querySelector('.req-subject')?.textContent?.trim() || 'Notification';
-        const preview   = row.querySelectorAll('td')[2]?.querySelector('[style*="9ca3af"]')?.textContent?.trim() || '';
-        const iconColor = row.querySelector('.req-icon')?.getAttribute('style') || '';
-        const techName  = row.querySelector('.tech-name')?.textContent?.trim() || 'Admin';
-        // Get sender email from the row (set via data-email on the tr by PHP)
+        const nid         = row.dataset.nid;
+        const isRead      = row.dataset.read === '1';
+        const url         = row.dataset.url || 'notification-detail.php?id=' + nid;
+        const title       = row.querySelector('.req-subject')?.textContent?.trim() || 'Notification';
+        const preview     = row.querySelectorAll('td')[2]?.querySelector('[style*="9ca3af"]')?.textContent?.trim() || '';
+        const iconColor   = row.querySelector('.req-icon')?.getAttribute('style') || '';
+        const techName    = row.querySelector('.tech-name')?.textContent?.trim() || 'Unassigned';
+        const assignedUid = parseInt(row.dataset.assignedUid || '0');
         const senderEmail = row.dataset.email || '';
         const senderName  = row.dataset.sender || '';
+        const cachedSt    = row.dataset.status || (isRead ? 'Read' : 'Open');
+        if (cachedSt) msTicketStatus[nid] = cachedSt;
+
         let show = true;
-        if (filter === 'overdue' && isRead) show = false;
-       if (show) items.push({ nid, isRead, url, title, preview, iconColor, techName, senderEmail, senderName, row });
+        if (filter === 'overdue')   show = !isRead;
+        if (filter === 'due_today') show = !isRead;
+        if (filter === 'pending')   show = true;   // all
+
+        if (show) items.push({ nid, isRead, url, title, preview, iconColor, techName, assignedUid, senderEmail, senderName, row });
     });
     return items;
 }
-
 const typeIconMap = {
     'fa-exclamation-triangle': { bg:'#fff8e1', color:'#f59e0b' },
     'fa-gavel':                { bg:'#fef2f2', color:'#ef4444' },
@@ -1994,6 +2484,7 @@ const typeIconMap = {
     'fa-hand-holding-medical': { bg:'#faf5ff', color:'#8b5cf6' },
     'fa-bell':                 { bg:'#f9fafb', color:'#6b7280' },
 };
+
 
 function msGetIconStyle(item) {
     const rowIcon = item.row?.querySelector('.req-icon i');
@@ -2012,17 +2503,12 @@ function msBuildList(filter) {
     const allNids = [...document.querySelectorAll('#notifTable tbody tr:not(.req-detail-row)')]
         .map(r => r.dataset.nid).filter(Boolean);
 
-    const loadStatuses = allNids.length
-        ? Promise.all(allNids.map(nid =>
-            msTicketStatus[nid]
-                ? Promise.resolve()
-                : fetch(`<?= BASE_URL ?>/modules/notifications/update-status.php?nid=${nid}&action=get`)
-                    .then(r => r.json())
-                    .then(data => { if (data.status) msTicketStatus[nid] = data.status; })
-                    .catch(() => {})
-          ))
-        : Promise.resolve();
-
+document.querySelectorAll('#notifTable tbody tr[data-nid]').forEach(r => {
+        if (r.dataset.status && r.dataset.nid) {
+            msTicketStatus[r.dataset.nid] = r.dataset.status;
+        }
+    });
+    const loadStatuses = Promise.resolve();
     loadStatuses.then(() => {
         const items = msGetItems(filter);
         if (msSortAsc) items.reverse();
@@ -2050,7 +2536,7 @@ function msBuildList(filter) {
                 <input type="checkbox" class="ms-item-cb" style="position:absolute;top:13px;right:12px;width:13px;height:13px;accent-color:#1976d2;cursor:pointer" onclick="event.stopPropagation()">
                 <div class="ms-item-header">
                     <div class="ms-item-icon" style="background:${style.bg};color:${style.color}"><i class="fas ${iconClass}"></i></div>
-                    <span class="ms-item-id">ID-${String(item.nid).padStart(4,'0')}</span>
+<span class="ms-item-id">${item.row?.querySelector('.req-id')?.textContent?.trim() || 'ID-' + String(item.nid).padStart(3,'0')}</span>
                     <span class="ms-item-title">${item.title}</span>
                 </div>
                 <div class="ms-item-meta">
@@ -2085,7 +2571,7 @@ function msShowDetail(item, typeStyle, iconClass) {
    if (msTicketStatus[item.nid]) {
     msApplyStatus(msTicketStatus[item.nid]);
 } else {
-    fetch('<?= BASE_URL ?>/modules/notifications/update-status.php?nid=' + item.nid + '&action=get')
+fetch('<?= BASE_URL ?>/modules/notifications/pickup-notification.php?action=status&nid=' + item.nid)
         .then(r => r.json())
         .then(data => {
             const s = data.status || (isRead ? 'Read' : 'Open');
@@ -2252,7 +2738,7 @@ function msShowDetail(item, typeStyle, iconClass) {
 
    // Load reply history into the Auto Notifications tab
     if (item.nid) {
-        fetch('<?= BASE_URL ?>/modules/notifications/get-replies.php?nid=' + item.nid)
+fetch('<?= BASE_URL ?>/modules/notifications/pickup-notification.php?action=replies&nid=' + item.nid)
             .then(r => r.json())
             .then(data => {
                 if (data.replies && data.replies.length > 0) {
@@ -2310,7 +2796,50 @@ function msSortToggle() {
     msBuildList(msCurrentFilter);
 }
 
-function msPickUp()       { showToast('Notification picked up', 'success'); }
+function msPickUp() {
+    const checked = [...document.querySelectorAll('.ms-item-cb:checked')];
+    const ids = checked.length
+        ? checked.map(cb => cb.closest('.ms-item')?.dataset.nid).filter(Boolean)
+        : (msActiveItem ? [msActiveItem.nid] : []);
+    if (!ids.length) { showToast('Select at least one notification first.', 'error'); return; }
+    const fd = new FormData();
+    ids.forEach(id => fd.append('nids[]', id));
+    fetch('<?= BASE_URL ?>/modules/notifications/pickup-notification.php', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                showToast('Picked up by ' + data.name, 'success');
+                // Update list items
+                ids.forEach(nid => {
+                    const listItem = document.querySelector(`.ms-item[data-nid="${nid}"]`);
+                    if (listItem) {
+                        const byEl = listItem.querySelector('.ms-item-meta');
+                        if (byEl) byEl.innerHTML = byEl.innerHTML.replace(/By:.*?\|/, 'By: ' + data.name + ' &nbsp;|&nbsp;');
+                    }
+                    // Update main table row too
+                    const tableRow = document.querySelector(`#notifTable tbody tr[data-nid="${nid}"]`);
+                    if (tableRow) {
+                        const tc = tableRow.querySelector('.tech-name');
+                        if (tc) tc.innerHTML = '<span class="tech-dot"></span> ' + data.name;
+                        tableRow.dataset.assignedUid = data.uid;
+                    }
+                });
+                // Update detail panel if open
+                if (msActiveItem && ids.includes(msActiveItem.nid)) {
+                    const meta = document.getElementById('msDetailMeta');
+                    if (meta) {
+                        meta.innerHTML = meta.innerHTML.replace(
+                            /Requested By.*?&nbsp;/,
+                            'Requested By <span style="color:#1976d2">' + data.name + '</span> &nbsp;'
+                        );
+                    }
+                }
+            } else {
+                showToast('Failed: ' + (data.error || ''), 'error');
+            }
+        })
+        .catch(() => showToast('Network error', 'error'));
+}
 function msAssignTo(name) { showToast('Assigned to ' + name, 'success'); closeAllMsDD(); }
 function msMarkAllRead() {
     const link = document.querySelector('a[href*="mark_all_read"]');
@@ -2318,7 +2847,7 @@ function msMarkAllRead() {
     else showToast('All notifications marked as read', 'success');
 }
 function msDetailEdit()   { if (msActiveItem) window.location.href = msActiveItem.url; }
-function msDetailPickUp() { showToast('Picked up', 'success'); }
+function msDetailPickUp() { msPickUp(); }
 function msDetailAssign() { showToast('Assign feature — select officer from list', 'success'); }
 function msDetailPrint()  { window.print(); }
 function msMarkReadDetail() {
@@ -2350,7 +2879,7 @@ function msTransition(status) {
         const fd = new FormData();
         fd.append('nid', msActiveItem.nid);
         fd.append('status', status);
-        fetch('<?= BASE_URL ?>/modules/notifications/update-status.php', { method: 'POST', body: fd })
+fetch('<?= BASE_URL ?>/modules/notifications/pickup-notification.php?action=status', { method: 'POST', body: fd })
             .then(r => r.json())
             .then(data => {
                 if (data.success) {
@@ -2512,7 +3041,7 @@ function msSendReply() {
     fd.append('body',       body);
     fd.append('nid',        msActiveItem?.nid || '');
 
-    fetch('<?= BASE_URL ?>/modules/notifications/send-reply.php', { method: 'POST', body: fd })
+fetch('<?= BASE_URL ?>/modules/notifications/pickup-notification.php?action=reply', { method: 'POST', body: fd })
         .then(r => r.json())
         .then(data => {
             if (data.success) {
@@ -2679,7 +3208,94 @@ function msSearchNav(dir) {
     current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     const countEl = document.getElementById('msSearchCount');
     if (countEl) countEl.textContent = `${msSearchIndex + 1} / ${msSearchHighlights.length}`;
-}
+} 
+
+(function autoAssignUnassigned() {
+    // Collect every row that has no technician assigned yet
+    const unassigned = [...document.querySelectorAll(
+        '#notifTable tbody tr[data-assigned-uid="0"]:not(.req-detail-row)'
+    )];
+ 
+    if (!unassigned.length) return;
+ 
+    const nids = unassigned.map(r => r.dataset.nid).filter(Boolean);
+    const fd   = new FormData();
+    nids.forEach(id => fd.append('nids[]', id));
+    fd.append('auto_assign', '1');   // triggers random-staff selection
+ 
+    fetch('<?= BASE_URL ?>/modules/notifications/assign-notification.php', {
+        method: 'POST',
+        body: fd,
+        keepalive: true
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (!data.success || !data.assigned) return;
+ 
+        // Update every affected row in the table UI
+        unassigned.forEach(row => {
+            const tc = row.querySelector('.tech-name');
+            if (tc) tc.innerHTML = '<span class="tech-dot"></span> ' + data.name;
+            row.dataset.assignedUid = data.uid;
+        });
+ 
+        showToast(
+            data.assigned + ' notification(s) auto-assigned to ' + data.name,
+            'success'
+        );
+    })
+    .catch(() => {}); // silent — don't bother the user on background failures
+})();
+
+/* ══ AUTO-ASSIGN NEW REQUESTS ══ */
+(function autoAssignRequests() {
+    // Only run for staff/admins
+    const userRole = '<?= $user_role ?>';
+    if (!['Super Admin','Super Administrator','Admin','Staff','Finance'].includes(userRole)) return;
+    
+    // Find unassigned REQUESTS only (not other notifications)
+    const requestRows = [...document.querySelectorAll('#notifTable tbody tr[data-nid]')].filter(row => {
+        const assignedUid = parseInt(row.dataset.assignedUid || '0');
+        const title = row.querySelector('.req-subject')?.textContent?.toLowerCase() || '';
+        // Match request/document keywords
+        return assignedUid === 0 && 
+               (title.includes('request') || title.includes('document') || 
+                title.includes('certificate') || title.includes('clearance'));
+    });
+    
+    if (!requestRows.length) return;
+    
+    const nids = requestRows.map(r => r.dataset.nid).filter(Boolean);
+    console.log(`🔄 Auto-assigning ${nids.length} new requests...`);
+    
+    const fd = new FormData();
+    nids.forEach(id => fd.append('nids[]', id));
+    fd.append('auto_assign', '1'); // Flag for auto-assign
+    
+    fetch('<?= BASE_URL ?>/modules/notifications/auto-assign-requests.php', {
+        method: 'POST', 
+        body: fd, 
+        keepalive: true
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            console.log(`✅ Auto-assigned ${data.assigned} requests to ${data.name}`);
+            // Update UI immediately
+            requestRows.forEach(row => {
+                const techCell = row.querySelector('.tech-name');
+                if (techCell) {
+                    techCell.innerHTML = '<span class="tech-dot"></span> ' + data.name;
+                    techCell.dataset.assignedUid = data.uid;
+                    row.dataset.assignedUid = data.uid;
+                }
+            });
+            showToast(`${data.assigned} new requests auto-assigned to ${data.name}`, 'success');
+        }
+    })
+    .catch(err => console.log('Auto-assign failed:', err));
+})();
+
 
 </script>
 

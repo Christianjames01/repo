@@ -13,8 +13,8 @@ header('Content-Type: application/json');
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['nid']) && ($_GET['action'] ?? '') === 'get') {
     $nid = intval($_GET['nid']);
     $uid = intval($_SESSION['user_id'] ?? 0);
-    $row = fetchOne($conn, "SELECT status FROM tbl_notifications WHERE notification_id=? AND user_id=?", [$nid, $uid], 'ii');
-    echo json_encode(['success' => true, 'status' => $row['status'] ?? 'Open']);
+$row = fetchOne($conn, "SELECT status FROM tbl_notification_status WHERE notification_id=?", [$nid], 'i');
+echo json_encode(['success' => true, 'status' => $row['status'] ?? 'Open']);
     exit;
 }
 
@@ -34,8 +34,10 @@ if (!$nid || !in_array($status, $allowed)) {
     exit;
 }
 
-$s = $conn->prepare("UPDATE tbl_notifications SET status=? WHERE notification_id=? AND user_id=?");
-$s->bind_param('sii', $status, $nid, $uid);
+$s = $conn->prepare("INSERT INTO tbl_notification_status (notification_id, status)
+                     VALUES (?, ?)
+                     ON DUPLICATE KEY UPDATE status = ?");
+$s->bind_param('iss', $nid, $status, $status);
 $s->execute();
 $s->close();
 

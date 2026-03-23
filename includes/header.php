@@ -371,6 +371,7 @@ body.dark-mode div.user-role {
     color: #94a3b8 !important;
     -webkit-text-fill-color: #94a3b8 !important;
 }
+
     </style>
 
     <?php if (isset($extra_css)): ?>
@@ -682,7 +683,7 @@ body.dark-mode div.user-role {
                 </a>
             </div>
             <div class="nav-item" style="position:relative;">
-                <a href="<?php echo $base_url; ?>/modules/notifications/index.php" class="nav-link <?php echo strpos($current_path,'notifications')!==false?'active':''; ?>">
+                <a href="<?php echo $base_url; ?>/modules/notifications/resident-notifications.php" class="nav-link <?php echo strpos($current_path,'notifications')!==false?'active':''; ?>">
                     <i class="fas fa-bell"></i><span>Notifications</span>
                     <!-- sidebar badge — updated by JS poller -->
                     <span id="sidebar-notif-badge" class="notification-badge"><?php echo $unread_count > 0 ? ($unread_count > 9 ? '9+' : $unread_count) : ''; ?></span>

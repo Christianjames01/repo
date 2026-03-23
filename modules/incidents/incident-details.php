@@ -69,9 +69,32 @@ if ($result->num_rows === 0) {
     $check_stmt = $conn->prepare("SELECT incident_id, resident_id FROM tbl_incidents WHERE incident_id = ?");
     $check_stmt->bind_param("i", $incident_id); $check_stmt->execute();
     $check_result = $check_stmt->get_result();
-    $_SESSION['error_message'] = $check_result->num_rows === 0
-        ? 'Incident not found. It may have been deleted.'
-        : 'You do not have permission to view this incident.';
+    if ($check_result->num_rows === 0) {
+        $_SESSION['error_message'] = 'Incident not found. It may have been deleted.';
+    } elseif ($is_resident) {
+        /* Resident mismatch — try fetching without resident filter so we can show the record */
+        $fix_stmt = $conn->prepare("SELECT i.*,
+            CONCAT(r.first_name,' ',r.last_name) as resident_name,
+            r.contact_number as resident_contact,
+            r.email as resident_email,
+            r.address as resident_address,
+            CONCAT(resp_r.first_name,' ',resp_r.last_name) as responder_name,
+            resp_u.role as responder_role
+            FROM tbl_incidents i
+            LEFT JOIN tbl_residents r ON i.resident_id = r.resident_id
+            LEFT JOIN tbl_users resp_u ON i.responder_id = resp_u.user_id
+            LEFT JOIN tbl_residents resp_r ON resp_u.resident_id = resp_r.resident_id
+            WHERE i.incident_id = ?");
+        $fix_stmt->bind_param("i", $incident_id);
+        $fix_stmt->execute();
+        $fix_result = $fix_stmt->get_result();
+        $fix_row = $fix_result->fetch_assoc();
+        $fix_stmt->close();
+        error_log("RESIDENT ACCESS DEBUG: incident resident_id=" . ($fix_row['resident_id'] ?? 'null') . " | user resident_id=" . $resident_id . " | current_user_id=" . $current_user_id);
+        $_SESSION['error_message'] = 'You do not have permission to view this incident.';
+    } else {
+        $_SESSION['error_message'] = 'You do not have permission to view this incident.';
+    }
     $check_stmt->close(); $stmt->close();
     header('Location: view-incidents.php'); exit;
 }

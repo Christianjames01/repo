@@ -439,15 +439,13 @@ body.dark-mode .db-preview__footer {
                 $prev_msg   = htmlspecialchars(mb_strimwidth($incident['description']??'',0,150,'…'));
                 $prev_type  = htmlspecialchars($incident['incident_type']??'');
                 $prev_time  = date('M j, Y', strtotime($incident['date_reported']));
-                $row_class  = $is_resident ? 'resident-row' : 'clickable';
+$row_class  = 'clickable';
             ?>
             <tr class="<?php echo $row_class; ?>"
-                <?php if (!$is_resident): ?>
                 data-url="<?php echo htmlspecialchars($view_url); ?>"
                 data-pt="<?php echo $prev_title; ?>" data-pm="<?php echo $prev_msg; ?>"
                 data-ptype="<?php echo $prev_type; ?>" data-pc="<?php echo $prev_color; ?>"
-                data-picon="<?php echo $icon_class; ?>" data-ptime="<?php echo $prev_time; ?>"
-                <?php endif; ?>>
+                data-picon="<?php echo $icon_class; ?>" data-ptime="<?php echo $prev_time; ?>">
                 <td><span class="db-id"><?php echo htmlspecialchars($incident['reference_no'] ?? 'N/A'); ?></span></td>
                 <td>
                     <span class="db-text-sm"><?php echo date('M d, Y', strtotime($incident['date_reported'])); ?></span><br>
@@ -490,7 +488,6 @@ body.dark-mode .db-preview__footer {
 </div>
 </div>
 
-<?php if (!$is_resident): ?>
 <div id="dbPreview" class="db-preview" style="display:none;">
     <div class="db-preview__header">
         <div class="db-preview__icon" id="dbPrevIcon"><i class="fas fa-exclamation-triangle" id="dbPrevIconI"></i></div>
@@ -519,5 +516,4 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 });
 </script>
-<?php endif; ?>
 <?php include '../../includes/footer.php'; ?>

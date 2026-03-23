@@ -228,7 +228,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['csrf_token'])) {
                     }
                 }
                 
-                // Send notifications
+               // Send notifications
                 $incident_title = $incident_type . " - " . substr($location, 0, 30);
                 if (function_exists('notifyIncidentReported')) {
                     try {
@@ -236,6 +236,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['csrf_token'])) {
                     } catch (Exception $notify_error) {
                         error_log("Notification error: " . $notify_error->getMessage());
                         $warnings[] = "Incident created but notifications may have failed";
+                    }
+                }
+
+                /* Notify the resident who filed the report */
+                if (!empty($current_user_id) && $incident_id > 0) {
+                    $notif_title = 'Incident Report Submitted';
+                    $notif_msg   = "Your incident report \"{$incident_title}\" (Ref: {$reference_no}) has been submitted successfully. Barangay officials have been notified and will review it shortly.";
+
+                    if (function_exists('createNotification')) {
+                        try {
+                            createNotification($conn, $current_user_id, $notif_title, $notif_msg, 'incident_reported', $incident_id, 'incident');
+                        } catch (Exception $ne) {
+                            error_log("Resident notification error: " . $ne->getMessage());
+                        }
+                    } else {
+                        $rn = $conn->prepare("INSERT INTO tbl_notifications (user_id, title, message, type, reference_id, reference_type, is_read, created_at) VALUES (?, ?, ?, 'incident_reported', ?, 'incident', 0, NOW())");
+                        if ($rn) {
+                            $rn->bind_param('issi', $current_user_id, $notif_title, $notif_msg, $incident_id);
+                            $rn->execute();
+                            $rn->close();
+                        }
                     }
                 }
                 

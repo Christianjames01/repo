@@ -14,7 +14,8 @@ $stmt = $conn->prepare("
     SELECT u.*, r.role_name,
            res.first_name, res.middle_name, res.last_name, res.ext_name, res.date_of_birth,
            res.gender, res.civil_status, res.address, res.contact_number,
-           res.email, res.occupation, res.profile_photo, res.id_photo, res.is_verified,
+           res.email AS resident_email,
+           res.occupation, res.profile_photo, res.id_photo, res.is_verified,
            res.permanent_address, res.street, res.barangay, res.town, res.city,
            res.province, res.birthplace,
            res.updated_at as resident_updated_at
@@ -28,6 +29,21 @@ $stmt->execute();
 $result = $stmt->get_result();
 $user_data = $result->fetch_assoc();
 $stmt->close();
+
+if ($user_data) {
+    // Determine role type immediately after fetch so email is resolved correctly
+    $admin_roles_check = ['Super Admin', 'Super Administrator', 'Admin', 'Staff', 'Finance'];
+    $is_admin_role_check = in_array($user_data['role_name'] ?? '', $admin_roles_check);
+
+    if ($is_admin_role_check) {
+        // Admin: u.* already contains u.email — res.email aliased as resident_email, discard it
+        // $user_data['email'] is already correct from tbl_users
+    } else {
+        // Resident: use the resident's own email from tbl_residents
+        $user_data['email'] = $user_data['resident_email'] ?? $user_data['email'] ?? '';
+    }
+    unset($user_data['resident_email']);
+}
 
 if (!$user_data) {
     header("Location: ../dashboard/index.php");
@@ -88,29 +104,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
     $occupation = trim($_POST['occupation'] ?? '');
     $address = implode(', ', array_filter([$permanent_address, $street, $barangay, $town, $province]));
 
-    if (empty($first_name)) $errors[] = "First name is required";
-    if (empty($last_name)) $errors[] = "Last name is required";
-    if (empty($date_of_birth)) $errors[] = "Date of birth is required";
-    if (empty($gender)) $errors[] = "Gender is required";
-    if (empty($civil_status)) $errors[] = "Civil status is required";
-    if (empty($permanent_address)) $errors[] = "Permanent address is required";
-    if (empty($barangay)) $errors[] = "Barangay is required";
-    if (empty($town)) $errors[] = "Town/City is required";
-    if (empty($province)) $errors[] = "Province is required";
-    if (empty($birthplace)) $errors[] = "Birthplace is required";
-    if (empty($contact_number)) $errors[] = "Contact number is required";
-    if (!empty($contact_number)) {
-        $contact_number = preg_replace('/[^0-9]/', '', $contact_number);
-        if (strlen($contact_number) != 11 || substr($contact_number, 0, 2) != '09')
-            $errors[] = "Contact number must be in format 09XXXXXXXXX";
-    }
-    if (!empty($email) && !filter_var($email, FILTER_VALIDATE_EMAIL)) $errors[] = "Invalid email format";
-    if (!empty($email)) {
-        $stmt = $conn->prepare("SELECT resident_id FROM tbl_residents WHERE email = ? AND resident_id != ?");
-        $stmt->bind_param("si", $email, $resident_id);
-        $stmt->execute();
-        if ($stmt->get_result()->num_rows > 0) $errors[] = "Email already in use by another account";
-        $stmt->close();
+    // Determine role type early — used for validation branching below
+    $admin_roles = ['Super Admin', 'Super Administrator', 'Admin', 'Staff', 'Finance'];
+    $is_admin_role = in_array($user_data['role_name'] ?? '', $admin_roles);
+
+    if ($is_admin_role) {
+        // Admins only need email validated — all other resident fields are skipped
+        if (!empty($email) && !filter_var($email, FILTER_VALIDATE_EMAIL)) $errors[] = "Invalid email format";
+        if (!empty($email)) {
+            $stmt = $conn->prepare("SELECT user_id FROM tbl_users WHERE email = ? AND user_id != ?");
+            $stmt->bind_param("si", $email, $user_id);
+            $stmt->execute();
+            if ($stmt->get_result()->num_rows > 0) $errors[] = "Email already in use by another account";
+            $stmt->close();
+        }
+    } else {
+        // Full validation for residents
+        if (empty($first_name)) $errors[] = "First name is required";
+        if (empty($last_name)) $errors[] = "Last name is required";
+        if (empty($date_of_birth)) $errors[] = "Date of birth is required";
+        if (empty($gender)) $errors[] = "Gender is required";
+        if (empty($civil_status)) $errors[] = "Civil status is required";
+        if (empty($permanent_address)) $errors[] = "Permanent address is required";
+        if (empty($barangay)) $errors[] = "Barangay is required";
+        if (empty($town)) $errors[] = "Town/City is required";
+        if (empty($province)) $errors[] = "Province is required";
+        if (empty($birthplace)) $errors[] = "Birthplace is required";
+        if (empty($contact_number)) $errors[] = "Contact number is required";
+        if (!empty($contact_number)) {
+            $contact_number = preg_replace('/[^0-9]/', '', $contact_number);
+            if (strlen($contact_number) != 11 || substr($contact_number, 0, 2) != '09')
+                $errors[] = "Contact number must be in format 09XXXXXXXXX";
+        }
+        if (!empty($email) && !filter_var($email, FILTER_VALIDATE_EMAIL)) $errors[] = "Invalid email format";
+        if (!empty($email)) {
+            $stmt = $conn->prepare("SELECT resident_id FROM tbl_residents WHERE email = ? AND resident_id != ?");
+            $stmt->bind_param("si", $email, $resident_id);
+            $stmt->execute();
+            if ($stmt->get_result()->num_rows > 0) $errors[] = "Email already in use by another account";
+            $stmt->close();
+        }
     }
 
     $profile_photo = $user_data['profile_photo'];
@@ -130,43 +163,74 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
     }
 
     if (empty($errors)) {
-        // Detect if anything actually changed
         $no_photo_change = !isset($_FILES['profile_photo']) || $_FILES['profile_photo']['error'] !== UPLOAD_ERR_OK;
-        // Use == and trim to safely compare nullable DB values vs form strings
         $db = $user_data;
-        $profile_unchanged =
-            $first_name        == ($db['first_name']        ?? '') &&
-            $middle_name       == ($db['middle_name']       ?? '') &&
-            $last_name         == ($db['last_name']         ?? '') &&
-            $ext_name          == ($db['ext_name']          ?? '') &&
-            $date_of_birth     == ($db['date_of_birth']     ?? '') &&
-            $gender            == ($db['gender']            ?? '') &&
-            $civil_status      == ($db['civil_status']      ?? '') &&
-            $permanent_address == ($db['permanent_address'] ?? '') &&
-            $street            == ($db['street']            ?? '') &&
-            $barangay          == ($db['barangay']          ?? '') &&
-            $town              == ($db['town']              ?? $db['city'] ?? '') &&
-            $province          == ($db['province']          ?? '') &&
-            $birthplace        == ($db['birthplace']        ?? '') &&
-            $contact_number    == ($db['contact_number']    ?? '') &&
-            $email             == ($db['email']             ?? '') &&
-            $occupation        == ($db['occupation']        ?? '') &&
-            $no_photo_change;
+
+        if ($is_admin_role) {
+            // For admins, only compare the fields they're actually allowed to change
+            $profile_unchanged =
+                $email        == ($db['email'] ?? '') &&
+                $no_photo_change;
+        } else {
+            // Full comparison for residents
+            $profile_unchanged =
+                $first_name        == ($db['first_name']        ?? '') &&
+                $middle_name       == ($db['middle_name']       ?? '') &&
+                $last_name         == ($db['last_name']         ?? '') &&
+                $ext_name          == ($db['ext_name']          ?? '') &&
+                $date_of_birth     == ($db['date_of_birth']     ?? '') &&
+                $gender            == ($db['gender']            ?? '') &&
+                $civil_status      == ($db['civil_status']      ?? '') &&
+                $permanent_address == ($db['permanent_address'] ?? '') &&
+                $street            == ($db['street']            ?? '') &&
+                $barangay          == ($db['barangay']          ?? '') &&
+                $town              == ($db['town']              ?? $db['city'] ?? '') &&
+                $province          == ($db['province']          ?? '') &&
+                $birthplace        == ($db['birthplace']        ?? '') &&
+                $contact_number    == ($db['contact_number']    ?? '') &&
+                $email             == ($db['email']             ?? '') &&
+                $occupation        == ($db['occupation']        ?? '') &&
+                $no_photo_change;
+        }
 
         if ($profile_unchanged) {
             $info = "No changes were made to your profile.";
         } else {
-            $stmt = $conn->prepare("UPDATE tbl_residents SET first_name=?,middle_name=?,last_name=?,ext_name=?,date_of_birth=?,gender=?,civil_status=?,address=?,permanent_address=?,street=?,barangay=?,town=?,province=?,birthplace=?,contact_number=?,email=?,occupation=?,profile_photo=?,updated_at=NOW() WHERE resident_id=?");
-            $stmt->bind_param("ssssssssssssssssssi",$first_name,$middle_name,$last_name,$ext_name,$date_of_birth,$gender,$civil_status,$address,$permanent_address,$street,$barangay,$town,$province,$birthplace,$contact_number,$email,$occupation,$profile_photo,$resident_id);
-            if ($stmt->execute()) {
-                $success = "Profile updated successfully!";
+            if ($is_admin_role) {
+                // ── Admin/Staff: update tbl_users only, never touch tbl_residents ──
+                $stmt = $conn->prepare("UPDATE tbl_users SET email=?, updated_at=NOW() WHERE user_id=?");
+                $stmt->bind_param("si", $email, $user_id);
+                if ($stmt->execute()) {
+                    $stmt->close();
+                    // Handle profile photo separately if it changed
+                    if (!$no_photo_change) {
+                        $s2 = $conn->prepare("UPDATE tbl_users SET profile_photo=? WHERE user_id=?");
+                        $s2->bind_param("si", $profile_photo, $user_id);
+                        $s2->execute();
+                        $s2->close();
+                    }
+                    $success = "Profile updated successfully!";
+                } else {
+                    $errors[] = "Failed to update profile";
+                    $stmt->close();
+                }
+            } else {
+                // ── Resident: update tbl_residents as normal ──
+                $stmt = $conn->prepare("UPDATE tbl_residents SET first_name=?,middle_name=?,last_name=?,ext_name=?,date_of_birth=?,gender=?,civil_status=?,address=?,permanent_address=?,street=?,barangay=?,town=?,province=?,birthplace=?,contact_number=?,email=?,occupation=?,profile_photo=?,updated_at=NOW() WHERE resident_id=?");
+                $stmt->bind_param("ssssssssssssssssssi",$first_name,$middle_name,$last_name,$ext_name,$date_of_birth,$gender,$civil_status,$address,$permanent_address,$street,$barangay,$town,$province,$birthplace,$contact_number,$email,$occupation,$profile_photo,$resident_id);
+                if ($stmt->execute()) {
+                    $success = "Profile updated successfully!";
+                    $stmt->close();
+                    $stmt = $conn->prepare("SELECT u.*,r.role_name,res.first_name,res.middle_name,res.last_name,res.ext_name,res.date_of_birth,res.gender,res.civil_status,res.address,res.contact_number,res.email AS resident_email,res.occupation,res.profile_photo,res.id_photo,res.is_verified,res.permanent_address,res.street,res.barangay,res.town,res.city,res.province,res.birthplace,res.updated_at as resident_updated_at FROM tbl_users u LEFT JOIN tbl_roles r ON u.role_id=r.role_id LEFT JOIN tbl_residents res ON u.resident_id=res.resident_id WHERE u.user_id=?");
+                    $stmt->bind_param("i",$user_id); $stmt->execute();
+                    $user_data = $stmt->get_result()->fetch_assoc();
+                    // Re-apply email normalizer after re-fetch
+                    $user_data['email'] = $user_data['resident_email'] ?? $user_data['email'] ?? '';
+                    unset($user_data['resident_email']);
+                    if (!empty($user_data['updated_at']) && $user_data['updated_at']!='0000-00-00 00:00:00') $last_updated = date('F d, Y h:i A',strtotime($user_data['updated_at']));
+                } else $errors[] = "Failed to update profile";
                 $stmt->close();
-                $stmt = $conn->prepare("SELECT u.*,r.role_name,res.first_name,res.middle_name,res.last_name,res.ext_name,res.date_of_birth,res.gender,res.civil_status,res.address,res.contact_number,res.email,res.occupation,res.profile_photo,res.id_photo,res.is_verified,res.permanent_address,res.street,res.barangay,res.town,res.city,res.province,res.birthplace,res.updated_at as resident_updated_at FROM tbl_users u LEFT JOIN tbl_roles r ON u.role_id=r.role_id LEFT JOIN tbl_residents res ON u.resident_id=res.resident_id WHERE u.user_id=?");
-                $stmt->bind_param("i",$user_id); $stmt->execute();
-                $user_data = $stmt->get_result()->fetch_assoc();
-                if (!empty($user_data['updated_at']) && $user_data['updated_at']!='0000-00-00 00:00:00') $last_updated = date('F d, Y h:i A',strtotime($user_data['updated_at']));
-            } else $errors[] = "Failed to update profile";
-            $stmt->close();
+            }
         }
     }
     if (!empty($errors)) $error = implode("<br>", $errors);
@@ -512,6 +576,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
                                     <img id="photoPreview" class="pf-photo-preview" src="" alt="">
                                 </div>
 
+                                <?php
+                                $admin_roles_view = ['Super Admin', 'Super Administrator', 'Admin', 'Staff', 'Finance'];
+                                $is_admin_view = in_array($user_data['role_name'] ?? '', $admin_roles_view);
+                                ?>
+
+                                <?php if ($is_admin_view): ?>
+                                <!-- Admin: only show email field -->
+                                <div class="pf-section">
+                                    <div class="pf-section__ic"><i class="fas fa-envelope"></i></div>
+                                    <span>Account Information</span>
+                                </div>
+                                <div class="mb-4">
+                                    <label class="form-label">Email Address</label>
+                                    <input type="email" name="email" class="form-control" maxlength="100" placeholder="your.email@example.com" value="<?= htmlspecialchars($user_data['email'] ?? '') ?>">
+                                    <small style="color:#64748b;font-size:11px">For account recovery and notifications</small>
+                                </div>
+                                <!-- Hidden fields not used by admin but present in POST — send safe empty values -->
+                                <input type="hidden" name="first_name"        value="<?= htmlspecialchars($user_data['first_name']        ?? '') ?>">
+                                <input type="hidden" name="middle_name"       value="<?= htmlspecialchars($user_data['middle_name']       ?? '') ?>">
+                                <input type="hidden" name="last_name"         value="<?= htmlspecialchars($user_data['last_name']         ?? '') ?>">
+                                <input type="hidden" name="ext"               value="<?= htmlspecialchars($user_data['ext_name']          ?? '') ?>">
+                                <input type="hidden" name="date_of_birth"     value="<?= htmlspecialchars($user_data['date_of_birth']     ?? '') ?>">
+                                <input type="hidden" name="gender"            value="<?= htmlspecialchars($user_data['gender']            ?? '') ?>">
+                                <input type="hidden" name="civil_status"      value="<?= htmlspecialchars($user_data['civil_status']      ?? '') ?>">
+                                <input type="hidden" name="permanent_address" value="<?= htmlspecialchars($user_data['permanent_address'] ?? '') ?>">
+                                <input type="hidden" name="street"            value="<?= htmlspecialchars($user_data['street']            ?? '') ?>">
+                                <input type="hidden" name="barangay"          value="<?= htmlspecialchars($user_data['barangay']          ?? '') ?>">
+                                <input type="hidden" name="town"              value="<?= htmlspecialchars($user_data['town'] ?? $user_data['city'] ?? '') ?>">
+                                <input type="hidden" name="province"          value="<?= htmlspecialchars($user_data['province']          ?? '') ?>">
+                                <input type="hidden" name="birthplace"        value="<?= htmlspecialchars($user_data['birthplace']        ?? '') ?>">
+                                <input type="hidden" name="contact_number"    value="<?= htmlspecialchars($user_data['contact_number']    ?? '') ?>">
+                                <input type="hidden" name="occupation"        value="<?= htmlspecialchars($user_data['occupation']        ?? '') ?>">
+
+                                <?php else: ?>
+                                <!-- Resident: show full form -->
+
                                 <!-- Personal Info -->
                                 <div class="pf-section">
                                     <div class="pf-section__ic"><i class="fas fa-user"></i></div>
@@ -613,6 +713,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
                                     <input type="email" name="email" class="form-control" maxlength="100" placeholder="your.email@example.com" value="<?= htmlspecialchars($user_data['email'] ?? '') ?>">
                                     <small style="color:#64748b;font-size:11px">For account recovery and notifications</small>
                                 </div>
+
+                                <?php endif; ?>
 
                                 <button type="submit" name="update_profile" class="pf-btn pf-btn--navy">
                                     <i class="fas fa-save"></i> Save Changes
